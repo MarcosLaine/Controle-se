@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Controle-se - Sistema Financeiro</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- Loading Screen -->
+    <div id="loading-screen" class="loading-screen">
+        <div class="loading-spinner">
+            <div class="spinner"></div>
+            <p>Carregando Controle-se...</p>
+        </div>
+    </div>
+
+    <!-- Main Container -->
+    <div id="app" class="app-container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <div class="logo">
+                    <i class="fas fa-wallet"></i>
+                    <h1>Controle-se</h1>
+                </div>
+                <div class="user-info" id="user-info" style="display: none;">
+                    <span id="user-name"></span>
+                    <button id="logout-btn" class="btn-logout">
+                        <i class="fas fa-sign-out-alt"></i>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Login/Register Screen -->
+        <div id="auth-screen" class="auth-screen">
+            <div class="auth-container">
+                <div class="auth-tabs">
+                    <button class="tab-btn active" data-tab="login">Entrar</button>
+                    <button class="tab-btn" data-tab="register">Cadastrar</button>
+                </div>
+
+                <!-- Login Form -->
+                <form id="login-form" class="auth-form active">
+                    <div class="form-group">
+                        <label for="login-email">Email</label>
+                        <input type="email" id="login-email" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="login-password">Senha</label>
+                        <input type="password" id="login-password" required>
+                    </div>
+                    <button type="submit" class="btn-primary">
+                        <i class="fas fa-sign-in-alt"></i>
+                        Entrar
+                    </button>
+                </form>
+
+                <!-- Register Form -->
+                <form id="register-form" class="auth-form">
+                    <div class="form-group">
+                        <label for="register-name">Nome</label>
+                        <input type="text" id="register-name" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="register-email">Email</label>
+                        <input type="email" id="register-email" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="register-password">Senha</label>
+                        <input type="password" id="register-password" required>
+                    </div>
+                    <button type="submit" class="btn-primary">
+                        <i class="fas fa-user-plus"></i>
+                        Cadastrar
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Main Dashboard -->
+        <div id="dashboard" class="dashboard" style="display: none;">
+            <!-- Sidebar -->
+            <aside class="sidebar">
+                <nav class="nav-menu">
+                    <a href="#" class="nav-item active" data-section="overview">
+                        <i class="fas fa-chart-pie"></i>
+                        <span>Visão Geral</span>
+                    </a>
+                    <a href="#" class="nav-item" data-section="categories">
+                        <i class="fas fa-tags"></i>
+                        <span>Categorias</span>
+                    </a>
+                    <a href="#" class="nav-item" data-section="accounts">
+                        <i class="fas fa-university"></i>
+                        <span>Contas</span>
+                    </a>
+                    <a href="#" class="nav-item" data-section="transactions">
+                        <i class="fas fa-exchange-alt"></i>
+                        <span>Transações</span>
+                    </a>
+                    <a href="#" class="nav-item" data-section="budgets">
+                        <i class="fas fa-chart-line"></i>
+                        <span>Orçamentos</span>
+                    </a>
+                    <a href="#" class="nav-item" data-section="reports">
+                        <i class="fas fa-file-alt"></i>
+                        <span>Relatórios</span>
+                    </a>
+                </nav>
+            </aside>
+
+            <!-- Main Content -->
+            <main class="main-content">
+                <!-- Overview Section -->
+                <section id="overview-section" class="content-section active">
+                    <div class="section-header">
+                        <h2>Visão Geral</h2>
+                        <div class="date-range">
+                            <select id="period-select">
+                                <option value="month">Este Mês</option>
+                                <option value="year">Este Ano</option>
+                                <option value="all">Todos os Períodos</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Summary Cards -->
+                    <div class="summary-cards">
+                        <div class="summary-card income">
+                            <div class="card-icon">
+                                <i class="fas fa-arrow-up"></i>
+                            </div>
+                            <div class="card-content">
+                                <h3>Receitas</h3>
+                                <p class="amount" id="total-income">R$ 0,00</p>
+                            </div>
+                        </div>
+                        <div class="summary-card expense">
+                            <div class="card-icon">
+                                <i class="fas fa-arrow-down"></i>
+                            </div>
+                            <div class="card-content">
+                                <h3>Gastos</h3>
+                                <p class="amount" id="total-expense">R$ 0,00</p>
+                            </div>
+                        </div>
+                        <div class="summary-card balance">
+                            <div class="card-icon">
+                                <i class="fas fa-balance-scale"></i>
+                            </div>
+                            <div class="card-content">
+                                <h3>Saldo</h3>
+                                <p class="amount" id="total-balance">R$ 0,00</p>
+                            </div>
+                        </div>
+                        <div class="summary-card accounts">
+                            <div class="card-icon">
+                                <i class="fas fa-university"></i>
+                            </div>
+                            <div class="card-content">
+                                <h3>Contas</h3>
+                                <p class="amount" id="total-accounts">R$ 0,00</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Charts and Recent Transactions -->
+                    <div class="dashboard-grid">
+                        <div class="chart-container">
+                            <h3>Gastos por Categoria</h3>
+                            <canvas id="category-chart"></canvas>
+                        </div>
+                        <div class="recent-transactions">
+                            <h3>Transações Recentes</h3>
+                            <div id="recent-transactions-list" class="transactions-list">
+                                <!-- Transactions will be loaded here -->
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Categories Section -->
+                <section id="categories-section" class="content-section">
+                    <div class="section-header">
+                        <h2>Categorias</h2>
+                        <button class="btn-primary" id="add-category-btn">
+                            <i class="fas fa-plus"></i>
+                            Nova Categoria
+                        </button>
+                    </div>
+                    <div id="categories-list" class="categories-grid">
+                        <!-- Categories will be loaded here -->
+                    </div>
+                </section>
+
+                <!-- Accounts Section -->
+                <section id="accounts-section" class="content-section">
+                    <div class="section-header">
+                        <h2>Contas</h2>
+                        <button class="btn-primary" id="add-account-btn">
+                            <i class="fas fa-plus"></i>
+                            Nova Conta
+                        </button>
+                    </div>
+                    <div id="accounts-list" class="accounts-grid">
+                        <!-- Accounts will be loaded here -->
+                    </div>
+                </section>
+
+                <!-- Transactions Section -->
+                <section id="transactions-section" class="content-section">
+                    <div class="section-header">
+                        <h2>Transações</h2>
+                        <div class="transaction-controls">
+                            <button class="btn-secondary" id="add-expense-btn">
+                                <i class="fas fa-minus"></i>
+                                Novo Gasto
+                            </button>
+                            <button class="btn-secondary" id="add-income-btn">
+                                <i class="fas fa-plus"></i>
+                                Nova Receita
+                            </button>
+                        </div>
+                    </div>
+                    <div class="filters">
+                        <select id="category-filter">
+                            <option value="">Todas as Categorias</option>
+                        </select>
+                        <input type="date" id="date-filter">
+                        <button class="btn-secondary" id="clear-filters">Limpar Filtros</button>
+                    </div>
+                    <div id="transactions-list" class="transactions-table">
+                        <!-- Transactions will be loaded here -->
+                    </div>
+                </section>
+
+                <!-- Budgets Section -->
+                <section id="budgets-section" class="content-section">
+                    <div class="section-header">
+                        <h2>Orçamentos</h2>
+                        <button class="btn-primary" id="add-budget-btn">
+                            <i class="fas fa-plus"></i>
+                            Novo Orçamento
+                        </button>
+                    </div>
+                    <div id="budgets-list" class="budgets-grid">
+                        <!-- Budgets will be loaded here -->
+                    </div>
+                </section>
+
+                <!-- Reports Section -->
+                <section id="reports-section" class="content-section">
+                    <div class="section-header">
+                        <h2>Relatórios</h2>
+                        <div class="report-controls">
+                            <select id="report-period">
+                                <option value="month">Mensal</option>
+                                <option value="year">Anual</option>
+                            </select>
+                            <button class="btn-secondary" id="export-report-btn">
+                                <i class="fas fa-download"></i>
+                                Exportar
+                            </button>
+                        </div>
+                    </div>
+                    <div class="reports-content">
+                        <div class="report-summary">
+                            <h3>Resumo Financeiro</h3>
+                            <div id="report-summary-content">
+                                <!-- Report content will be loaded here -->
+                            </div>
+                        </div>
+                        <div class="report-charts">
+                            <canvas id="monthly-chart"></canvas>
+                        </div>
+                    </div>
+                </section>
+            </main>
+        </div>
+    </div>
+
+    <!-- Modals -->
+    <div id="modal-overlay" class="modal-overlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 id="modal-title"></h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body" id="modal-body">
+                <!-- Modal content will be loaded here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>
