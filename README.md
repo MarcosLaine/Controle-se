@@ -331,12 +331,6 @@ GET    /api/overview?userId={id}&period={mes}  # Resumo financeiro
 - ✅ **Tratamento de Erros**: Try-catch em todas as operações críticas
 - ✅ **Logging**: Debug logs para rastreamento de problemas
 
-## 🚀 Próximas Melhorias
-
-### Em Desenvolvimento
-- 🔄 Modularização completa do servidor (handlers separados)
-- 🔄 Autenticação com tokens JWT
-- 🔄 Gráficos interativos no dashboard
 
 ### Planejado
 - 📋 Exportação de relatórios em PDF
@@ -345,11 +339,6 @@ GET    /api/overview?userId={id}&period={mes}  # Resumo financeiro
 - 📋 Metas financeiras
 - 📋 Categorias padrão pré-definidas
 
-## 📚 Documentação Adicional
-
-- [ARQUITETURA_MODULAR.md](ARQUITETURA_MODULAR.md) - Guia de modularização do servidor
-- [docs/TP_Aeds3_Fase1.pdf](docs/TP_Aeds3_Fase1.pdf) - Especificação técnica Fase I
-- [docs/Fase II - TP.pdf](docs/Fase%20II%20-%20TP.pdf) - Especificação técnica Fase II
 
 ## 🤝 Desenvolvimento
 
@@ -373,10 +362,6 @@ java -cp bin ControleSeServer
 
 Acesse: **http://localhost:8080**
 
-## 📝 Licença
 
-Este projeto foi desenvolvido para fins **educacionais** como parte da disciplina de **Algoritmos e Estruturas de Dados III (AEDS3)**.
 
 ---
-
-**Desenvolvido com ☕ e Java puro**
