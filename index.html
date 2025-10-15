@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="styles.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
     <!-- Loading Screen -->
@@ -278,25 +279,96 @@
                     <div class="section-header">
                         <h2>Relatórios</h2>
                         <div class="report-controls">
-                            <select id="report-period">
-                                <option value="month">Mensal</option>
-                                <option value="year">Anual</option>
-                            </select>
-                            <button class="btn-secondary" id="export-report-btn">
-                                <i class="fas fa-download"></i>
-                                Exportar
-                            </button>
-                        </div>
-                    </div>
-                    <div class="reports-content">
-                        <div class="report-summary">
-                            <h3>Resumo Financeiro</h3>
-                            <div id="report-summary-content">
-                                <!-- Report content will be loaded here -->
+                            <div class="date-range-controls">
+                                <select id="report-period">
+                                    <option value="month">Este Mês</option>
+                                    <option value="year">Este Ano</option>
+                                    <option value="custom">Período Personalizado</option>
+                                </select>
+                                <div id="custom-date-range" style="display: none;">
+                                    <input type="date" id="start-date" placeholder="Data Início">
+                                    <input type="date" id="end-date" placeholder="Data Fim">
+                                </div>
+                            </div>
+                            <div class="export-controls">
+                                <select id="export-format">
+                                    <option value="csv">CSV</option>
+                                    <option value="xlsx">XLSX</option>
+                                </select>
+                                <button class="btn-primary" id="export-report-btn">
+                                    <i class="fas fa-download"></i>
+                                    Exportar
+                                </button>
                             </div>
                         </div>
-                        <div class="report-charts">
-                            <canvas id="monthly-chart"></canvas>
+                    </div>
+                    
+                    <!-- Report Summary Cards -->
+                    <div class="report-summary-cards">
+                        <div class="summary-card income">
+                            <div class="card-icon">
+                                <i class="fas fa-arrow-up"></i>
+                            </div>
+                            <div class="card-content">
+                                <h3>Total de Receitas</h3>
+                                <p class="amount" id="report-total-income">R$ 0,00</p>
+                                <p class="subtitle" id="report-income-count">0 transações</p>
+                            </div>
+                        </div>
+                        <div class="summary-card expense">
+                            <div class="card-icon">
+                                <i class="fas fa-arrow-down"></i>
+                            </div>
+                            <div class="card-content">
+                                <h3>Total de Gastos</h3>
+                                <p class="amount" id="report-total-expense">R$ 0,00</p>
+                                <p class="subtitle" id="report-expense-count">0 transações</p>
+                            </div>
+                        </div>
+                        <div class="summary-card balance">
+                            <div class="card-icon">
+                                <i class="fas fa-balance-scale"></i>
+                            </div>
+                            <div class="card-content">
+                                <h3>Saldo do Período</h3>
+                                <p class="amount" id="report-balance">R$ 0,00</p>
+                                <p class="subtitle" id="report-period-range">Período</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Charts and Analysis -->
+                    <div class="reports-grid">
+                        <!-- Category Analysis -->
+                        <div class="chart-container">
+                            <h3>Gastos por Categoria</h3>
+                            <div id="category-chart-container">
+                                <canvas id="category-chart"></canvas>
+                            </div>
+                        </div>
+                        
+                        <!-- Monthly Trend -->
+                        <div class="chart-container">
+                            <h3>Evolução Mensal</h3>
+                            <div id="monthly-chart-container">
+                                <canvas id="monthly-chart"></canvas>
+                            </div>
+                        </div>
+                        
+                        <!-- Account Analysis -->
+                        <div class="chart-container">
+                            <h3>Gastos por Conta</h3>
+                            <div id="account-chart-container">
+                                <canvas id="account-chart"></canvas>
+                            </div>
+                        </div>
+                        
+                        <!-- Top Expenses -->
+                        <div class="chart-container">
+                            <h3>Maiores Gastos</h3>
+                            <div id="top-expenses-list" class="top-expenses">
+                                <!-- Top expenses will be loaded here -->
+                            </div>
                         </div>
                     </div>
                 </section>

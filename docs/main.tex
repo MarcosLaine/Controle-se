@@ -369,6 +369,76 @@ O sistema implementa uma arquitetura de três camadas:
   \item Validação de relacionamentos (FK válidas)
 \end{itemize}
 
+\section{Sistema de Relatórios}
+
+\subsection{Implementação}
+
+O sistema de relatórios foi implementado como uma funcionalidade completa que permite análise detalhada dos dados financeiros do usuário através de dashboards interativos e exportação de dados.
+
+\subsubsection*{Backend (Java)}
+\begin{itemize}
+  \item \textbf{ReportsHandler}: Novo handler para processar requisições de relatórios
+  \item \textbf{Métodos de busca por período}: \texttt{buscarGastosPorPeriodo()} e \texttt{buscarReceitasPorPeriodo()}
+  \item \textbf{Exportação de dados}: Métodos para exportar relatórios em CSV e XLSX
+  \item \textbf{Análise de dados}: Cálculos de totais, análise por categoria, conta e evolução mensal
+\end{itemize}
+
+\subsubsection*{Frontend (JavaScript + Chart.js)}
+\begin{itemize}
+  \item \textbf{Dashboards interativos}: 4 tipos de visualizações gráficas
+  \item \textbf{Controles de período}: Mensal, anual e período personalizado
+  \item \textbf{Exportação}: Botões para exportar em CSV ou XLSX
+  \item \textbf{Cards de resumo}: Totais de receitas, gastos e saldo do período
+\end{itemize}
+
+\subsection{Tipos de Relatórios}
+
+\subsubsection*{Visualizações Implementadas}
+\begin{enumerate}
+  \item \textbf{Gráfico de Pizza}: Gastos por categoria com percentuais
+  \item \textbf{Gráfico de Linha}: Evolução mensal de receitas vs gastos (últimos 12 meses)
+  \item \textbf{Gráfico de Barras}: Gastos por conta bancária
+  \item \textbf{Lista}: Top 5 maiores gastos do período
+\end{enumerate}
+
+\subsubsection*{Períodos Disponíveis}
+\begin{itemize}
+  \item \textbf{Mensal}: Dados do mês atual
+  \item \textbf{Anual}: Dados do ano atual
+  \item \textbf{Personalizado}: Usuário define início e fim
+\end{itemize}
+
+\subsection{Exportação de Dados}
+
+\subsubsection*{Formatos Suportados}
+\begin{itemize}
+  \item \textbf{CSV}: Formato de planilha simples, compatível com Excel
+  \item \textbf{XLSX}: Formato Excel nativo (simulado com separadores de tabulação)
+\end{itemize}
+
+\subsubsection*{Dados Exportados}
+\begin{itemize}
+  \item Tipo de transação (Gasto/Receita)
+  \item Descrição da transação
+  \item Valor monetário
+  \item Data da transação
+  \item Categoria(ies) associada(s)
+  \item Conta bancária utilizada
+  \item Observações (quando existirem)
+\end{itemize}
+
+\subsection{Análise de Dados}
+
+O sistema realiza análises automáticas dos dados financeiros:
+
+\begin{itemize}
+  \item \textbf{Totais por período}: Soma de receitas, gastos e saldo
+  \item \textbf{Análise por categoria}: Distribuição percentual dos gastos
+  \item \textbf{Análise por conta}: Gastos por conta bancária
+  \item \textbf{Evolução temporal}: Tendências mensais dos últimos 12 meses
+  \item \textbf{Top gastos}: Maiores despesas do período para identificação de padrões
+\end{itemize}
+
 \section{Repositório do Projeto}
 
 O código-fonte completo do projeto está disponível publicamente no GitHub:
@@ -384,6 +454,7 @@ O código-fonte completo do projeto está disponível publicamente no GitHub:
   \item Documentação técnica e diagramas
   \item Instruções de compilação e execução
   \item Exemplos de uso e testes
+  \item Sistema completo de relatórios com dashboards e exportação
 \end{itemize}
 
 \end{document}

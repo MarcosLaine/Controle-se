@@ -603,6 +603,38 @@ public class BancoDados {
         return contas.stream().mapToDouble(Conta::getSaldoAtual).sum();
     }
     
+    // ========== OPERAÇÕES DE RELATÓRIOS POR PERÍODO ==========
+    
+    public List<Gasto> buscarGastosPorPeriodo(int idUsuario, LocalDate dataInicio, LocalDate dataFim) {
+        List<Gasto> gastosUsuario = buscarGastosPorUsuario(idUsuario);
+        List<Gasto> resultado = new ArrayList<>();
+        
+        for (Gasto gasto : gastosUsuario) {
+            if (gasto.isAtivo() && 
+                !gasto.getData().isBefore(dataInicio) && 
+                !gasto.getData().isAfter(dataFim)) {
+                resultado.add(gasto);
+            }
+        }
+        
+        return resultado;
+    }
+    
+    public List<Receita> buscarReceitasPorPeriodo(int idUsuario, LocalDate dataInicio, LocalDate dataFim) {
+        List<Receita> receitasUsuario = buscarReceitasPorUsuario(idUsuario);
+        List<Receita> resultado = new ArrayList<>();
+        
+        for (Receita receita : receitasUsuario) {
+            if (receita.isAtivo() && 
+                !receita.getData().isBefore(dataInicio) && 
+                !receita.getData().isAfter(dataFim)) {
+                resultado.add(receita);
+            }
+        }
+        
+        return resultado;
+    }
+    
     // ========== OPERAÇÕES DE ATUALIZAÇÃO ==========
     
     public void atualizarCategoria(int idCategoria, String novoNome) {

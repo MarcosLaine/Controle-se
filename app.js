@@ -68,6 +68,12 @@ class ControleSeApp {
 
         // Period select
         document.getElementById('period-select').addEventListener('change', () => this.updateOverview());
+        
+        // Reports
+        document.getElementById('report-period').addEventListener('change', () => this.handleReportPeriodChange());
+        document.getElementById('export-report-btn').addEventListener('click', () => this.exportReport());
+        document.getElementById('start-date').addEventListener('change', () => this.loadReports());
+        document.getElementById('end-date').addEventListener('change', () => this.loadReports());
     }
 
     // ===== AUTHENTICATION =====
@@ -1471,6 +1477,340 @@ class ControleSeApp {
             info: 'fa-info-circle'
         };
         return icons[type] || icons.info;
+    }
+    
+    // ===== REPORTS FUNCTIONALITY =====
+    
+    async loadReports() {
+        try {
+            const period = document.getElementById('report-period').value;
+            let startDate, endDate;
+            
+            if (period === 'custom') {
+                startDate = document.getElementById('start-date').value;
+                endDate = document.getElementById('end-date').value;
+                
+                if (!startDate || !endDate) {
+                    this.showToast('Por favor, selecione as datas de início e fim', 'warning');
+                    return;
+                }
+            }
+            
+            const userId = this.currentUser ? this.currentUser.id : 1;
+            let url = `/reports?userId=${userId}&period=${period}`;
+            
+            if (startDate && endDate) {
+                url += `&startDate=${startDate}&endDate=${endDate}`;
+            }
+            
+            const response = await this.apiCall(url, 'GET');
+            if (response.success) {
+                this.renderReports(response.data);
+            } else {
+                this.showToast('Erro ao carregar relatórios', 'error');
+            }
+        } catch (error) {
+            console.error('Error loading reports:', error);
+            this.showToast('Erro ao carregar relatórios', 'error');
+        }
+    }
+    
+    renderReports(data) {
+        // Update summary cards
+        document.getElementById('report-total-income').textContent = this.formatCurrency(data.totalIncomes);
+        document.getElementById('report-total-expense').textContent = this.formatCurrency(data.totalExpenses);
+        document.getElementById('report-balance').textContent = this.formatCurrency(data.balance);
+        document.getElementById('report-income-count').textContent = `${data.incomeCount} transações`;
+        document.getElementById('report-expense-count').textContent = `${data.expenseCount} transações`;
+        document.getElementById('report-period-range').textContent = `${data.startDate} a ${data.endDate}`;
+        
+        // Render charts
+        this.renderCategoryChart(data.categoryAnalysis);
+        this.renderMonthlyChart(data.monthlyAnalysis);
+        this.renderAccountChart(data.accountAnalysis);
+        this.renderTopExpenses(data.topExpenses);
+    }
+    
+    renderCategoryChart(categoryData) {
+        const ctx = document.getElementById('category-chart');
+        if (!ctx) return;
+        
+        // Destroy existing chart if it exists
+        if (this.categoryChart) {
+            this.categoryChart.destroy();
+        }
+        
+        const labels = Object.keys(categoryData);
+        const values = Object.values(categoryData);
+        
+        if (labels.length === 0) {
+            ctx.parentElement.innerHTML = '<div class="chart-no-data">Nenhum gasto por categoria no período</div>';
+            return;
+        }
+        
+        this.categoryChart = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: values,
+                    backgroundColor: [
+                        '#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', 
+                        '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E2',
+                        '#F8B739', '#52B788', '#D62828', '#5A189A'
+                    ],
+                    borderWidth: 2,
+                    borderColor: '#fff'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: {
+                            padding: 20,
+                            usePointStyle: true
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: (context) => {
+                                const value = context.parsed;
+                                const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                const percentage = ((value / total) * 100).toFixed(1);
+                                return `${context.label}: ${this.formatCurrency(value)} (${percentage}%)`;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+    
+    renderMonthlyChart(monthlyData) {
+        const ctx = document.getElementById('monthly-chart');
+        if (!ctx) return;
+        
+        // Destroy existing chart if it exists
+        if (this.monthlyChart) {
+            this.monthlyChart.destroy();
+        }
+        
+        const labels = monthlyData.map(item => {
+            const monthNames = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 
+                              'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+            return `${monthNames[item.month - 1]}/${item.year}`;
+        });
+        const expenses = monthlyData.map(item => item.expenses);
+        const incomes = monthlyData.map(item => item.incomes);
+        
+        this.monthlyChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [
+                    {
+                        label: 'Gastos',
+                        data: expenses,
+                        borderColor: '#dc2626',
+                        backgroundColor: 'rgba(220, 38, 38, 0.1)',
+                        tension: 0.4,
+                        fill: false
+                    },
+                    {
+                        label: 'Receitas',
+                        data: incomes,
+                        borderColor: '#059669',
+                        backgroundColor: 'rgba(5, 150, 105, 0.1)',
+                        tension: 0.4,
+                        fill: false
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'top',
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: (context) => {
+                                return `${context.dataset.label}: ${this.formatCurrency(context.parsed.y)}`;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: (value) => this.formatCurrency(value)
+                        }
+                    }
+                }
+            }
+        });
+    }
+    
+    renderAccountChart(accountData) {
+        const ctx = document.getElementById('account-chart');
+        if (!ctx) return;
+        
+        // Destroy existing chart if it exists
+        if (this.accountChart) {
+            this.accountChart.destroy();
+        }
+        
+        const labels = Object.keys(accountData);
+        const values = Object.values(accountData);
+        
+        if (labels.length === 0) {
+            ctx.parentElement.innerHTML = '<div class="chart-no-data">Nenhum gasto por conta no período</div>';
+            return;
+        }
+        
+        this.accountChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Gastos por Conta',
+                    data: values,
+                    backgroundColor: '#2563eb',
+                    borderColor: '#1d4ed8',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: (context) => {
+                                return `${context.label}: ${this.formatCurrency(context.parsed.y)}`;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: (value) => this.formatCurrency(value)
+                        }
+                    }
+                }
+            }
+        });
+    }
+    
+    renderTopExpenses(topExpenses) {
+        const container = document.getElementById('top-expenses-list');
+        container.innerHTML = '';
+        
+        if (topExpenses.length === 0) {
+            container.innerHTML = '<div class="chart-no-data">Nenhum gasto registrado no período</div>';
+            return;
+        }
+        
+        topExpenses.forEach((expense, index) => {
+            const item = document.createElement('div');
+            item.className = 'top-expense-item';
+            item.innerHTML = `
+                <div class="top-expense-info">
+                    <div class="top-expense-description">${expense.description}</div>
+                    <div class="top-expense-details">${expense.category} • ${this.formatDate(expense.date)}</div>
+                </div>
+                <div class="top-expense-value">${this.formatCurrency(expense.value)}</div>
+            `;
+            container.appendChild(item);
+        });
+    }
+    
+    handleReportPeriodChange() {
+        const period = document.getElementById('report-period').value;
+        const customDateRange = document.getElementById('custom-date-range');
+        
+        if (period === 'custom') {
+            customDateRange.style.display = 'flex';
+            // Set default dates (last 30 days)
+            const endDate = new Date();
+            const startDate = new Date();
+            startDate.setDate(startDate.getDate() - 30);
+            
+            document.getElementById('start-date').value = startDate.toISOString().split('T')[0];
+            document.getElementById('end-date').value = endDate.toISOString().split('T')[0];
+        } else {
+            customDateRange.style.display = 'none';
+        }
+        
+        this.loadReports();
+    }
+    
+    async exportReport() {
+        try {
+            const period = document.getElementById('report-period').value;
+            const format = document.getElementById('export-format').value;
+            let startDate, endDate;
+            
+            if (period === 'custom') {
+                startDate = document.getElementById('start-date').value;
+                endDate = document.getElementById('end-date').value;
+                
+                if (!startDate || !endDate) {
+                    this.showToast('Por favor, selecione as datas de início e fim', 'warning');
+                    return;
+                }
+            }
+            
+            const userId = this.currentUser ? this.currentUser.id : 1;
+            const requestData = {
+                userId: userId,
+                format: format,
+                period: period
+            };
+            
+            if (startDate && endDate) {
+                requestData.startDate = startDate;
+                requestData.endDate = endDate;
+            }
+            
+            const response = await fetch(`${this.apiBaseUrl}/reports`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': this.currentUser ? `Bearer ${this.currentUser.token}` : ''
+                },
+                body: JSON.stringify(requestData)
+            });
+            
+            if (response.ok) {
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `relatorio_${new Date().toISOString().split('T')[0]}.${format}`;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+                
+                this.showToast(`Relatório exportado como ${format.toUpperCase()} com sucesso!`, 'success');
+            } else {
+                this.showToast('Erro ao exportar relatório', 'error');
+            }
+        } catch (error) {
+            console.error('Error exporting report:', error);
+            this.showToast('Erro ao exportar relatório', 'error');
+        }
     }
     
     // ===== FUNÇÕES DE EDIÇÃO =====
