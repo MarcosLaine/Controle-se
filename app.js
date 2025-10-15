@@ -71,15 +71,13 @@ class ControleSeApp {
         
         // Reports
         document.getElementById('report-period').addEventListener('change', () => this.handleReportPeriodChange());
-        document.getElementById('export-report-btn').addEventListener('click', () => this.exportReport());
-        document.getElementById('export-pdf-btn').addEventListener('click', () => this.exportPDF());
-        
-        // Verificar status das bibliotecas e atualizar botão após um pequeno delay
-        setTimeout(() => {
-            this.updatePDFButtonStatus();
-        }, 2000);
+        document.getElementById('export-report-btn').addEventListener('click', () => this.handleExport());
+        document.getElementById('export-format').addEventListener('change', () => this.updateExportButtonIcon());
         document.getElementById('start-date').addEventListener('change', () => this.loadReports());
         document.getElementById('end-date').addEventListener('change', () => this.loadReports());
+        
+        // Inicializar ícone do botão de exportação
+        this.updateExportButtonIcon();
     }
 
     // ===== AUTHENTICATION =====
@@ -1761,6 +1759,39 @@ class ControleSeApp {
         this.loadReports();
     }
     
+    handleExport() {
+        const format = document.getElementById('export-format').value;
+        
+        if (format === 'pdf') {
+            this.exportPDF();
+        } else {
+            this.exportReport();
+        }
+    }
+
+    updateExportButtonIcon() {
+        const format = document.getElementById('export-format').value;
+        const button = document.getElementById('export-report-btn');
+        const icon = button.querySelector('i');
+        
+        // Remover todas as classes de ícone
+        icon.className = 'fas';
+        
+        switch (format) {
+            case 'csv':
+                icon.classList.add('fa-file-csv');
+                break;
+            case 'xlsx':
+                icon.classList.add('fa-file-excel');
+                break;
+            case 'pdf':
+                icon.classList.add('fa-file-pdf');
+                break;
+            default:
+                icon.classList.add('fa-download');
+        }
+    }
+
     async exportReport() {
         try {
             const period = document.getElementById('report-period').value;
@@ -2053,38 +2084,6 @@ class ControleSeApp {
         });
     }
 
-    updatePDFButtonStatus() {
-        const pdfButton = document.getElementById('export-pdf-btn');
-        if (!pdfButton) return;
-
-        // Verificação única após 3 segundos
-        setTimeout(() => {
-            const jsPDFLoaded = typeof window.jsPDF !== 'undefined';
-            const html2canvasLoaded = typeof window.html2canvas !== 'undefined';
-            
-            console.log('Verificação final das bibliotecas:', {
-                jsPDF: jsPDFLoaded,
-                html2canvas: html2canvasLoaded
-            });
-            
-            if (jsPDFLoaded && html2canvasLoaded) {
-                pdfButton.innerHTML = '<i class="fas fa-file-pdf"></i> PDF com Gráficos';
-                pdfButton.disabled = false;
-                pdfButton.style.opacity = '1';
-                console.log('Bibliotecas carregadas! Botão ativado.');
-            } else {
-                pdfButton.innerHTML = '<i class="fas fa-file-pdf"></i> PDF (Alternativo)';
-                pdfButton.disabled = false;
-                pdfButton.style.opacity = '1';
-                console.log('Usando método alternativo');
-            }
-        }, 3000);
-        
-        // Estado inicial
-        pdfButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Carregando...';
-        pdfButton.disabled = true;
-        pdfButton.style.opacity = '0.7';
-    }
 
     async exportPDFAlternative() {
         try {

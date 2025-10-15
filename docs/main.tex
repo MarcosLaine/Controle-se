@@ -485,7 +485,22 @@ O código-fonte completo do projeto está disponível publicamente no GitHub:
 
 \textbf{a) Qual a estrutura usada para representar os registros?}
 
-Os registros são representados através de classes Java que implementam a interface \texttt{Serializable} para persistência. Cada entidade possui uma classe específica (Usuario, Gasto, Receita, Categoria, Conta, Orcamento, Tag) com atributos correspondentes aos campos do banco de dados. Os registros são armazenados em arquivos \texttt{.db} usando serialização Java nativa.
+Os registros são armazenados em disco usando a seguinte estrutura:
+
+\begin{itemize}
+  \item \textbf{Formato}: Arquivos binários \texttt{.db} usando serialização Java nativa
+  \item \textbf{Organização}: Um arquivo por entidade (usuarios.db, gastos.db, categorias.db, etc.)
+  \item \textbf{Estrutura interna}: Cada arquivo contém uma lista serializada de objetos Java
+  \item \textbf{Classes}: Implementam interface \texttt{Serializable} com campos específicos:
+    \begin{itemize}
+      \item \texttt{Usuario}: id, nome, email, senha, ativo
+      \item \texttt{Gasto}: id, idUsuario, valor, descricao, data, observacoes[], ativo
+      \item \texttt{Categoria}: id, idUsuario, nome, cor, ativo
+      \item \texttt{Tag}: id, idUsuario, nome, cor, ativo
+    \end{itemize}
+  \item \textbf{Persistência}: Carregamento completo do arquivo na memória, modificação e reescrita
+  \item \textbf{Índices}: Mantidos em arquivos separados para busca eficiente (Hash Extensível e B+ Tree)
+\end{itemize}
 
 \textbf{b) Como atributos multivalorados do tipo string foram tratados?}
 
