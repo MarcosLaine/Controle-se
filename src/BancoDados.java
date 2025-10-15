@@ -19,6 +19,8 @@ public class BancoDados {
     private static final String ORCAMENTOS_DB = DATA_DIR + "/orcamentos.db";
     private static final String CONTADORES_DB = DATA_DIR + "/contadores.db";
     private static final String CATEGORIA_GASTO_DB = DATA_DIR + "/categoria_gasto.db";
+    private static final String TAGS_DB = DATA_DIR + "/tags.db";
+    private static final String TRANSACAO_TAG_DB = DATA_DIR + "/transacao_tag.db";
     
     // Tabelas principais com índices primários (Árvore B+)
     private ArvoreBPlus tabelaUsuarios;
@@ -27,8 +29,10 @@ public class BancoDados {
     private ArvoreBPlus tabelaReceitas;
     private ArvoreBPlus tabelaContas;
     private ArvoreBPlus tabelaOrcamentos;
+    private ArvoreBPlus tabelaTags;
     // Relacionamentos N:N não precisam de ArvoreBPlus, apenas dos índices Hash
     private List<CategoriaGasto> relacionamentosCategoriaGasto;
+    private List<TransacaoTag> relacionamentosTransacaoTag;
     
     // Índices secundários (Hash Extensível) para relacionamentos 1:N
     private HashExtensivel indiceUsuarioCategorias;    // Usuario -> Categorias
@@ -46,6 +50,13 @@ public class BancoDados {
     private HashExtensivel indiceCategoriaGastos;     // Categoria -> Gastos (relacionamento N:N)
     private HashExtensivel indiceGastoCategorias;     // Gasto -> Categorias (relacionamento N:N reverso)
     
+    // Índices para Tags (atributo multivalorado via N:N)
+    private HashExtensivel indiceUsuarioTags;         // Usuario -> Tags
+    private HashExtensivel indiceTagGastos;           // Tag -> Gastos (relacionamento N:N)
+    private HashExtensivel indiceTagReceitas;         // Tag -> Receitas (relacionamento N:N)
+    private HashExtensivel indiceGastoTags;           // Gasto -> Tags (relacionamento N:N reverso)
+    private HashExtensivel indiceReceitaTags;         // Receita -> Tags (relacionamento N:N reverso)
+    
     // Contadores para IDs únicos
     private int proximoIdUsuario = 1;
     private int proximoIdCategoria = 1;
@@ -54,16 +65,21 @@ public class BancoDados {
     private int proximoIdConta = 1;
     private int proximoIdOrcamento = 1;
     private int proximoIdCategoriaGasto = 1;
+    private int proximoIdTag = 1;
+    private int proximoIdTransacaoTag = 1;
     
     public BancoDados() {
-        // Inicializa tabelas principais
+        // Inicializa tabelas principais com Árvore B+ de ordem 4
+        // Ordem 4 = máximo de 4 filhos por nó = máximo de 3 chaves por nó
         tabelaUsuarios = new ArvoreBPlus(4);
         tabelaCategorias = new ArvoreBPlus(4);
         tabelaGastos = new ArvoreBPlus(4);
         tabelaReceitas = new ArvoreBPlus(4);
         tabelaContas = new ArvoreBPlus(4);
         tabelaOrcamentos = new ArvoreBPlus(4);
+        tabelaTags = new ArvoreBPlus(4);
         relacionamentosCategoriaGasto = new ArrayList<>();
+        relacionamentosTransacaoTag = new ArrayList<>();
         
         // Inicializa índices secundários
         indiceUsuarioCategorias = new HashExtensivel(3);
@@ -80,6 +96,13 @@ public class BancoDados {
         indiceTipoContas = new HashExtensivel(3);
         indiceCategoriaGastos = new HashExtensivel(3);
         indiceGastoCategorias = new HashExtensivel(3);
+        
+        // Inicializa índices para Tags
+        indiceUsuarioTags = new HashExtensivel(3);
+        indiceTagGastos = new HashExtensivel(3);
+        indiceTagReceitas = new HashExtensivel(3);
+        indiceGastoTags = new HashExtensivel(3);
+        indiceReceitaTags = new HashExtensivel(3);
         
         // Carrega dados persistidos
         carregarDados();
@@ -169,10 +192,15 @@ public class BancoDados {
     
     // ========== OPERAÇÕES DE GASTO ==========
     
-    public int cadastrarGasto(String descricao, double valor, LocalDate data, String frequencia, int idUsuario, List<Integer> idsCategorias, int idConta) {
+    public int cadastrarGasto(String descricao, double valor, LocalDate data, String frequencia, int idUsuario, List<Integer> idsCategorias, int idConta, String[] observacoes) {
         int idGasto = proximoIdGasto++;
         // Gasto não tem mais idCategoria direto - relacionamento via CategoriaGasto
         Gasto gasto = new Gasto(idGasto, descricao, valor, data, frequencia, idUsuario, 0, idConta);
+        
+        // Define observações se fornecidas
+        if (observacoes != null && observacoes.length > 0) {
+            gasto.setObservacoes(observacoes);
+        }
         
         // Insere na tabela principal
         tabelaGastos.inserir(idGasto, gasto);
@@ -213,7 +241,12 @@ public class BancoDados {
         if (idCategoria > 0) {
             categorias.add(idCategoria);
         }
-        return cadastrarGasto(descricao, valor, data, frequencia, idUsuario, categorias, idConta);
+        return cadastrarGasto(descricao, valor, data, frequencia, idUsuario, categorias, idConta, null);
+    }
+    
+    // Sobrecarga para manter compatibilidade (sem observações)
+    public int cadastrarGasto(String descricao, double valor, LocalDate data, String frequencia, int idUsuario, List<Integer> idsCategorias, int idConta) {
+        return cadastrarGasto(descricao, valor, data, frequencia, idUsuario, idsCategorias, idConta, null);
     }
     
     public Gasto buscarGasto(int idGasto) {
@@ -662,6 +695,281 @@ public class BancoDados {
         }
     }
     
+    // ========== PROCESSAMENTO DE RECORRÊNCIAS ==========
+    
+    /**
+     * Processa todas as recorrências pendentes (gastos e receitas)
+     * Deve ser executado diariamente pelo scheduler
+     */
+    public int processarRecorrencias() {
+        int recorrenciasCriadas = 0;
+        LocalDate hoje = LocalDate.now();
+        
+        System.out.println("[RECORRÊNCIAS] Processando recorrências para " + hoje);
+        
+        // Processa gastos recorrentes
+        recorrenciasCriadas += processarGastosRecorrentes(hoje);
+        
+        // Processa receitas recorrentes
+        recorrenciasCriadas += processarReceitasRecorrentes(hoje);
+        
+        if (recorrenciasCriadas > 0) {
+            System.out.println("[RECORRÊNCIAS] Total de " + recorrenciasCriadas + " transações criadas automaticamente");
+        } else {
+            System.out.println("[RECORRÊNCIAS] Nenhuma recorrência pendente para hoje");
+        }
+        
+        return recorrenciasCriadas;
+    }
+    
+    /**
+     * Processa gastos recorrentes que vencem hoje ou antes
+     */
+    private int processarGastosRecorrentes(LocalDate hoje) {
+        int criados = 0;
+        
+        // Percorre todos os gastos ativos
+        for (int i = 1; i < proximoIdGasto; i++) {
+            Gasto gastoOriginal = buscarGasto(i);
+            
+            if (gastoOriginal == null || !gastoOriginal.isAtivo()) {
+                continue; // Ignora gastos excluídos
+            }
+            
+            // Verifica se é recorrente e se chegou o momento
+            if (gastoOriginal.getProximaRecorrencia() != null && 
+                !gastoOriginal.getProximaRecorrencia().isAfter(hoje)) {
+                
+                System.out.println("[RECORRÊNCIAS] Criando recorrência de gasto: " + gastoOriginal.getDescricao());
+                
+                // Busca as categorias do gasto original
+                List<Categoria> categorias = buscarCategoriasDoGasto(gastoOriginal.getIdGasto());
+                List<Integer> idsCategorias = new ArrayList<>();
+                for (Categoria cat : categorias) {
+                    idsCategorias.add(cat.getIdCategoria());
+                }
+                
+                // Cria novo gasto com a data de recorrência
+                int novoIdGasto = cadastrarGasto(
+                    gastoOriginal.getDescricao() + " (Recorrência)",
+                    gastoOriginal.getValor(),
+                    gastoOriginal.getProximaRecorrencia(),
+                    gastoOriginal.getFrequencia(),
+                    gastoOriginal.getIdUsuario(),
+                    idsCategorias,
+                    gastoOriginal.getIdConta(),
+                    gastoOriginal.getObservacoes()
+                );
+                
+                // Marca o novo gasto como recorrência do original
+                Gasto novoGasto = buscarGasto(novoIdGasto);
+                if (novoGasto != null) {
+                    novoGasto.setIdGastoOriginal(gastoOriginal.getIdGasto());
+                    salvarGastos();
+                }
+                
+                // Busca e copia tags do gasto original
+                List<Tag> tags = buscarTagsGasto(gastoOriginal.getIdGasto());
+                for (Tag tag : tags) {
+                    associarTagTransacao(novoIdGasto, "GASTO", tag.getIdTag());
+                }
+                
+                // Atualiza a próxima recorrência do original
+                gastoOriginal.avancarProximaRecorrencia();
+                salvarGastos();
+                
+                criados++;
+            }
+        }
+        
+        return criados;
+    }
+    
+    /**
+     * Processa receitas recorrentes que vencem hoje ou antes
+     */
+    private int processarReceitasRecorrentes(LocalDate hoje) {
+        int criados = 0;
+        
+        // Percorre todas as receitas ativas
+        for (int i = 1; i < proximoIdReceita; i++) {
+            Receita receitaOriginal = buscarReceita(i);
+            
+            if (receitaOriginal == null || !receitaOriginal.isAtivo()) {
+                continue; // Ignora receitas excluídas
+            }
+            
+            // Verifica se é recorrente e se chegou o momento
+            if (receitaOriginal.getProximaRecorrencia() != null && 
+                !receitaOriginal.getProximaRecorrencia().isAfter(hoje)) {
+                
+                System.out.println("[RECORRÊNCIAS] Criando recorrência de receita: " + receitaOriginal.getDescricao());
+                
+                // Cria nova receita com a data de recorrência
+                int novoIdReceita = cadastrarReceita(
+                    receitaOriginal.getDescricao() + " (Recorrência)",
+                    receitaOriginal.getValor(),
+                    receitaOriginal.getProximaRecorrencia(),
+                    receitaOriginal.getIdUsuario(),
+                    receitaOriginal.getIdConta()
+                );
+                
+                // Marca a nova receita como recorrência da original
+                Receita novaReceita = buscarReceita(novoIdReceita);
+                if (novaReceita != null) {
+                    novaReceita.setFrequencia(receitaOriginal.getFrequencia());
+                    novaReceita.setIdReceitaOriginal(receitaOriginal.getIdReceita());
+                    novaReceita.setProximaRecorrencia(
+                        receitaOriginal.getProximaRecorrencia()
+                    );
+                    salvarReceitas();
+                }
+                
+                // Busca e copia tags da receita original
+                List<Tag> tags = buscarTagsReceita(receitaOriginal.getIdReceita());
+                for (Tag tag : tags) {
+                    associarTagTransacao(novoIdReceita, "RECEITA", tag.getIdTag());
+                }
+                
+                // Atualiza a próxima recorrência da original
+                receitaOriginal.avancarProximaRecorrencia();
+                salvarReceitas();
+                
+                criados++;
+            }
+        }
+        
+        return criados;
+    }
+    
+    // ========== OPERAÇÕES DE TAG (ATRIBUTO MULTIVALORADO) ==========
+    
+    public int cadastrarTag(String nome, String cor, int idUsuario) {
+        int idTag = proximoIdTag++;
+        Tag tag = new Tag(idTag, nome, cor, idUsuario);
+        
+        // Insere na tabela principal
+        tabelaTags.inserir(idTag, tag);
+        
+        // Atualiza índice
+        indiceUsuarioTags.inserir(idUsuario, tag);
+        
+        // Persiste os dados
+        salvarTags();
+        salvarContadores();
+        
+        return idTag;
+    }
+    
+    public Tag buscarTag(int idTag) {
+        return (Tag) tabelaTags.buscar(idTag);
+    }
+    
+    public List<Tag> buscarTagsPorUsuario(int idUsuario) {
+        List<Object> objetos = indiceUsuarioTags.buscar(idUsuario);
+        List<Tag> tags = new ArrayList<>();
+        for (Object obj : objetos) {
+            Tag tag = (Tag) obj;
+            if (tag.isAtivo()) {
+                tags.add(tag);
+            }
+        }
+        return tags;
+    }
+    
+    public void atualizarTag(int idTag, String novoNome, String novaCor) {
+        Tag tag = buscarTag(idTag);
+        if (tag != null) {
+            tag.setNome(novoNome);
+            tag.setCor(novaCor);
+            salvarTags();
+        }
+    }
+    
+    public void excluirTag(int idTag) {
+        Tag tag = buscarTag(idTag);
+        if (tag != null) {
+            tag.setAtivo(false);
+            salvarTags();
+        }
+    }
+    
+    // Associar tag a uma transação (gasto ou receita)
+    public void associarTagTransacao(int idTransacao, String tipoTransacao, int idTag) {
+        int idTransacaoTag = proximoIdTransacaoTag++;
+        TransacaoTag transacaoTag = new TransacaoTag(idTransacaoTag, idTransacao, tipoTransacao, idTag);
+        
+        relacionamentosTransacaoTag.add(transacaoTag);
+        
+        // Atualiza índices
+        if (tipoTransacao.equals("GASTO")) {
+            indiceTagGastos.inserir(idTag, idTransacao);
+            indiceGastoTags.inserir(idTransacao, idTag);
+        } else if (tipoTransacao.equals("RECEITA")) {
+            indiceTagReceitas.inserir(idTag, idTransacao);
+            indiceReceitaTags.inserir(idTransacao, idTag);
+        }
+        
+        salvarTransacaoTag();
+        salvarContadores();
+    }
+    
+    // Buscar tags de um gasto
+    public List<Tag> buscarTagsGasto(int idGasto) {
+        List<Object> objetos = indiceGastoTags.buscar(idGasto);
+        List<Tag> tags = new ArrayList<>();
+        for (Object obj : objetos) {
+            int idTag = (Integer) obj;
+            Tag tag = buscarTag(idTag);
+            if (tag != null && tag.isAtivo()) {
+                tags.add(tag);
+            }
+        }
+        return tags;
+    }
+    
+    // Buscar tags de uma receita
+    public List<Tag> buscarTagsReceita(int idReceita) {
+        List<Object> objetos = indiceReceitaTags.buscar(idReceita);
+        List<Tag> tags = new ArrayList<>();
+        for (Object obj : objetos) {
+            int idTag = (Integer) obj;
+            Tag tag = buscarTag(idTag);
+            if (tag != null && tag.isAtivo()) {
+                tags.add(tag);
+            }
+        }
+        return tags;
+    }
+    
+    // Buscar gastos por tag
+    public List<Gasto> buscarGastosPorTag(int idTag) {
+        List<Object> objetos = indiceTagGastos.buscar(idTag);
+        List<Gasto> gastos = new ArrayList<>();
+        for (Object obj : objetos) {
+            int idGasto = (Integer) obj;
+            Gasto gasto = buscarGasto(idGasto);
+            if (gasto != null && gasto.isAtivo()) {
+                gastos.add(gasto);
+            }
+        }
+        return gastos;
+    }
+    
+    // Buscar receitas por tag
+    public List<Receita> buscarReceitasPorTag(int idTag) {
+        List<Object> objetos = indiceTagReceitas.buscar(idTag);
+        List<Receita> receitas = new ArrayList<>();
+        for (Object obj : objetos) {
+            int idReceita = (Integer) obj;
+            Receita receita = buscarReceita(idReceita);
+            if (receita != null && receita.isAtivo()) {
+                receitas.add(receita);
+            }
+        }
+        return receitas;
+    }
+    
     // ========== PERSISTÊNCIA DE DADOS ==========
     
     private void carregarDados() {
@@ -674,6 +982,8 @@ public class BancoDados {
             carregarReceitas();
             carregarContas();
             carregarOrcamentos();
+            carregarTags();
+            carregarTransacaoTag(); // Carrega relacionamentos N:N Tags
             System.out.println("✓ Dados carregados do disco");
         } catch (Exception e) {
             System.out.println("⚠ Primeira execução ou erro ao carregar dados: " + e.getMessage());
@@ -689,6 +999,8 @@ public class BancoDados {
             oos.writeInt(proximoIdConta);
             oos.writeInt(proximoIdOrcamento);
             oos.writeInt(proximoIdCategoriaGasto);
+            oos.writeInt(proximoIdTag);
+            oos.writeInt(proximoIdTransacaoTag);
         } catch (IOException e) {
             System.err.println("Erro ao salvar contadores: " + e.getMessage());
         }
@@ -707,9 +1019,13 @@ public class BancoDados {
             proximoIdOrcamento = ois.readInt();
             try {
                 proximoIdCategoriaGasto = ois.readInt();
+                proximoIdTag = ois.readInt();
+                proximoIdTransacaoTag = ois.readInt();
             } catch (EOFException e) {
-                // Arquivo antigo sem este contador
+                // Arquivo antigo sem estes contadores
                 proximoIdCategoriaGasto = 1;
+                proximoIdTag = 1;
+                proximoIdTransacaoTag = 1;
             }
         }
     }
@@ -790,16 +1106,31 @@ public class BancoDados {
     @SuppressWarnings("unchecked")
     private void carregarGastos() throws IOException, ClassNotFoundException {
         File file = new File(GASTOS_DB);
-        if (!file.exists()) return;
+        if (!file.exists()) {
+            System.out.println("Arquivo de gastos não encontrado: " + GASTOS_DB);
+            return;
+        }
         
         try (ObjectInputStream ois = new ObjectInputStream(new FileInputStream(GASTOS_DB))) {
             List<Gasto> gastos = (List<Gasto>) ois.readObject();
+            System.out.println("Carregando " + gastos.size() + " gastos...");
+            
             for (Gasto gasto : gastos) {
+                // Inicializa observacoes se for null (compatibilidade com dados antigos)
+                if (gasto.getObservacoes() == null) {
+                    gasto.setObservacoes(new String[0]);
+                }
+                
                 tabelaGastos.inserir(gasto.getIdGasto(), gasto);
                 indiceUsuarioGastos.inserir(gasto.getIdUsuario(), gasto);
                 indiceDataGastos.inserir(gasto.getData().hashCode(), gasto);
                 // Não insere mais no indiceCategoriaGastos - isso é feito via CategoriaGasto
             }
+            System.out.println("✓ " + gastos.size() + " gastos carregados com sucesso");
+        } catch (Exception e) {
+            System.err.println("Erro ao carregar gastos: " + e.getMessage());
+            e.printStackTrace();
+            throw e;
         }
     }
     
@@ -911,6 +1242,71 @@ public class BancoDados {
                 tabelaOrcamentos.inserir(orcamento.getIdOrcamento(), orcamento);
                 indiceUsuarioOrcamentos.inserir(orcamento.getIdUsuario(), orcamento);
                 indiceCategoriaOrcamentos.inserir(orcamento.getIdCategoria(), orcamento);
+            }
+        }
+    }
+    
+    private void salvarTags() {
+        try (ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(TAGS_DB))) {
+            List<Tag> tags = new ArrayList<>();
+            for (int i = 1; i < proximoIdTag; i++) {
+                Tag tag = buscarTag(i);
+                if (tag != null) {
+                    tags.add(tag);
+                }
+            }
+            oos.writeObject(tags);
+        } catch (IOException e) {
+            System.err.println("Erro ao salvar tags: " + e.getMessage());
+        }
+    }
+    
+    @SuppressWarnings("unchecked")
+    private void carregarTags() throws IOException, ClassNotFoundException {
+        File file = new File(TAGS_DB);
+        if (!file.exists()) return;
+        
+        try (ObjectInputStream ois = new ObjectInputStream(new FileInputStream(TAGS_DB))) {
+            List<Tag> tags = (List<Tag>) ois.readObject();
+            for (Tag tag : tags) {
+                tabelaTags.inserir(tag.getIdTag(), tag);
+                indiceUsuarioTags.inserir(tag.getIdUsuario(), tag);
+            }
+        }
+    }
+    
+    private void salvarTransacaoTag() {
+        try (ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(TRANSACAO_TAG_DB))) {
+            List<TransacaoTag> transacoesTags = new ArrayList<>();
+            for (TransacaoTag transacaoTag : relacionamentosTransacaoTag) {
+                if (transacaoTag.isAtivo()) {
+                    transacoesTags.add(transacaoTag);
+                }
+            }
+            oos.writeObject(transacoesTags);
+        } catch (IOException e) {
+            System.err.println("Erro ao salvar transação-tag: " + e.getMessage());
+        }
+    }
+    
+    @SuppressWarnings("unchecked")
+    private void carregarTransacaoTag() throws IOException, ClassNotFoundException {
+        File file = new File(TRANSACAO_TAG_DB);
+        if (!file.exists()) return;
+        
+        try (ObjectInputStream ois = new ObjectInputStream(new FileInputStream(TRANSACAO_TAG_DB))) {
+            List<TransacaoTag> transacoesTags = (List<TransacaoTag>) ois.readObject();
+            for (TransacaoTag transacaoTag : transacoesTags) {
+                relacionamentosTransacaoTag.add(transacaoTag);
+                
+                // Reconstrói índices
+                if (transacaoTag.getTipoTransacao().equals("GASTO")) {
+                    indiceTagGastos.inserir(transacaoTag.getIdTag(), transacaoTag.getIdTransacao());
+                    indiceGastoTags.inserir(transacaoTag.getIdTransacao(), transacaoTag.getIdTag());
+                } else if (transacaoTag.getTipoTransacao().equals("RECEITA")) {
+                    indiceTagReceitas.inserir(transacaoTag.getIdTag(), transacaoTag.getIdTransacao());
+                    indiceReceitaTags.inserir(transacaoTag.getIdTransacao(), transacaoTag.getIdTag());
+                }
             }
         }
     }

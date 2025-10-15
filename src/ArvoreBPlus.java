@@ -4,6 +4,18 @@ import java.util.List;
 /**
  * Implementação de Árvore B+ para índices primários
  * Utilizada para manter os registros ordenados por chave primária
+ * 
+ * DEFINIÇÃO DE ORDEM:
+ * - ordem m = número máximo de FILHOS que um nó pode ter
+ * - Número máximo de chaves por nó = m - 1
+ * - Número mínimo de filhos (nós internos não-raiz) = ⌈m/2⌉
+ * - Número mínimo de chaves (nós internos não-raiz) = ⌈m/2⌉ - 1
+ * 
+ * Exemplo: ordem = 4
+ * - Máximo de 4 filhos
+ * - Máximo de 3 chaves
+ * - Mínimo de 2 filhos (nós internos)
+ * - Mínimo de 1 chave (nós internos)
  */
 class NoBPlus {
     boolean ehFolha;
@@ -35,13 +47,20 @@ class Registro {
 
 public class ArvoreBPlus {
     private NoBPlus raiz;
-    private int ordem; // Ordem da árvore B+
+    private final int ordem; // Ordem da árvore B+ (número máximo de filhos)
+    private final int maxChaves; // Número máximo de chaves = ordem - 1
     private int proximaChave;
     
     public ArvoreBPlus(int ordem) {
         this.raiz = new NoBPlus(true);
         this.ordem = ordem;
+        this.maxChaves = ordem - 1;
         this.proximaChave = 1;
+    }
+    
+    // Getter para ordem (útil para informações sobre a árvore)
+    public int getOrdem() {
+        return ordem;
     }
     
     // Métodos públicos
@@ -158,7 +177,8 @@ public class ArvoreBPlus {
         folha.chaves.add(indice, chave);
         folha.registros.add(indice, registro);
         
-        if (folha.chaves.size() > ordem) {
+        // Divide se exceder o número máximo de chaves (ordem - 1)
+        if (folha.chaves.size() > maxChaves) {
             dividirFolha(folha);
         }
     }
@@ -205,7 +225,8 @@ public class ArvoreBPlus {
         pai.filhos.add(indice + 1, novoFilho);
         novoFilho.pai = pai;
         
-        if (pai.chaves.size() > ordem) {
+        // Divide se exceder o número máximo de chaves (ordem - 1)
+        if (pai.chaves.size() > maxChaves) {
             dividirNoInterno(pai);
         }
     }

@@ -4,6 +4,7 @@
     --primary-color: #2563eb;        /* Blue 600 - Trust, stability */
     --primary-hover: #1d4ed8;       /* Blue 700 */
     --primary-light: #dbeafe;       /* Blue 100 */
+    --primary-50: #eff6ff;          /* Blue 50 */
     
     --secondary-color: #64748b;     /* Slate 500 - Professional */
     --secondary-hover: #475569;    /* Slate 600 */
@@ -258,6 +259,52 @@ body {
     box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
 }
 
+/* Form Divider */
+.form-divider {
+    display: flex;
+    align-items: center;
+    margin: var(--spacing-6) 0;
+    gap: var(--spacing-3);
+}
+
+.form-divider hr {
+    flex: 1;
+    border: none;
+    border-top: 1px solid var(--neutral-300);
+}
+
+.form-divider span {
+    font-size: var(--font-size-sm);
+    font-weight: 500;
+    color: var(--neutral-500);
+    white-space: nowrap;
+}
+
+/* New Category Field Highlight */
+#new-category-field {
+    padding: var(--spacing-4);
+    background: var(--primary-50);
+    border: 2px dashed var(--primary-color);
+    border-radius: var(--radius-md);
+    margin-top: var(--spacing-3);
+    animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+#new-category-field .form-group {
+    margin-bottom: 0;
+}
+
 /* Checkbox Group */
 .checkbox-group {
     display: flex;
@@ -339,6 +386,29 @@ body {
 .btn-secondary:hover {
     background: var(--neutral-50);
     border-color: var(--neutral-400);
+}
+
+.btn-link {
+    background: none;
+    border: none;
+    color: var(--primary-color);
+    cursor: pointer;
+    padding: var(--spacing-2) 0;
+    font-size: var(--font-size-sm);
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-2);
+    transition: all var(--transition-normal);
+}
+
+.btn-link:hover {
+    color: var(--primary-600);
+    text-decoration: underline;
+}
+
+.btn-link i {
+    font-size: 14px;
 }
 
 /* ===== DASHBOARD ===== */
@@ -694,7 +764,8 @@ body {
 /* ===== GRIDS ===== */
 .categories-grid,
 .accounts-grid,
-.budgets-grid {
+.budgets-grid,
+.tags-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
     gap: var(--spacing-6);
@@ -702,7 +773,8 @@ body {
 
 .category-card,
 .account-card,
-.budget-card {
+.budget-card,
+.tag-card {
     background: white;
     border-radius: var(--radius-lg);
     padding: var(--spacing-6);
@@ -713,7 +785,8 @@ body {
 
 .category-card:hover,
 .account-card:hover,
-.budget-card:hover {
+.budget-card:hover,
+.tag-card:hover {
     transform: translateY(-2px);
     box-shadow: var(--shadow-lg);
 }
@@ -832,6 +905,90 @@ body {
     border-left-color: var(--primary-color);
 }
 
+/* ===== TAGS ===== */
+.tag-header {
+    margin-bottom: var(--spacing-4);
+}
+
+.tag-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-2);
+    padding: var(--spacing-2) var(--spacing-4);
+    border-radius: var(--radius-full);
+    color: white;
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    box-shadow: var(--shadow-sm);
+}
+
+.tag-badge-small {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px;
+    border-radius: var(--radius-full);
+    color: white;
+    font-size: 12px;
+    font-weight: 500;
+    margin-right: 6px;
+    margin-top: 4px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+
+.transaction-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 8px;
+}
+
+/* Transaction Observations */
+.transaction-observations {
+    margin-top: 8px;
+    padding: 8px;
+    background-color: var(--neutral-50);
+    border-radius: 6px;
+    border-left: 3px solid var(--primary-500);
+}
+
+.transaction-observations strong {
+    color: var(--neutral-700);
+    font-size: 0.875rem;
+}
+
+.transaction-observations ul {
+    margin: 4px 0 0 0;
+    padding-left: 16px;
+}
+
+.transaction-observations li {
+    color: var(--neutral-600);
+    font-size: 0.8rem;
+    margin-bottom: 2px;
+}
+
+.color-picker {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-3);
+}
+
+.color-picker input[type="color"] {
+    width: 60px;
+    height: 40px;
+    border: 1px solid var(--neutral-300);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+}
+
+#color-preview {
+    width: 100px;
+    height: 40px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--neutral-300);
+    box-shadow: var(--shadow-sm);
+}
+
 /* ===== RESPONSIVE DESIGN ===== */
 @media (max-width: 768px) {
     .dashboard {
@@ -867,7 +1024,8 @@ body {
     
     .categories-grid,
     .accounts-grid,
-    .budgets-grid {
+    .budgets-grid,
+    .tags-grid {
         grid-template-columns: 1fr;
     }
     

@@ -5,6 +5,8 @@ class ControleSeApp {
         this.apiBaseUrl = 'http://localhost:8080/api'; // Backend API URL
         this.categoriesCache = []; // Cache de categorias
         this.accountsCache = []; // Cache de contas
+        this.tagsCache = []; // Cache de tags
+        this.transactionsCache = []; // Cache de transações
         this.init();
     }
 
@@ -56,9 +58,11 @@ class ControleSeApp {
         document.getElementById('add-expense-btn').addEventListener('click', () => this.showAddExpenseModal());
         document.getElementById('add-income-btn').addEventListener('click', () => this.showAddIncomeModal());
         document.getElementById('add-budget-btn').addEventListener('click', () => this.showAddBudgetModal());
+        document.getElementById('add-tag-btn').addEventListener('click', () => this.showAddTagModal());
 
         // Filters
         document.getElementById('category-filter').addEventListener('change', () => this.filterTransactions());
+        document.getElementById('tag-filter').addEventListener('change', () => this.filterTransactions());
         document.getElementById('date-filter').addEventListener('change', () => this.filterTransactions());
         document.getElementById('clear-filters').addEventListener('click', () => this.clearFilters());
 
@@ -184,7 +188,8 @@ class ControleSeApp {
                 this.loadRecentTransactions(),
                 this.loadCategories(),
                 this.loadAccounts(),
-                this.loadBudgets()
+                this.loadBudgets(),
+                this.loadTags()
             ]);
         } catch (error) {
             console.error('Error loading dashboard data:', error);
@@ -208,6 +213,9 @@ class ControleSeApp {
                 break;
             case 'budgets':
                 await this.loadBudgets();
+                break;
+            case 'tags':
+                await this.loadTags();
                 break;
             case 'reports':
                 await this.loadReports();
@@ -358,7 +366,7 @@ class ControleSeApp {
         });
     }
 
-    async loadTransactions(categoryId = null, date = null) {
+    async loadTransactions(categoryId = null, date = null, tagId = null) {
         try {
             let url = '/transactions?userId=1';
             if (categoryId) {
@@ -370,7 +378,17 @@ class ControleSeApp {
             
             const response = await this.apiCall(url, 'GET');
             if (response.success) {
-                this.renderTransactions(response.data);
+                this.transactionsCache = response.data;
+                
+                // Aplica filtro de tag se houver (client-side)
+                let filteredTransactions = response.data;
+                if (tagId) {
+                    filteredTransactions = response.data.filter(transaction => 
+                        transaction.tags && transaction.tags.some(tag => tag.idTag === parseInt(tagId))
+                    );
+                }
+                
+                this.renderTransactions(filteredTransactions);
             }
         } catch (error) {
             console.error('Error loading transactions:', error);
@@ -389,6 +407,29 @@ class ControleSeApp {
         transactions.forEach(transaction => {
             const item = document.createElement('div');
             item.className = 'transaction-item';
+            
+            // Renderiza tags se houver
+            let tagsHtml = '';
+            if (transaction.tags && transaction.tags.length > 0) {
+                tagsHtml = '<div class="transaction-tags">' + 
+                    transaction.tags.map(tag => 
+                        `<span class="tag-badge-small" style="background-color: ${tag.cor};">${tag.nome}</span>`
+                    ).join('') + 
+                    '</div>';
+            }
+            
+            // Renderiza observações se houver
+            let observationsHtml = '';
+            if (transaction.observacoes && transaction.observacoes.length > 0) {
+                const observationsList = transaction.observacoes.map(obs => `<li>${obs}</li>`).join('');
+                observationsHtml = `
+                    <div class="transaction-observations">
+                        <strong>Observações:</strong>
+                        <ul>${observationsList}</ul>
+                    </div>
+                `;
+            }
+            
             item.innerHTML = `
                 <div class="transaction-info">
                     <div class="transaction-icon ${transaction.type}">
@@ -397,6 +438,8 @@ class ControleSeApp {
                     <div class="transaction-details">
                         <h4>${transaction.description}</h4>
                         <p>${this.formatDate(transaction.date)} - ${transaction.category}</p>
+                        ${tagsHtml}
+                        ${observationsHtml}
                     </div>
                 </div>
                 <div class="transaction-amount ${transaction.type}">
@@ -409,7 +452,8 @@ class ControleSeApp {
 
     async loadBudgets() {
         try {
-            const response = await this.apiCall('/budgets', 'GET');
+            const userId = this.currentUser ? this.currentUser.id : 1;
+            const response = await this.apiCall(`/budgets?userId=${userId}`, 'GET');
             if (response.success) {
                 this.renderBudgets(response.data);
             }
@@ -453,6 +497,64 @@ class ControleSeApp {
         });
     }
 
+    // ===== TAGS MANAGEMENT =====
+    async loadTags() {
+        try {
+            const userId = this.currentUser ? this.currentUser.id : 1;
+            const response = await this.apiCall(`/tags?userId=${userId}`, 'GET');
+            if (response.success) {
+                this.tagsCache = response.data;
+                this.renderTags(response.data);
+                this.updateTagFilter(response.data);
+            }
+        } catch (error) {
+            console.error('Error loading tags:', error);
+        }
+    }
+
+    renderTags(tags) {
+        const container = document.getElementById('tags-list');
+        container.innerHTML = '';
+
+        if (tags.length === 0) {
+            container.innerHTML = '<p class="text-center">Nenhuma tag criada. Crie tags para organizar suas transações!</p>';
+            return;
+        }
+
+        tags.forEach(tag => {
+            const card = document.createElement('div');
+            card.className = 'tag-card';
+            card.innerHTML = `
+                <div class="tag-header">
+                    <span class="tag-badge" style="background-color: ${tag.cor};">
+                        <i class="fas fa-tag"></i>
+                        ${tag.nome}
+                    </span>
+                </div>
+                <div class="card-actions">
+                    <button class="btn-secondary" onclick="app.editTag(${tag.idTag}, '${tag.nome}', '${tag.cor}')">
+                        <i class="fas fa-edit"></i> Editar
+                    </button>
+                    <button class="btn-secondary" onclick="app.deleteTag(${tag.idTag})">
+                        <i class="fas fa-trash"></i> Excluir
+                    </button>
+                </div>
+            `;
+            container.appendChild(card);
+        });
+    }
+
+    getTagsForSelect() {
+        return this.tagsCache.map(tag => 
+            `<div class="checkbox-item">
+                <input type="checkbox" id="tag-${tag.idTag}" value="${tag.idTag}">
+                <label for="tag-${tag.idTag}">
+                    <span class="tag-badge-small" style="background-color: ${tag.cor};">${tag.nome}</span>
+                </label>
+            </div>`
+        ).join('');
+    }
+
     // ===== MODAL MANAGEMENT =====
     showModal(title, content) {
         document.getElementById('modal-title').textContent = title;
@@ -471,6 +573,34 @@ class ControleSeApp {
                     <label for="category-name">Nome da Categoria</label>
                     <input type="text" id="category-name" required>
                 </div>
+                
+                <div class="form-divider">
+                    <hr>
+                    <span>Orçamento (Opcional)</span>
+                    <hr>
+                </div>
+                
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="add-budget-checkbox" onchange="app.toggleBudgetFields()">
+                        Definir orçamento para esta categoria
+                    </label>
+                </div>
+                
+                <div id="budget-fields" style="display: none;">
+                    <div class="form-group">
+                        <label for="category-budget-value">Valor Planejado (R$)</label>
+                        <input type="number" id="category-budget-value" step="0.01" min="0" placeholder="0.00">
+                    </div>
+                    <div class="form-group">
+                        <label for="category-budget-period">Período</label>
+                        <select id="category-budget-period">
+                            <option value="Mensal">Mensal</option>
+                            <option value="Anual">Anual</option>
+                        </select>
+                    </div>
+                </div>
+                
                 <div class="form-actions">
                     <button type="button" class="btn-secondary" onclick="app.closeModal()">Cancelar</button>
                     <button type="submit" class="btn-primary">Salvar</button>
@@ -483,6 +613,21 @@ class ControleSeApp {
             e.preventDefault();
             this.addCategory();
         });
+    }
+    
+    toggleBudgetFields() {
+        const checkbox = document.getElementById('add-budget-checkbox');
+        const budgetFields = document.getElementById('budget-fields');
+        const budgetValue = document.getElementById('category-budget-value');
+        
+        if (checkbox.checked) {
+            budgetFields.style.display = 'block';
+            budgetValue.required = true;
+        } else {
+            budgetFields.style.display = 'none';
+            budgetValue.required = false;
+            budgetValue.value = '';
+        }
     }
 
     showAddAccountModal() {
@@ -561,6 +706,15 @@ class ControleSeApp {
                         <div id="expense-categories" class="checkbox-group">
                             ${categoryCheckboxes}
                         </div>
+                        <button type="button" class="btn-link" onclick="app.toggleNewCategoryInExpense()">
+                            <i class="fas fa-plus-circle"></i> Nova Categoria
+                        </button>
+                        <div id="new-category-inline" style="display: none; margin-top: 10px;">
+                            <input type="text" id="new-category-name-expense" placeholder="Nome da nova categoria" style="width: 100%; padding: 8px; border: 1px solid var(--neutral-300); border-radius: 4px;">
+                            <button type="button" class="btn-primary" onclick="app.createCategoryInline()" style="margin-top: 8px; width: 100%;">
+                                Criar Categoria
+                            </button>
+                        </div>
                     </div>
                     <div class="form-group">
                         <label for="expense-account">Conta</label>
@@ -577,6 +731,16 @@ class ControleSeApp {
                             <option value="Mensal">Mensal</option>
                             <option value="Anual">Anual</option>
                         </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Tags (opcional)</label>
+                        <div id="expense-tags" class="checkbox-group">
+                            ${this.getTagsForSelect()}
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="expense-observations">Observações (opcional)</label>
+                        <textarea id="expense-observations" rows="3" placeholder="Digite observações separadas por vírgula ou quebra de linha..."></textarea>
                     </div>
                     <div class="form-actions">
                         <button type="button" class="btn-secondary" onclick="app.closeModal()">Cancelar</button>
@@ -626,6 +790,12 @@ class ControleSeApp {
                             ${accounts}
                         </select>
                     </div>
+                    <div class="form-group">
+                        <label>Tags (opcional)</label>
+                        <div id="income-tags" class="checkbox-group">
+                            ${this.getTagsForSelect()}
+                        </div>
+                    </div>
                     <div class="form-actions">
                         <button type="button" class="btn-secondary" onclick="app.closeModal()">Cancelar</button>
                         <button type="submit" class="btn-primary">Salvar</button>
@@ -643,33 +813,28 @@ class ControleSeApp {
 
     showAddBudgetModal() {
         this.loadCategories().then(() => {
-            // Verifica se há categorias disponíveis
-            if (this.categoriesCache.length === 0) {
-                this.showToast('Você precisa criar pelo menos uma categoria antes de definir um orçamento!', 'warning');
-                this.closeModal();
-                // Navega para a seção de categorias
-                setTimeout(() => {
-                    const categoriesNavItem = document.querySelector('[data-section="categories"]');
-                    if (categoriesNavItem) {
-                        categoriesNavItem.click();
-                    }
-                }, 1500);
-                return;
-            }
-            
             const categories = this.getCategoriesForSelect();
             const content = `
                 <form id="add-budget-form">
                     <div class="form-group">
                         <label for="budget-category">Categoria</label>
-                        <select id="budget-category" required>
+                        <select id="budget-category" required onchange="app.toggleNewCategoryField()">
                             <option value="">Selecione a categoria</option>
                             ${categories}
+                            <option value="__new__" style="font-weight: bold; color: var(--primary-color);">➕ Nova Categoria...</option>
                         </select>
                     </div>
+                    
+                    <div id="new-category-field" style="display: none;">
+                        <div class="form-group">
+                            <label for="new-category-name">Nome da Nova Categoria</label>
+                            <input type="text" id="new-category-name" placeholder="Ex: Transporte, Educação...">
+                        </div>
+                    </div>
+                    
                     <div class="form-group">
-                        <label for="budget-value">Valor Planejado</label>
-                        <input type="number" id="budget-value" step="0.01" required>
+                        <label for="budget-value">Valor Planejado (R$)</label>
+                        <input type="number" id="budget-value" step="0.01" min="0" required>
                     </div>
                     <div class="form-group">
                         <label for="budget-period">Período</label>
@@ -692,18 +857,123 @@ class ControleSeApp {
             });
         });
     }
+    
+    toggleNewCategoryField() {
+        const categorySelect = document.getElementById('budget-category');
+        const newCategoryField = document.getElementById('new-category-field');
+        const newCategoryInput = document.getElementById('new-category-name');
+        
+        if (categorySelect && categorySelect.value === '__new__') {
+            newCategoryField.style.display = 'block';
+            newCategoryInput.required = true;
+            newCategoryInput.focus();
+        } else {
+            newCategoryField.style.display = 'none';
+            newCategoryInput.required = false;
+            newCategoryInput.value = '';
+        }
+    }
+
+    toggleNewCategoryInExpense() {
+        const newCategoryDiv = document.getElementById('new-category-inline');
+        const newCategoryInput = document.getElementById('new-category-name-expense');
+        
+        if (newCategoryDiv.style.display === 'none') {
+            newCategoryDiv.style.display = 'block';
+            newCategoryInput.focus();
+        } else {
+            newCategoryDiv.style.display = 'none';
+            newCategoryInput.value = '';
+        }
+    }
+
+    async createCategoryInline() {
+        const nameInput = document.getElementById('new-category-name-expense');
+        const name = nameInput.value.trim();
+        
+        if (!name) {
+            this.showToast('Por favor, informe o nome da categoria', 'warning');
+            return;
+        }
+        
+        const userId = this.currentUser ? this.currentUser.id : 1;
+        
+        try {
+            const response = await this.apiCall('/categories', 'POST', { name, userId });
+            if (response.success) {
+                this.showToast('Categoria criada com sucesso!', 'success');
+                
+                // Atualiza o cache
+                await this.loadCategories();
+                
+                // Adiciona a nova categoria à lista de checkboxes e marca ela
+                const newCategory = {
+                    idCategoria: response.categoryId,
+                    nome: name
+                };
+                
+                const checkboxContainer = document.getElementById('expense-categories');
+                const checkboxDiv = document.createElement('div');
+                checkboxDiv.className = 'checkbox-item';
+                checkboxDiv.innerHTML = `
+                    <input type="checkbox" id="cat-${newCategory.idCategoria}" value="${newCategory.idCategoria}" checked>
+                    <label for="cat-${newCategory.idCategoria}">${newCategory.nome}</label>
+                `;
+                checkboxContainer.appendChild(checkboxDiv);
+                
+                // Limpa e esconde o campo
+                nameInput.value = '';
+                document.getElementById('new-category-inline').style.display = 'none';
+            } else {
+                this.showToast(response.message || 'Erro ao criar categoria', 'error');
+            }
+        } catch (error) {
+            this.showToast('Erro de conexão', 'error');
+            console.error('Create category inline error:', error);
+        }
+    }
 
     // ===== API CALLS =====
     async addCategory() {
         const name = document.getElementById('category-name').value;
+        const userId = this.currentUser ? this.currentUser.id : 1;
+        
+        // Verifica se deve criar orçamento junto
+        const addBudgetCheckbox = document.getElementById('add-budget-checkbox');
+        const createBudget = addBudgetCheckbox && addBudgetCheckbox.checked;
+        
+        const payload = { name, userId };
+        
+        if (createBudget) {
+            const budgetValue = parseFloat(document.getElementById('category-budget-value').value);
+            const budgetPeriod = document.getElementById('category-budget-period').value;
+            
+            if (!budgetValue || budgetValue <= 0) {
+                this.showToast('Por favor, informe um valor válido para o orçamento', 'warning');
+                return;
+            }
+            
+            payload.budget = {
+                value: budgetValue,
+                period: budgetPeriod
+            };
+        }
+        
         try {
-            const userId = this.currentUser ? this.currentUser.id : 1;
-            const response = await this.apiCall('/categories', 'POST', { name, userId });
+            const response = await this.apiCall('/categories', 'POST', payload);
             if (response.success) {
-                this.showToast('Categoria adicionada com sucesso!', 'success');
+                if (createBudget) {
+                    this.showToast('Categoria e orçamento adicionados com sucesso!', 'success');
+                } else {
+                    this.showToast('Categoria adicionada com sucesso!', 'success');
+                }
                 this.closeModal();
                 // Recarrega as categorias para atualizar o cache
                 await this.loadCategories();
+                // Se criou orçamento, recarrega também
+                if (createBudget) {
+                    await this.loadBudgets();
+                }
             } else {
                 this.showToast(response.message || 'Erro ao adicionar categoria', 'error');
             }
@@ -744,6 +1014,13 @@ class ControleSeApp {
         const checkedBoxes = document.querySelectorAll('#expense-categories input[type="checkbox"]:checked');
         const categoryIds = Array.from(checkedBoxes).map(checkbox => parseInt(checkbox.value));
         
+        // Obtém todas as tags marcadas (checkboxes)
+        const checkedTags = document.querySelectorAll('#expense-tags input[type="checkbox"]:checked');
+        const tagIds = Array.from(checkedTags).map(checkbox => parseInt(checkbox.value));
+        
+        // Obtém observações
+        const observations = document.getElementById('expense-observations').value.trim();
+        
         // Valida se pelo menos uma categoria foi selecionada
         if (categoryIds.length === 0) {
             this.showToast('Selecione pelo menos uma categoria', 'error');
@@ -752,7 +1029,7 @@ class ControleSeApp {
         
         try {
             const response = await this.apiCall('/expenses', 'POST', {
-                description, value, date, categoryIds, accountId, frequency
+                description, value, date, categoryIds, accountId, frequency, tagIds, observacoes: observations
             });
             if (response.success) {
                 this.showToast('Gasto adicionado com sucesso!', 'success');
@@ -775,8 +1052,12 @@ class ControleSeApp {
         const date = document.getElementById('income-date').value;
         const accountId = parseInt(document.getElementById('income-account').value);
         
+        // Obtém todas as tags marcadas (checkboxes)
+        const checkedTags = document.querySelectorAll('#income-tags input[type="checkbox"]:checked');
+        const tagIds = Array.from(checkedTags).map(checkbox => parseInt(checkbox.value));
+        
         try {
-            const response = await this.apiCall('/incomes', 'POST', { description, value, date, accountId });
+            const response = await this.apiCall('/incomes', 'POST', { description, value, date, accountId, tagIds });
             if (response.success) {
                 this.showToast('Receita adicionada com sucesso!', 'success');
                 this.closeModal();
@@ -793,24 +1074,189 @@ class ControleSeApp {
     }
 
     async addBudget() {
-        const categoryId = parseInt(document.getElementById('budget-category').value);
+        const categorySelectValue = document.getElementById('budget-category').value;
         const value = parseFloat(document.getElementById('budget-value').value);
         const period = document.getElementById('budget-period').value;
+        const userId = this.currentUser ? this.currentUser.id : 1;
         
         try {
+            let categoryId;
+            let isNewCategory = false;
+            
+            // Verifica se está criando nova categoria
+            if (categorySelectValue === '__new__') {
+                const newCategoryName = document.getElementById('new-category-name').value.trim();
+                
+                if (!newCategoryName) {
+                    this.showToast('Por favor, informe o nome da nova categoria', 'warning');
+                    return;
+                }
+                
+                // Cria a categoria primeiro
+                const categoryResponse = await this.apiCall('/categories', 'POST', {
+                    name: newCategoryName,
+                    userId: userId
+                });
+                
+                if (!categoryResponse.success) {
+                    this.showToast(categoryResponse.message || 'Erro ao criar categoria', 'error');
+                    return;
+                }
+                
+                categoryId = categoryResponse.categoryId;
+                isNewCategory = true;
+            } else {
+                categoryId = parseInt(categorySelectValue);
+            }
+            
+            // Agora cria o orçamento com a categoria (nova ou existente)
             const response = await this.apiCall('/budgets', 'POST', {
                 categoryId, value, period
             });
+            
             if (response.success) {
-                this.showToast('Orçamento adicionado com sucesso!', 'success');
+                if (isNewCategory) {
+                    this.showToast('Categoria e orçamento criados com sucesso!', 'success');
+                } else {
+                    this.showToast('Orçamento adicionado com sucesso!', 'success');
+                }
                 this.closeModal();
-                this.loadBudgets();
+                
+                // Recarrega ambas as listas
+                await this.loadBudgets();
+                if (isNewCategory) {
+                    await this.loadCategories();
+                }
             } else {
                 this.showToast(response.message || 'Erro ao adicionar orçamento', 'error');
             }
         } catch (error) {
             this.showToast('Erro de conexão', 'error');
             console.error('Add budget error:', error);
+        }
+    }
+
+    showAddTagModal() {
+        const content = `
+            <form id="add-tag-form">
+                <div class="form-group">
+                    <label for="tag-name">Nome da Tag</label>
+                    <input type="text" id="tag-name" placeholder="Ex: Urgente, Pessoal, Trabalho..." required>
+                </div>
+                <div class="form-group">
+                    <label for="tag-color">Cor</label>
+                    <div class="color-picker">
+                        <input type="color" id="tag-color" value="#3498db" required>
+                        <span id="color-preview" style="background-color: #3498db;"></span>
+                    </div>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn-secondary" onclick="app.closeModal()">Cancelar</button>
+                    <button type="submit" class="btn-primary">Salvar</button>
+                </div>
+            </form>
+        `;
+        this.showModal('Nova Tag', content);
+        
+        // Color preview update
+        const colorInput = document.getElementById('tag-color');
+        const colorPreview = document.getElementById('color-preview');
+        colorInput.addEventListener('input', (e) => {
+            colorPreview.style.backgroundColor = e.target.value;
+        });
+        
+        document.getElementById('add-tag-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.addTag();
+        });
+    }
+
+    async addTag() {
+        const name = document.getElementById('tag-name').value.trim();
+        const color = document.getElementById('tag-color').value;
+        const userId = this.currentUser ? this.currentUser.id : 1;
+
+        try {
+            const response = await this.apiCall('/tags', 'POST', { nome: name, cor: color, userId });
+            if (response.success) {
+                this.showToast('Tag criada com sucesso!', 'success');
+                this.closeModal();
+                await this.loadTags();
+            } else {
+                this.showToast(response.message || 'Erro ao criar tag', 'error');
+            }
+        } catch (error) {
+            this.showToast('Erro de conexão', 'error');
+            console.error('Add tag error:', error);
+        }
+    }
+
+    editTag(tagId, currentName, currentColor) {
+        const content = `
+            <form id="edit-tag-form">
+                <div class="form-group">
+                    <label for="tag-name">Nome da Tag</label>
+                    <input type="text" id="tag-name" value="${currentName}" required>
+                </div>
+                <div class="form-group">
+                    <label for="tag-color">Cor</label>
+                    <div class="color-picker">
+                        <input type="color" id="tag-color" value="${currentColor}" required>
+                        <span id="color-preview" style="background-color: ${currentColor};"></span>
+                    </div>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn-secondary" onclick="app.closeModal()">Cancelar</button>
+                    <button type="submit" class="btn-primary">Salvar</button>
+                </div>
+            </form>
+        `;
+        this.showModal('Editar Tag', content);
+        
+        // Color preview update
+        const colorInput = document.getElementById('tag-color');
+        const colorPreview = document.getElementById('color-preview');
+        colorInput.addEventListener('input', (e) => {
+            colorPreview.style.backgroundColor = e.target.value;
+        });
+        
+        document.getElementById('edit-tag-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const name = document.getElementById('tag-name').value.trim();
+            const color = document.getElementById('tag-color').value;
+            
+            try {
+                const response = await this.apiCall(`/tags/${tagId}`, 'PUT', { id: tagId, nome: name, cor: color });
+                if (response.success) {
+                    this.showToast('Tag atualizada com sucesso!', 'success');
+                    this.closeModal();
+                    await this.loadTags();
+                } else {
+                    this.showToast(response.message || 'Erro ao atualizar tag', 'error');
+                }
+            } catch (error) {
+                this.showToast('Erro de conexão', 'error');
+                console.error('Edit tag error:', error);
+            }
+        });
+    }
+
+    async deleteTag(tagId) {
+        if (!confirm('Tem certeza que deseja excluir esta tag?')) {
+            return;
+        }
+
+        try {
+            const response = await this.apiCall(`/tags/${tagId}`, 'DELETE');
+            if (response.success) {
+                this.showToast('Tag excluída com sucesso!', 'success');
+                await this.loadTags();
+            } else {
+                this.showToast(response.message || 'Erro ao excluir tag', 'error');
+            }
+        } catch (error) {
+            this.showToast('Erro de conexão', 'error');
+            console.error('Delete tag error:', error);
         }
     }
 
@@ -896,20 +1342,31 @@ class ControleSeApp {
         });
     }
 
+    updateTagFilter(tags) {
+        const select = document.getElementById('tag-filter');
+        select.innerHTML = '<option value="">Todas as Tags</option>';
+        tags.forEach(tag => {
+            select.innerHTML += `<option value="${tag.idTag}">${tag.nome}</option>`;
+        });
+    }
+
     filterTransactions() {
         const categoryId = document.getElementById('category-filter').value;
+        const tagId = document.getElementById('tag-filter').value;
         const date = document.getElementById('date-filter').value;
         
         // Converte valores vazios para null
         const categoryFilter = categoryId ? parseInt(categoryId) : null;
+        const tagFilter = tagId ? parseInt(tagId) : null;
         const dateFilter = date || null;
         
-        console.log('Aplicando filtros:', { categoryFilter, dateFilter });
-        this.loadTransactions(categoryFilter, dateFilter);
+        console.log('Aplicando filtros:', { categoryFilter, tagFilter, dateFilter });
+        this.loadTransactions(categoryFilter, dateFilter, tagFilter);
     }
 
     clearFilters() {
         document.getElementById('category-filter').value = '';
+        document.getElementById('tag-filter').value = '';
         document.getElementById('date-filter').value = '';
         this.loadTransactions();
     }

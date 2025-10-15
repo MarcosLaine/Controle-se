@@ -28,15 +28,73 @@ public class ControleSeServer {
             // Inicia o servidor
             server.start();
             
+            // Inicia o scheduler de recorrências (executa diariamente)
+            iniciarSchedulerRecorrencias();
+            
             System.out.println("=== SERVIDOR CONTROLE-SE INICIADO ===");
             System.out.println("Servidor rodando em: http://localhost:" + PORT);
             System.out.println("Frontend disponível em: http://localhost:" + PORT + "/");
             System.out.println("API disponível em: http://localhost:" + PORT + "/api/");
+            System.out.println("Scheduler de recorrências: ATIVO (verifica diariamente às 00:05)");
             System.out.println("Pressione Ctrl+C para parar o servidor");
             
         } catch (IOException e) {
             System.err.println("Erro ao iniciar servidor: " + e.getMessage());
         }
+    }
+    
+    /**
+     * Inicia o scheduler que processa recorrências automáticas
+     * Executa diariamente às 00:05 da manhã
+     */
+    private static void iniciarSchedulerRecorrencias() {
+        Timer timer = new Timer("RecorrenciasScheduler", true); // daemon=true para não bloquear shutdown
+        
+        // Calcula o delay até a próxima execução (hoje às 00:05 ou amanhã às 00:05)
+        Calendar proximaExecucao = Calendar.getInstance();
+        proximaExecucao.set(Calendar.HOUR_OF_DAY, 0);
+        proximaExecucao.set(Calendar.MINUTE, 5);
+        proximaExecucao.set(Calendar.SECOND, 0);
+        proximaExecucao.set(Calendar.MILLISECOND, 0);
+        
+        // Se já passou da hora hoje, agenda para amanhã
+        if (proximaExecucao.getTimeInMillis() < System.currentTimeMillis()) {
+            proximaExecucao.add(Calendar.DAY_OF_MONTH, 1);
+        }
+        
+        long delay = proximaExecucao.getTimeInMillis() - System.currentTimeMillis();
+        long periodo = 24 * 60 * 60 * 1000; // 24 horas em milissegundos
+        
+        // Agenda a tarefa para executar diariamente
+        timer.scheduleAtFixedRate(new TimerTask() {
+            @Override
+            public void run() {
+                try {
+                    System.out.println("\n=== SCHEDULER DE RECORRÊNCIAS ===");
+                    System.out.println("Executando processamento automático...");
+                    int criados = bancoDados.processarRecorrencias();
+                    System.out.println("Total de transações recorrentes criadas: " + criados);
+                    System.out.println("=====================================\n");
+                } catch (Exception e) {
+                    System.err.println("Erro ao processar recorrências: " + e.getMessage());
+                    e.printStackTrace();
+                }
+            }
+        }, delay, periodo);
+        
+        // Para fins de DEBUG/TESTE: executa imediatamente na inicialização também
+        System.out.println("\n[INICIALIZAÇÃO] Processando recorrências pendentes...");
+        try {
+            int criados = bancoDados.processarRecorrencias();
+            if (criados > 0) {
+                System.out.println("[INICIALIZAÇÃO] " + criados + " transações recorrentes criadas");
+            } else {
+                System.out.println("[INICIALIZAÇÃO] Nenhuma recorrência pendente");
+            }
+        } catch (Exception e) {
+            System.err.println("[INICIALIZAÇÃO] Erro ao processar recorrências: " + e.getMessage());
+        }
+        System.out.println();
     }
     
     private static void setupRoutes() {
@@ -53,6 +111,7 @@ public class ControleSeServer {
         server.createContext("/api/expenses", new ExpensesHandler());
         server.createContext("/api/incomes", new IncomesHandler());
         server.createContext("/api/budgets", new BudgetsHandler());
+        server.createContext("/api/tags", new TagsHandler());
         
         // Configura executor
         server.setExecutor(null);
@@ -273,17 +332,48 @@ public class ControleSeServer {
         private void handleCreateCategory(HttpExchange exchange) throws IOException {
             try {
                 String requestBody = readRequestBody(exchange);
-                Map<String, String> data = parseJson(requestBody);
+                Map<String, Object> data = parseJsonWithNested(requestBody);
                 
-                String name = data.get("name");
-                String userIdStr = data.get("userId");
-                int userId = (userIdStr != null && !userIdStr.isEmpty()) ? Integer.parseInt(userIdStr) : 1;
+                String name = (String) data.get("name");
+                Object userIdObj = data.get("userId");
+                int userId = 1;
+                if (userIdObj instanceof Number) {
+                    userId = ((Number) userIdObj).intValue();
+                } else if (userIdObj instanceof String) {
+                    userId = Integer.parseInt((String) userIdObj);
+                }
                 
                 int categoryId = bancoDados.cadastrarCategoria(name, userId);
                 
+                // Verifica se deve criar orçamento junto
+                Integer budgetId = null;
+                if (data.containsKey("budget") && data.get("budget") != null) {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> budgetData = (Map<String, Object>) data.get("budget");
+                    
+                    double value = 0.0;
+                    Object valueObj = budgetData.get("value");
+                    if (valueObj instanceof Number) {
+                        value = ((Number) valueObj).doubleValue();
+                    } else if (valueObj instanceof String) {
+                        value = Double.parseDouble((String) valueObj);
+                    }
+                    
+                    String period = (String) budgetData.get("period");
+                    
+                    if (value > 0 && period != null && !period.isEmpty()) {
+                        budgetId = bancoDados.cadastrarOrcamento(value, period, categoryId, userId);
+                    }
+                }
+                
                 Map<String, Object> response = new HashMap<>();
                 response.put("success", true);
-                response.put("message", "Categoria criada com sucesso");
+                if (budgetId != null) {
+                    response.put("message", "Categoria e orçamento criados com sucesso");
+                    response.put("budgetId", budgetId);
+                } else {
+                    response.put("message", "Categoria criada com sucesso");
+                }
                 response.put("categoryId", categoryId);
                 
                 sendJsonResponse(exchange, 201, response);
@@ -511,6 +601,17 @@ public class ControleSeServer {
                     
                     String categoriasStr = nomesCategorias.isEmpty() ? "Sem Categoria" : String.join(", ", nomesCategorias);
                     
+                    // Busca tags do gasto
+                    List<Tag> tags = bancoDados.buscarTagsGasto(gasto.getIdGasto());
+                    List<Map<String, Object>> tagsList = new ArrayList<>();
+                    for (Tag tag : tags) {
+                        Map<String, Object> tagMap = new HashMap<>();
+                        tagMap.put("idTag", tag.getIdTag());
+                        tagMap.put("nome", tag.getNome());
+                        tagMap.put("cor", tag.getCor());
+                        tagsList.add(tagMap);
+                    }
+                    
                     Map<String, Object> transaction = new HashMap<>();
                     transaction.put("id", gasto.getIdGasto());
                     transaction.put("type", "expense");
@@ -520,11 +621,31 @@ public class ControleSeServer {
                     transaction.put("category", categoriasStr);
                     transaction.put("categoryIds", idsCategorias);
                     transaction.put("categories", nomesCategorias);
+                    transaction.put("tags", tagsList);
+                    // Converte array de observações para lista
+                    List<String> observacoesList = new ArrayList<>();
+                    if (gasto.getObservacoes() != null) {
+                        for (String obs : gasto.getObservacoes()) {
+                            observacoesList.add(obs);
+                        }
+                    }
+                    transaction.put("observacoes", observacoesList);
                     transactions.add(transaction);
                 }
                 
                 // Add incomes (não são filtradas por categoria)
                 for (Receita receita : incomes) {
+                    // Busca tags da receita
+                    List<Tag> tags = bancoDados.buscarTagsReceita(receita.getIdReceita());
+                    List<Map<String, Object>> tagsList = new ArrayList<>();
+                    for (Tag tag : tags) {
+                        Map<String, Object> tagMap = new HashMap<>();
+                        tagMap.put("idTag", tag.getIdTag());
+                        tagMap.put("nome", tag.getNome());
+                        tagMap.put("cor", tag.getCor());
+                        tagsList.add(tagMap);
+                    }
+                    
                     Map<String, Object> transaction = new HashMap<>();
                     transaction.put("id", receita.getIdReceita());
                     transaction.put("type", "income");
@@ -533,6 +654,7 @@ public class ControleSeServer {
                     transaction.put("date", receita.getData().toString());
                     transaction.put("category", "Receita");
                     transaction.put("categoryId", null);
+                    transaction.put("tags", tagsList);
                     transactions.add(transaction);
                 }
                 
@@ -590,7 +712,43 @@ public class ControleSeServer {
                     }
                 }
                 
-                int expenseId = bancoDados.cadastrarGasto(description, value, date, frequency, userId, categoryIds, accountId);
+                // Parse tagIds (opcional)
+                List<Integer> tagIds = new ArrayList<>();
+                String tagIdsStr = data.get("tagIds");
+                
+                if (tagIdsStr != null && !tagIdsStr.isEmpty()) {
+                    tagIdsStr = tagIdsStr.replaceAll("[\\[\\]\\s]", "");
+                    for (String idStr : tagIdsStr.split(",")) {
+                        if (!idStr.isEmpty()) {
+                            tagIds.add(Integer.parseInt(idStr));
+                        }
+                    }
+                }
+                
+                // Parse observações (opcional)
+                String[] observacoes = null;
+                String observacoesStr = data.get("observacoes");
+                if (observacoesStr != null && !observacoesStr.trim().isEmpty()) {
+                    // Divide por quebras de linha ou vírgulas
+                    String[] obsArray = observacoesStr.split("[\\n,;]");
+                    List<String> obsList = new ArrayList<>();
+                    for (String obs : obsArray) {
+                        String trimmed = obs.trim();
+                        if (!trimmed.isEmpty()) {
+                            obsList.add(trimmed);
+                        }
+                    }
+                    if (!obsList.isEmpty()) {
+                        observacoes = obsList.toArray(new String[0]);
+                    }
+                }
+                
+                int expenseId = bancoDados.cadastrarGasto(description, value, date, frequency, userId, categoryIds, accountId, observacoes);
+                
+                // Associa tags se houver
+                for (int tagId : tagIds) {
+                    bancoDados.associarTagTransacao(expenseId, "GASTO", tagId);
+                }
                 
                 Map<String, Object> response = new HashMap<>();
                 response.put("success", true);
@@ -626,7 +784,25 @@ public class ControleSeServer {
                 int accountId = Integer.parseInt(data.get("accountId"));
                 int userId = 1; // In real app, get from token
                 
+                // Parse tagIds (opcional)
+                List<Integer> tagIds = new ArrayList<>();
+                String tagIdsStr = data.get("tagIds");
+                
+                if (tagIdsStr != null && !tagIdsStr.isEmpty()) {
+                    tagIdsStr = tagIdsStr.replaceAll("[\\[\\]\\s]", "");
+                    for (String idStr : tagIdsStr.split(",")) {
+                        if (!idStr.isEmpty()) {
+                            tagIds.add(Integer.parseInt(idStr));
+                        }
+                    }
+                }
+                
                 int incomeId = bancoDados.cadastrarReceita(description, value, date, userId, accountId);
+                
+                // Associa tags se houver
+                for (int tagId : tagIds) {
+                    bancoDados.associarTagTransacao(incomeId, "RECEITA", tagId);
+                }
                 
                 Map<String, Object> response = new HashMap<>();
                 response.put("success", true);
@@ -774,11 +950,137 @@ public class ControleSeServer {
         }
     }
     
+    static class TagsHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            String method = exchange.getRequestMethod();
+            
+            if ("GET".equals(method)) {
+                handleGetTags(exchange);
+            } else if ("POST".equals(method)) {
+                handleCreateTag(exchange);
+            } else if ("PUT".equals(method)) {
+                handleUpdateTag(exchange);
+            } else if ("DELETE".equals(method)) {
+                handleDeleteTag(exchange);
+            } else {
+                sendErrorResponse(exchange, 405, "Método não permitido");
+            }
+        }
+        
+        private void handleGetTags(HttpExchange exchange) throws IOException {
+            try {
+                String userIdParam = getQueryParam(exchange, "userId");
+                int userId = userIdParam != null ? Integer.parseInt(userIdParam) : 1;
+                
+                List<Tag> tags = bancoDados.buscarTagsPorUsuario(userId);
+                List<Map<String, Object>> tagList = new ArrayList<>();
+                
+                for (Tag tag : tags) {
+                    Map<String, Object> tagData = new HashMap<>();
+                    tagData.put("idTag", tag.getIdTag());
+                    tagData.put("nome", tag.getNome());
+                    tagData.put("cor", tag.getCor());
+                    tagData.put("idUsuario", tag.getIdUsuario());
+                    tagList.add(tagData);
+                }
+                
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", true);
+                response.put("data", tagList);
+                
+                sendJsonResponse(exchange, 200, response);
+            } catch (Exception e) {
+                sendErrorResponse(exchange, 500, "Erro interno do servidor");
+            }
+        }
+        
+        private void handleCreateTag(HttpExchange exchange) throws IOException {
+            try {
+                String requestBody = readRequestBody(exchange);
+                Map<String, String> data = parseJson(requestBody);
+                
+                String nome = data.get("nome");
+                String cor = data.get("cor");
+                if (cor == null || cor.isEmpty()) {
+                    cor = "#6B7280"; // Cor padrão cinza
+                }
+                String userIdStr = data.get("userId");
+                int userId = (userIdStr != null && !userIdStr.isEmpty()) ? Integer.parseInt(userIdStr) : 1;
+                
+                int tagId = bancoDados.cadastrarTag(nome, cor, userId);
+                
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", true);
+                response.put("message", "Tag criada com sucesso");
+                response.put("tagId", tagId);
+                
+                sendJsonResponse(exchange, 201, response);
+            } catch (Exception e) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", e.getMessage());
+                
+                sendJsonResponse(exchange, 400, response);
+            }
+        }
+        
+        private void handleUpdateTag(HttpExchange exchange) throws IOException {
+            try {
+                String requestBody = readRequestBody(exchange);
+                Map<String, String> data = parseJson(requestBody);
+                
+                int tagId = Integer.parseInt(data.get("id"));
+                String nome = data.get("nome");
+                String cor = data.get("cor");
+                
+                bancoDados.atualizarTag(tagId, nome, cor);
+                
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", true);
+                response.put("message", "Tag atualizada com sucesso");
+                
+                sendJsonResponse(exchange, 200, response);
+            } catch (Exception e) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", e.getMessage());
+                
+                sendJsonResponse(exchange, 400, response);
+            }
+        }
+        
+        private void handleDeleteTag(HttpExchange exchange) throws IOException {
+            try {
+                String idParam = getQueryParam(exchange, "id");
+                if (idParam == null) {
+                    sendErrorResponse(exchange, 400, "ID da tag não fornecido");
+                    return;
+                }
+                
+                int tagId = Integer.parseInt(idParam);
+                bancoDados.excluirTag(tagId);
+                
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", true);
+                response.put("message", "Tag excluída com sucesso");
+                
+                sendJsonResponse(exchange, 200, response);
+            } catch (Exception e) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", e.getMessage());
+                
+                sendJsonResponse(exchange, 400, response);
+            }
+        }
+    }
+    
     // ===== UTILITY METHODS =====
     
     private static String readRequestBody(HttpExchange exchange) throws IOException {
         try (InputStream is = exchange.getRequestBody()) {
-            return new String(is.readAllBytes());
+            return new String(is.readAllBytes(), "UTF-8");
         }
     }
     
@@ -814,6 +1116,116 @@ public class ControleSeServer {
         } catch (Exception e) {
             System.err.println("Erro ao fazer parse do JSON: " + e.getMessage());
             System.err.println("JSON recebido: " + json);
+        }
+        
+        return result;
+    }
+    
+    /**
+     * Parse JSON com suporte a objetos aninhados
+     * Retorna Map<String, Object> onde valores podem ser String, Number ou Map aninhado
+     */
+    private static Map<String, Object> parseJsonWithNested(String json) {
+        Map<String, Object> result = new HashMap<>();
+        
+        try {
+            json = json.trim();
+            if (json.startsWith("{")) {
+                json = json.substring(1);
+            }
+            if (json.endsWith("}")) {
+                json = json.substring(0, json.length() - 1);
+            }
+            
+            // Parse manual simples para suportar objetos aninhados
+            int i = 0;
+            while (i < json.length()) {
+                // Encontra próxima chave
+                int keyStart = json.indexOf("\"", i);
+                if (keyStart == -1) break;
+                int keyEnd = json.indexOf("\"", keyStart + 1);
+                if (keyEnd == -1) break;
+                
+                String key = json.substring(keyStart + 1, keyEnd);
+                
+                // Encontra valor após o ":"
+                int colonIndex = json.indexOf(":", keyEnd);
+                if (colonIndex == -1) break;
+                
+                i = colonIndex + 1;
+                while (i < json.length() && Character.isWhitespace(json.charAt(i))) {
+                    i++;
+                }
+                
+                // Determina o tipo de valor
+                if (i >= json.length()) break;
+                
+                char firstChar = json.charAt(i);
+                Object value = null;
+                
+                if (firstChar == '\"') {
+                    // String value
+                    int valueEnd = json.indexOf("\"", i + 1);
+                    if (valueEnd != -1) {
+                        value = json.substring(i + 1, valueEnd);
+                        i = valueEnd + 1;
+                    }
+                } else if (firstChar == '{') {
+                    // Nested object
+                    int braceCount = 1;
+                    int objStart = i;
+                    i++;
+                    while (i < json.length() && braceCount > 0) {
+                        if (json.charAt(i) == '{') braceCount++;
+                        else if (json.charAt(i) == '}') braceCount--;
+                        i++;
+                    }
+                    String nestedJson = json.substring(objStart, i);
+                    value = parseJsonWithNested(nestedJson);
+                } else if (firstChar == '[') {
+                    // Array - mantém como string por simplicidade
+                    int bracketEnd = json.indexOf("]", i);
+                    if (bracketEnd != -1) {
+                        value = json.substring(i, bracketEnd + 1);
+                        i = bracketEnd + 1;
+                    }
+                } else {
+                    // Número ou boolean
+                    int valueEnd = i;
+                    while (valueEnd < json.length() && 
+                           json.charAt(valueEnd) != ',' && 
+                           json.charAt(valueEnd) != '}') {
+                        valueEnd++;
+                    }
+                    String valueStr = json.substring(i, valueEnd).trim();
+                    
+                    // Tenta converter para número
+                    try {
+                        if (valueStr.contains(".")) {
+                            value = Double.parseDouble(valueStr);
+                        } else {
+                            value = Integer.parseInt(valueStr);
+                        }
+                    } catch (NumberFormatException e) {
+                        value = valueStr;
+                    }
+                    
+                    i = valueEnd;
+                }
+                
+                if (value != null) {
+                    result.put(key, value);
+                }
+                
+                // Pula vírgula se houver
+                while (i < json.length() && (json.charAt(i) == ',' || Character.isWhitespace(json.charAt(i)))) {
+                    i++;
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("Erro ao fazer parse do JSON aninhado: " + e.getMessage());
+            System.err.println("JSON recebido: " + json);
+            e.printStackTrace();
         }
         
         return result;
@@ -887,14 +1299,14 @@ public class ControleSeServer {
             jsonResponse = toJson(response);
         }
         
-        exchange.getResponseHeaders().set("Content-Type", "application/json");
+        exchange.getResponseHeaders().set("Content-Type", "application/json; charset=UTF-8");
         exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
         exchange.getResponseHeaders().set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
         exchange.getResponseHeaders().set("Access-Control-Allow-Headers", "Content-Type, Authorization");
         
-        exchange.sendResponseHeaders(statusCode, jsonResponse.getBytes().length);
+        exchange.sendResponseHeaders(statusCode, jsonResponse.getBytes("UTF-8").length);
         try (OutputStream os = exchange.getResponseBody()) {
-            os.write(jsonResponse.getBytes());
+            os.write(jsonResponse.getBytes("UTF-8"));
         }
     }
     
@@ -904,12 +1316,12 @@ public class ControleSeServer {
         response.put("message", message);
         String jsonResponse = toJson(response);
         
-        exchange.getResponseHeaders().set("Content-Type", "application/json");
+        exchange.getResponseHeaders().set("Content-Type", "application/json; charset=UTF-8");
         exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
         
-        exchange.sendResponseHeaders(statusCode, jsonResponse.getBytes().length);
+        exchange.sendResponseHeaders(statusCode, jsonResponse.getBytes("UTF-8").length);
         try (OutputStream os = exchange.getResponseBody()) {
-            os.write(jsonResponse.getBytes());
+            os.write(jsonResponse.getBytes("UTF-8"));
         }
     }
 }

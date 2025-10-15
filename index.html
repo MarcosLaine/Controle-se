@@ -106,6 +106,10 @@
                         <i class="fas fa-chart-line"></i>
                         <span>Orçamentos</span>
                     </a>
+                    <a href="#" class="nav-item" data-section="tags">
+                        <i class="fas fa-tags"></i>
+                        <span>Tags</span>
+                    </a>
                     <a href="#" class="nav-item" data-section="reports">
                         <i class="fas fa-file-alt"></i>
                         <span>Relatórios</span>
@@ -230,6 +234,9 @@
                         <select id="category-filter">
                             <option value="">Todas as Categorias</option>
                         </select>
+                        <select id="tag-filter">
+                            <option value="">Todas as Tags</option>
+                        </select>
                         <input type="date" id="date-filter">
                         <button class="btn-secondary" id="clear-filters">Limpar Filtros</button>
                     </div>
@@ -249,6 +256,20 @@
                     </div>
                     <div id="budgets-list" class="budgets-grid">
                         <!-- Budgets will be loaded here -->
+                    </div>
+                </section>
+
+                <!-- Tags Section -->
+                <section id="tags-section" class="content-section">
+                    <div class="section-header">
+                        <h2>Tags</h2>
+                        <button class="btn-primary" id="add-tag-btn">
+                            <i class="fas fa-plus"></i>
+                            Nova Tag
+                        </button>
+                    </div>
+                    <div id="tags-list" class="tags-grid">
+                        <!-- Tags will be loaded here -->
                     </div>
                 </section>
 
