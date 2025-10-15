@@ -66,12 +66,20 @@ Sistema completo de controle financeiro pessoal com **estruturas de dados avanç
 - ✅ Filtro de transações por **data** (Hash Extensível)
 - ✅ Filtros combinados (categoria + data)
 - ✅ Busca otimizada O(1) com índices secundários
+- ✅ **Sistema de Tags**: Categorização personalizada com relacionamentos N:N
+- ✅ **Múltiplas categorias**: Um gasto pode ter várias categorias
 
-### 📈 Dashboard e Relatórios (ainda não implementado)
+### 📈 Dashboard e Relatórios
 - ✅ Resumo financeiro com totais
 - ✅ Listagem de todas as transações
 - ✅ Monitoramento de orçamentos
 - ✅ Visualização de contas e saldos
+- ✅ **Sistema de Relatórios Avançado** com dashboards interativos
+- ✅ **4 tipos de visualizações**: Gráfico de pizza, linha, barras e lista
+- ✅ **Exportação de dados**: CSV, XLSX e **PDF com gráficos**
+- ✅ **Análise temporal**: Evolução de 12 meses
+- ✅ **Top gastos**: Maiores despesas do período
+- ✅ **PDF Completo**: Relatórios com gráficos capturados em alta qualidade
 
 ### 💾 Persistência de Dados
 - ✅ Salvamento automático em arquivos `.db` binários
@@ -121,6 +129,8 @@ Características:
 - `indiceDataGastos`: Data → Lista<Gasto> (para filtros)
 - `indiceDataReceitas`: Data → Lista<Receita> (para filtros)
 - `indiceEmailUsuarios`: Email → Usuario (para login)
+- `indiceCategoriaGasto`: Relacionamento N:N Categoria ↔ Gasto
+- `indiceTransacaoTag`: Relacionamento N:N Tag ↔ Transação
 
 ## 🎯 Como Executar
 
@@ -131,13 +141,13 @@ Características:
 ### 1. Compilar o Projeto
 
 ```bash
-javac -d bin src/*.java
+javac -cp . src/*.java src/server/handlers/*.java src/server/utils/*.java
 ```
 
 ### 2. Iniciar o Servidor
 
 ```bash
-java -cp bin ControleSeServer
+java -cp src ControleSeServer
 ```
 
 O servidor iniciará na porta **8080** e exibirá:
@@ -247,7 +257,22 @@ DELETE /api/budgets?id={id}                  # Excluir orçamento (lógica)
 
 ### Dashboard
 ```http
-GET    /api/overview?userId={id}&period={mes}  # Resumo financeiro
+GET    /api/dashboard/overview?userId={id}&period={mes}  # Resumo financeiro
+```
+
+### Relatórios
+```http
+GET    /api/reports?userId={id}&period={month|year|custom}&startDate={date}&endDate={date}  # Dados de relatórios
+POST   /api/reports  # Exportar relatórios (CSV/XLSX)
+# PDF com gráficos é gerado no frontend usando jsPDF + html2canvas
+```
+
+### Tags
+```http
+GET    /api/tags?userId={id}              # Listar tags
+POST   /api/tags                          # Criar tag
+PUT    /api/tags                          # Atualizar tag
+DELETE /api/tags?id={id}                  # Excluir tag (lógica)
 ```
 
 ## 📊 Modelo de Dados
@@ -280,6 +305,7 @@ GET    /api/overview?userId={id}&period={mes}  # Resumo financeiro
 - frequencia: String
 - idCategoria: int (FK)
 - idUsuario: int (FK)
+- observacoes: String[] (atributo multivalorado)
 - ativo: boolean
 ```
 
@@ -313,6 +339,28 @@ GET    /api/overview?userId={id}&period={mes}  # Resumo financeiro
 - ativo: boolean
 ```
 
+#### Tag
+```java
+- idTag: int (PK)
+- nome: String
+- idUsuario: int (FK)
+- ativo: boolean
+```
+
+#### CategoriaGasto (Relacionamento N:N)
+```java
+- idCategoria: int (FK)
+- idGasto: int (FK)
+- ativo: boolean
+```
+
+#### TransacaoTag (Relacionamento N:N)
+```java
+- idTag: int (FK)
+- idTransacao: int (FK) // Pode ser gasto ou receita
+- ativo: boolean
+```
+
 ## 🎓 Complexidade das Operações
 
 | Operação | Estrutura | Complexidade |
@@ -323,6 +371,9 @@ GET    /api/overview?userId={id}&period={mes}  # Resumo financeiro
 | Filtro por categoria | Hash Extensível | **O(1) médio** |
 | Filtro por data | Hash Extensível | **O(1) médio** |
 | Filtros combinados | Hash + filtro | **O(m)** onde m = registros do usuário |
+| Relacionamento N:N | Hash Extensível | **O(1) médio** |
+| Busca por tags | Hash Extensível | **O(1) médio** |
+| Geração de relatórios | Múltiplas estruturas | **O(n)** onde n = total de registros |
 
 ## 🔒 Características de Segurança
 
@@ -332,12 +383,16 @@ GET    /api/overview?userId={id}&period={mes}  # Resumo financeiro
 - ✅ **Logging**: Debug logs para rastreamento de problemas
 
 
-### Planejado
-- 📋 Exportação de relatórios em PDF
-- 📋 Importação de dados de CSV
-- 📋 Notificações de orçamento excedido
-- 📋 Metas financeiras
-- 📋 Categorias padrão pré-definidas
+### ✅ Implementado Recentemente
+- ✅ **Sistema de Relatórios**: Dashboards interativos com Chart.js
+- ✅ **Exportação de Dados**: CSV, XLSX e **PDF com gráficos**
+- ✅ **Relacionamentos N:N**: Categorias múltiplas e sistema de tags
+- ✅ **Atributos Multivalorados**: Campo observações como String[]
+- ✅ **Análise Temporal**: Evolução de 12 meses de dados
+- ✅ **Top Gastos**: Identificação dos maiores gastos
+- ✅ **PDF Avançado**: Captura de gráficos em alta resolução com jsPDF + html2canvas
+
+
 
 
 ## 🤝 Desenvolvimento
@@ -357,10 +412,18 @@ Funcionalidades CLI:
 ### Interface Web
 Execute o servidor HTTP:
 ```bash
-java -cp bin ControleSeServer
+java -cp src ControleSeServer
 ```
 
 Acesse: **http://localhost:8080**
+
+**Funcionalidades Web:**
+- Interface responsiva e moderna
+- Dashboard com resumo financeiro
+- Sistema de relatórios com dashboards interativos
+- Exportação de dados em CSV/XLSX
+- Gerenciamento completo de transações
+- Sistema de tags e categorização múltipla
 
 
 

@@ -21,6 +21,30 @@
 \begin{document}
 \maketitle
 
+\section*{Formulário de Identificação}
+\begin{table}[H]
+\centering
+\begin{tabular}{|l|p{10cm}|}
+\hline
+\textbf{Disciplina} & Algoritmos e Estruturas de Dados III \\
+\hline
+\textbf{Professor} & [Nome do Professor] \\
+\hline
+\textbf{Período} & 2025/1 \\
+\hline
+\textbf{Alunos} & Ana Carolina Couto Machado e Marcos Paulo Da Silva Laine \\
+\hline
+\textbf{Matrículas} & [Matrícula Ana] e [Matrícula Marcos] \\
+\hline
+\textbf{Título do Projeto} & Controle-se: Aplicação Web de Controle de Gastos Pessoais \\
+\hline
+\textbf{Data de Entrega} & \today \\
+\hline
+\textbf{Repositório} & \url{https://github.com/marcoslaine/controle-se} \\
+\hline
+\end{tabular}
+\end{table}
+
 \newpage
 \part*{Fase I}
 \addcontentsline{toc}{part}{Fase I}
@@ -455,6 +479,150 @@ O código-fonte completo do projeto está disponível publicamente no GitHub:
   \item Instruções de compilação e execução
   \item Exemplos de uso e testes
   \item Sistema completo de relatórios com dashboards e exportação
+\end{itemize}
+
+\section*{Questionário Técnico - Fase II}
+
+\textbf{a) Qual a estrutura usada para representar os registros?}
+
+Os registros são representados através de classes Java que implementam a interface \texttt{Serializable} para persistência. Cada entidade possui uma classe específica (Usuario, Gasto, Receita, Categoria, Conta, Orcamento, Tag) com atributos correspondentes aos campos do banco de dados. Os registros são armazenados em arquivos \texttt{.db} usando serialização Java nativa.
+
+\textbf{b) Como atributos multivalorados do tipo string foram tratados?}
+
+Atributos multivalorados do tipo string foram implementados de duas formas:
+\begin{itemize}
+  \item \textbf{Nativo}: Campo \texttt{observacoes} na classe \texttt{Gasto} como \texttt{String[]}
+  \item \textbf{Simulado via relacionamento N:N}: Categorias de um gasto e tags de uma transação através de tabelas de relacionamento (\texttt{CategoriaGasto} e \texttt{TransacaoTag})
+\end{itemize}
+
+\textbf{c) Como foi implementada a exclusão lógica?}
+
+A exclusão lógica foi implementada através do campo booleano \texttt{ativo} presente em todas as entidades. Quando um registro é "excluído", o campo \texttt{ativo} é definido como \texttt{false}, mas o registro permanece no banco de dados. As consultas filtram apenas registros com \texttt{ativo = true}.
+
+\textbf{d) Além das PKs, quais outras chaves foram utilizadas nesta etapa?}
+
+Além das chaves primárias (IDs), foram utilizadas:
+\begin{itemize}
+  \item \textbf{Chaves estrangeiras}: \texttt{idUsuario} em todas as entidades principais
+  \item \textbf{Chaves de relacionamento}: \texttt{idCategoria}, \texttt{idGasto}, \texttt{idTag}, \texttt{idTransacao}
+  \item \textbf{Chaves de busca}: \texttt{email} (usuários), \texttt{nome} (categorias, contas, tags)
+\end{itemize}
+
+\textbf{e) Quais tipos de estruturas foram utilizadas para cada chave de pesquisa?}
+
+\begin{itemize}
+  \item \textbf{Árvore B+ (ordem 4)}: Todas as chaves primárias (IDs) e chaves de busca principais
+  \item \textbf{Hash Extensível (3 registros/bucket)}: Relacionamentos 1:N e N:N, índices secundários
+  \item \textbf{Índices primários}: Usuários, Categorias, Gastos, Receitas, Contas, Orçamentos, Tags
+  \item \textbf{Índices secundários}: Relacionamentos categoria-gasto, tag-transação, usuário-entidades
+\end{itemize}
+
+\textbf{f) Como foi implementado o relacionamento 1:N?}
+
+Os relacionamentos 1:N foram implementados através de:
+\begin{itemize}
+  \item \textbf{Chave estrangeira}: Campo \texttt{idUsuario} em todas as entidades dependentes
+  \item \textbf{Navegação}: Busca por \texttt{idUsuario} para recuperar registros relacionados
+  \item \textbf{Integridade referencial}: Validação de existência do usuário antes de inserir registros dependentes
+  \item \textbf{Exclusão em cascata}: Ao excluir usuário, todos os registros dependentes são marcados como inativos
+\end{itemize}
+
+\textbf{g) Como os índices são persistidos em disco?}
+
+\begin{itemize}
+  \item \textbf{Formato}: Serialização Java nativa (\texttt{.db} files)
+  \item \textbf{Atualização}: Índices são atualizados imediatamente após cada operação de escrita
+  \item \textbf{Sincronização}: Salvamento automático após cada modificação (insert, update, delete)
+  \item \textbf{Estrutura}: Cada índice é um arquivo separado (ex: \texttt{usuarios.db}, \texttt{categorias.db})
+\end{itemize}
+
+\textbf{h) Como está estruturado o projeto no GitHub?}
+
+\begin{itemize}
+  \item \textbf{src/}: Código-fonte Java (classes principais, handlers, utilitários)
+  \item \textbf{data/}: Arquivos de banco de dados (\texttt{.db})
+  \item \textbf{docs/}: Documentação técnica (LaTeX, diagramas)
+  \item \textbf{Raiz}: Arquivos frontend (\texttt{index.html}, \texttt{styles.css}, \texttt{app.js})
+  \item \textbf{Arquitetura}: Frontend Web + Backend Java + Banco de Dados Customizado
+  \item \textbf{Módulos}: Separação clara entre lógica de negócio, persistência e interface
+\end{itemize}
+
+\newpage
+\part*{Fase III}
+\addcontentsline{toc}{part}{Fase III}
+
+\section{Relacionamentos N:N}
+
+\subsection{Implementação dos Relacionamentos Muitos-para-Muitos}
+
+O sistema implementa dois relacionamentos N:N principais através de tabelas de junção:
+
+\subsubsection*{Categoria ↔ Gasto (N:N)}
+\begin{itemize}
+  \item \textbf{Tabela de Junção}: \texttt{CategoriaGasto}
+  \item \textbf{Chaves}: \texttt{idCategoria} e \texttt{idGasto}
+  \item \textbf{Propósito}: Permitir que um gasto tenha múltiplas categorias
+  \item \textbf{Implementação}: Hash Extensível para indexação eficiente
+\end{itemize}
+
+\subsubsection*{Tag ↔ Transação (N:N)}
+\begin{itemize}
+  \item \textbf{Tabela de Junção}: \texttt{TransacaoTag}
+  \item \textbf{Chaves}: \texttt{idTag} e \texttt{idTransacao} (pode ser gasto ou receita)
+  \item \textbf{Propósito}: Sistema de tags personalizáveis para categorização flexível
+  \item \textbf{Implementação}: Hash Extensível para indexação eficiente
+\end{itemize}
+
+\subsection{Estruturas de Dados para N:N}
+
+\subsubsection*{Hash Extensível para Relacionamentos}
+\begin{itemize}
+  \item \textbf{Capacidade por bucket}: 3 registros
+  \item \textbf{Chave composta}: Combinação das chaves estrangeiras
+  \item \textbf{Operações}: Inserção, busca e remoção de relacionamentos
+  \item \textbf{Complexidade}: O(1) médio para operações de relacionamento
+\end{itemize}
+
+\subsection{Operações de Navegação}
+
+\subsubsection*{Busca de Relacionamentos}
+\begin{itemize}
+  \item \textbf{Gastos por Categoria}: Busca todos os gastos de uma categoria específica
+  \item \textbf{Categorias por Gasto}: Busca todas as categorias de um gasto específico
+  \item \textbf{Transações por Tag}: Busca todas as transações com uma tag específica
+  \item \textbf{Tags por Transação}: Busca todas as tags de uma transação específica
+\end{itemize}
+
+\subsubsection*{Integridade Referencial}
+\begin{itemize}
+  \item \textbf{Validação}: Verificação de existência das entidades antes de criar relacionamentos
+  \item \textbf{Exclusão em Cascata}: Remoção automática de relacionamentos quando entidades são excluídas
+  \item \textbf{Consistência}: Manutenção da integridade dos dados através de validações
+\end{itemize}
+
+\subsection{Interface de Usuário para N:N}
+
+\subsubsection*{Seleção Múltipla de Categorias}
+\begin{itemize}
+  \item \textbf{Checkboxes}: Interface para seleção de múltiplas categorias em gastos
+  \item \textbf{Validação}: Pelo menos uma categoria deve ser selecionada
+  \item \textbf{Persistência}: Salvamento automático dos relacionamentos criados
+\end{itemize}
+
+\subsubsection*{Sistema de Tags}
+\begin{itemize}
+  \item \textbf{Criação Dinâmica}: Tags são criadas automaticamente quando utilizadas
+  \item \textbf{Associação Múltipla}: Uma transação pode ter múltiplas tags
+  \item \textbf{Filtros}: Busca de transações por tags específicas
+\end{itemize}
+
+\subsection{Benefícios dos Relacionamentos N:N}
+
+\begin{itemize}
+  \item \textbf{Flexibilidade}: Categorização múltipla permite análise mais detalhada
+  \item \textbf{Organização}: Sistema de tags oferece categorização personalizada
+  \item \textbf{Escalabilidade}: Estruturas eficientes suportam grandes volumes de dados
+  \item \textbf{Usabilidade}: Interface intuitiva para gerenciamento de relacionamentos
 \end{itemize}
 
 \end{document}

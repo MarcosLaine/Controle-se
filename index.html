@@ -8,6 +8,76 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        // Carregar bibliotecas dinamicamente com fallback
+        function loadScript(src, callback) {
+            const script = document.createElement('script');
+            script.src = src;
+            script.onload = callback;
+            script.onerror = function() {
+                console.error('Erro ao carregar:', src);
+                callback(false);
+            };
+            document.head.appendChild(script);
+        }
+
+        // Lista de CDNs para jsPDF
+        const jsPDFSources = [
+            'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
+            'https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js',
+            'https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js',
+            'https://cdn.skypack.dev/jspdf@2.5.1'
+        ];
+
+        // Lista de CDNs para html2canvas
+        const html2canvasSources = [
+            'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js',
+            'https://unpkg.com/html2canvas@1.4.1/dist/html2canvas.min.js',
+            'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js',
+            'https://cdn.skypack.dev/html2canvas@1.4.1'
+        ];
+
+        // Carregar jsPDF com múltiplos fallbacks
+        function loadJSPDFWithFallbacks(index = 0) {
+            if (index >= jsPDFSources.length) {
+                console.error('Falha ao carregar jsPDF de todos os CDNs');
+                return;
+            }
+            
+            loadScript(jsPDFSources[index], function(success) {
+                if (success) {
+                    console.log('jsPDF carregado com sucesso de:', jsPDFSources[index]);
+                } else {
+                    console.log('Tentando próximo CDN para jsPDF...');
+                    loadJSPDFWithFallbacks(index + 1);
+                }
+            });
+        }
+
+        // Carregar html2canvas com múltiplos fallbacks
+        function loadHtml2CanvasWithFallbacks(index = 0) {
+            if (index >= html2canvasSources.length) {
+                console.error('Falha ao carregar html2canvas de todos os CDNs');
+                return;
+            }
+            
+            loadScript(html2canvasSources[index], function(success) {
+                if (success) {
+                    console.log('html2canvas carregado com sucesso de:', html2canvasSources[index]);
+                } else {
+                    console.log('Tentando próximo CDN para html2canvas...');
+                    loadHtml2CanvasWithFallbacks(index + 1);
+                }
+            });
+        }
+
+        // Iniciar carregamento
+        loadJSPDFWithFallbacks();
+        loadHtml2CanvasWithFallbacks();
+
+        // Verificação simples - será feita pelo JavaScript da aplicação
+        console.log('Scripts de carregamento das bibliotecas iniciados');
+    </script>
 </head>
 <body>
     <!-- Loading Screen -->
@@ -294,10 +364,15 @@
                                 <select id="export-format">
                                     <option value="csv">CSV</option>
                                     <option value="xlsx">XLSX</option>
+                                    <option value="pdf">PDF</option>
                                 </select>
                                 <button class="btn-primary" id="export-report-btn">
                                     <i class="fas fa-download"></i>
                                     Exportar
+                                </button>
+                                <button class="btn-secondary" id="export-pdf-btn">
+                                    <i class="fas fa-file-pdf"></i>
+                                    PDF com Gráficos
                                 </button>
                             </div>
                         </div>

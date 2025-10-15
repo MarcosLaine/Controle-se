@@ -72,6 +72,12 @@ class ControleSeApp {
         // Reports
         document.getElementById('report-period').addEventListener('change', () => this.handleReportPeriodChange());
         document.getElementById('export-report-btn').addEventListener('click', () => this.exportReport());
+        document.getElementById('export-pdf-btn').addEventListener('click', () => this.exportPDF());
+        
+        // Verificar status das bibliotecas e atualizar botão após um pequeno delay
+        setTimeout(() => {
+            this.updatePDFButtonStatus();
+        }, 2000);
         document.getElementById('start-date').addEventListener('change', () => this.loadReports());
         document.getElementById('end-date').addEventListener('change', () => this.loadReports());
     }
@@ -1811,6 +1817,626 @@ class ControleSeApp {
             console.error('Error exporting report:', error);
             this.showToast('Erro ao exportar relatório', 'error');
         }
+    }
+
+    async exportPDF() {
+        try {
+            this.showToast('Gerando PDF com gráficos...', 'info');
+            
+            // Verificação rápida das bibliotecas
+            const jsPDFLoaded = typeof window.jsPDF !== 'undefined';
+            const html2canvasLoaded = typeof window.html2canvas !== 'undefined';
+            
+            console.log('Verificando bibliotecas para PDF:', {
+                jsPDF: jsPDFLoaded,
+                html2canvas: html2canvasLoaded
+            });
+            
+            if (!jsPDFLoaded || !html2canvasLoaded) {
+                console.log('Bibliotecas não disponíveis, usando método alternativo...');
+                await this.exportPDFAlternative();
+                return;
+            }
+
+            // Criar novo documento PDF
+            const { jsPDF } = window.jsPDF;
+            const pdf = new jsPDF('p', 'mm', 'a4');
+            
+            // Configurações
+            const pageWidth = pdf.internal.pageSize.getWidth();
+            const pageHeight = pdf.internal.pageSize.getHeight();
+            const margin = 20;
+            let yPosition = margin;
+            
+            // Título
+            pdf.setFontSize(20);
+            pdf.setFont('helvetica', 'bold');
+            pdf.text('Relatório Financeiro - Controle-se', pageWidth / 2, yPosition, { align: 'center' });
+            yPosition += 15;
+            
+            // Data de geração
+            pdf.setFontSize(10);
+            pdf.setFont('helvetica', 'normal');
+            pdf.text(`Gerado em: ${new Date().toLocaleDateString('pt-BR')}`, pageWidth / 2, yPosition, { align: 'center' });
+            yPosition += 20;
+            
+            // Capturar e adicionar cards de resumo
+            const summaryCards = document.querySelector('.report-summary-cards');
+            if (summaryCards) {
+                const summaryCanvas = await html2canvas(summaryCards, {
+                    backgroundColor: '#ffffff',
+                    scale: 2
+                });
+                
+                const summaryImg = summaryCanvas.toDataURL('image/png');
+                const summaryWidth = pageWidth - 2 * margin;
+                const summaryHeight = (summaryCanvas.height * summaryWidth) / summaryCanvas.width;
+                
+                pdf.addImage(summaryImg, 'PNG', margin, yPosition, summaryWidth, summaryHeight);
+                yPosition += summaryHeight + 10;
+            }
+            
+            // Capturar e adicionar gráfico de categorias
+            const categoryChart = document.getElementById('category-chart');
+            if (categoryChart && categoryChart.chart) {
+                const categoryCanvas = await html2canvas(categoryChart, {
+                    backgroundColor: '#ffffff',
+                    scale: 2
+                });
+                
+                const categoryImg = categoryCanvas.toDataURL('image/png');
+                const chartWidth = (pageWidth - 3 * margin) / 2;
+                const chartHeight = (categoryCanvas.height * chartWidth) / categoryCanvas.width;
+                
+                pdf.addImage(categoryImg, 'PNG', margin, yPosition, chartWidth, chartHeight);
+            }
+            
+            // Capturar e adicionar gráfico mensal
+            const monthlyChart = document.getElementById('monthly-chart');
+            if (monthlyChart && monthlyChart.chart) {
+                const monthlyCanvas = await html2canvas(monthlyChart, {
+                    backgroundColor: '#ffffff',
+                    scale: 2
+                });
+                
+                const monthlyImg = monthlyCanvas.toDataURL('image/png');
+                const chartWidth = (pageWidth - 3 * margin) / 2;
+                const chartHeight = (monthlyCanvas.height * chartWidth) / monthlyCanvas.width;
+                
+                pdf.addImage(monthlyImg, 'PNG', pageWidth / 2 + margin / 2, yPosition, chartWidth, chartHeight);
+                yPosition += chartHeight + 10;
+            }
+            
+            // Nova página para gráfico de contas e top gastos
+            pdf.addPage();
+            yPosition = margin;
+            
+            // Capturar e adicionar gráfico de contas
+            const accountChart = document.getElementById('account-chart');
+            if (accountChart && accountChart.chart) {
+                const accountCanvas = await html2canvas(accountChart, {
+                    backgroundColor: '#ffffff',
+                    scale: 2
+                });
+                
+                const accountImg = accountCanvas.toDataURL('image/png');
+                const chartWidth = (pageWidth - 3 * margin) / 2;
+                const chartHeight = (accountCanvas.height * chartWidth) / accountCanvas.width;
+                
+                pdf.addImage(accountImg, 'PNG', margin, yPosition, chartWidth, chartHeight);
+            }
+            
+            // Capturar e adicionar top gastos
+            const topExpenses = document.getElementById('top-expenses');
+            if (topExpenses) {
+                const expensesCanvas = await html2canvas(topExpenses, {
+                    backgroundColor: '#ffffff',
+                    scale: 2
+                });
+                
+                const expensesImg = expensesCanvas.toDataURL('image/png');
+                const chartWidth = (pageWidth - 3 * margin) / 2;
+                const chartHeight = (expensesCanvas.height * chartWidth) / expensesCanvas.width;
+                
+                pdf.addImage(expensesImg, 'PNG', pageWidth / 2 + margin / 2, yPosition, chartWidth, chartHeight);
+            }
+            
+            // Salvar o PDF
+            const fileName = `relatorio_completo_${new Date().toISOString().split('T')[0]}.pdf`;
+            pdf.save(fileName);
+            
+            this.showToast('PDF gerado com sucesso!', 'success');
+            
+        } catch (error) {
+            console.error('Error generating PDF:', error);
+            this.showToast('Erro ao gerar PDF', 'error');
+        }
+    }
+
+    async loadJSPDF() {
+        return new Promise((resolve, reject) => {
+            if (typeof window.jsPDF !== 'undefined') {
+                resolve();
+                return;
+            }
+            
+            const script = document.createElement('script');
+            script.src = 'https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js';
+            script.onload = () => {
+                console.log('jsPDF carregado dinamicamente');
+                resolve();
+            };
+            script.onerror = () => {
+                console.error('Erro ao carregar jsPDF');
+                reject(new Error('Erro ao carregar jsPDF'));
+            };
+            document.head.appendChild(script);
+        });
+    }
+
+    async loadHtml2Canvas() {
+        return new Promise((resolve, reject) => {
+            if (typeof window.html2canvas !== 'undefined') {
+                resolve();
+                return;
+            }
+            
+            const script = document.createElement('script');
+            script.src = 'https://unpkg.com/html2canvas@1.4.1/dist/html2canvas.min.js';
+            script.onload = () => {
+                console.log('html2canvas carregado dinamicamente');
+                resolve();
+            };
+            script.onerror = () => {
+                console.error('Erro ao carregar html2canvas');
+                reject(new Error('Erro ao carregar html2canvas'));
+            };
+            document.head.appendChild(script);
+        });
+    }
+
+    async waitForLibraries(timeoutMs = 15000) {
+        return new Promise((resolve) => {
+            const startTime = Date.now();
+            
+            const checkLibraries = () => {
+                const jsPDFLoaded = typeof window.jsPDF !== 'undefined';
+                const html2canvasLoaded = typeof window.html2canvas !== 'undefined';
+                
+                // Verificar se as bibliotecas estão realmente funcionais
+                let jsPDFFunctional = false;
+                let html2canvasFunctional = false;
+                
+                if (jsPDFLoaded) {
+                    try {
+                        const { jsPDF } = window.jsPDF;
+                        const testPdf = new jsPDF();
+                        jsPDFFunctional = testPdf && typeof testPdf.save === 'function';
+                    } catch (e) {
+                        console.error('jsPDF carregado mas não funcional:', e);
+                    }
+                }
+                
+                if (html2canvasLoaded) {
+                    try {
+                        html2canvasFunctional = typeof window.html2canvas === 'function';
+                    } catch (e) {
+                        console.error('html2canvas carregado mas não funcional:', e);
+                    }
+                }
+                
+                console.log('Verificando bibliotecas:', {
+                    jsPDF: jsPDFLoaded,
+                    html2canvas: html2canvasLoaded,
+                    jsPDFFunctional: jsPDFFunctional,
+                    html2canvasFunctional: html2canvasFunctional,
+                    elapsed: Date.now() - startTime
+                });
+                
+                if (jsPDFFunctional && html2canvasFunctional) {
+                    console.log('Todas as bibliotecas carregadas e funcionais!');
+                    resolve(true);
+                    return;
+                }
+                
+                if (Date.now() - startTime > timeoutMs) {
+                    console.error('Timeout: Bibliotecas não carregaram em', timeoutMs, 'ms');
+                    resolve(false);
+                    return;
+                }
+                
+                // Verificar novamente em 500ms
+                setTimeout(checkLibraries, 500);
+            };
+            
+            checkLibraries();
+        });
+    }
+
+    updatePDFButtonStatus() {
+        const pdfButton = document.getElementById('export-pdf-btn');
+        if (!pdfButton) return;
+
+        // Verificação única após 3 segundos
+        setTimeout(() => {
+            const jsPDFLoaded = typeof window.jsPDF !== 'undefined';
+            const html2canvasLoaded = typeof window.html2canvas !== 'undefined';
+            
+            console.log('Verificação final das bibliotecas:', {
+                jsPDF: jsPDFLoaded,
+                html2canvas: html2canvasLoaded
+            });
+            
+            if (jsPDFLoaded && html2canvasLoaded) {
+                pdfButton.innerHTML = '<i class="fas fa-file-pdf"></i> PDF com Gráficos';
+                pdfButton.disabled = false;
+                pdfButton.style.opacity = '1';
+                console.log('Bibliotecas carregadas! Botão ativado.');
+            } else {
+                pdfButton.innerHTML = '<i class="fas fa-file-pdf"></i> PDF (Alternativo)';
+                pdfButton.disabled = false;
+                pdfButton.style.opacity = '1';
+                console.log('Usando método alternativo');
+            }
+        }, 3000);
+        
+        // Estado inicial
+        pdfButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Carregando...';
+        pdfButton.disabled = true;
+        pdfButton.style.opacity = '0.7';
+    }
+
+    async exportPDFAlternative() {
+        try {
+            this.showToast('Gerando PDF com gráficos...', 'info');
+            
+            // Aguardar um pouco para garantir que os gráficos estão renderizados
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            // Usar a API nativa do navegador para imprimir/gerar PDF
+            const printWindow = window.open('', '_blank');
+            
+            // Obter dados dos relatórios
+            const period = document.getElementById('report-period').value;
+            const userId = this.currentUser ? this.currentUser.id : 1;
+            
+            let startDate, endDate;
+            if (period === 'custom') {
+                startDate = document.getElementById('start-date').value;
+                endDate = document.getElementById('end-date').value;
+            }
+            
+            // Buscar dados dos relatórios
+            const reportData = await this.fetchReportData(userId, period, startDate, endDate);
+            
+            // Capturar os gráficos como imagens
+            const chartImages = await this.captureCharts();
+            
+            // Criar HTML para o PDF
+            const htmlContent = this.generatePDFHTMLWithCharts(reportData, period, chartImages);
+            
+            printWindow.document.write(htmlContent);
+            printWindow.document.close();
+            
+            // Aguardar o carregamento e imprimir
+            printWindow.onload = function() {
+                printWindow.print();
+                printWindow.close();
+            };
+            
+            this.showToast('PDF com gráficos gerado! Use Ctrl+P para salvar como PDF.', 'success');
+            
+        } catch (error) {
+            console.error('Error generating alternative PDF:', error);
+            this.showToast('Erro ao gerar PDF alternativo', 'error');
+        }
+    }
+
+    async captureCharts() {
+        const charts = {};
+        
+        try {
+            // Capturar gráfico de categorias
+            const categoryChart = document.getElementById('category-chart');
+            if (categoryChart) {
+                charts.category = await this.captureElementAsImage(categoryChart);
+            }
+            
+            // Capturar gráfico mensal
+            const monthlyChart = document.getElementById('monthly-chart');
+            if (monthlyChart) {
+                charts.monthly = await this.captureElementAsImage(monthlyChart);
+            }
+            
+            // Capturar gráfico de contas
+            const accountChart = document.getElementById('account-chart');
+            if (accountChart) {
+                charts.account = await this.captureElementAsImage(accountChart);
+            }
+            
+            // Capturar top gastos
+            const topExpenses = document.getElementById('top-expenses');
+            if (topExpenses) {
+                charts.topExpenses = await this.captureElementAsImage(topExpenses);
+            }
+            
+            // Capturar cards de resumo
+            const summaryCards = document.querySelector('.report-summary-cards');
+            if (summaryCards) {
+                charts.summary = await this.captureElementAsImage(summaryCards);
+            }
+            
+        } catch (error) {
+            console.error('Erro ao capturar gráficos:', error);
+        }
+        
+        return charts;
+    }
+
+    async captureElementAsImage(element) {
+        return new Promise((resolve) => {
+            // Usar html2canvas se disponível, senão usar método alternativo
+            if (typeof window.html2canvas !== 'undefined') {
+                html2canvas(element, {
+                    backgroundColor: '#ffffff',
+                    scale: 2,
+                    useCORS: true,
+                    allowTaint: true
+                }).then(canvas => {
+                    resolve(canvas.toDataURL('image/png'));
+                }).catch(() => {
+                    resolve(null);
+                });
+            } else {
+                // Método alternativo usando canvas nativo
+                try {
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    const rect = element.getBoundingClientRect();
+                    
+                    canvas.width = rect.width * 2;
+                    canvas.height = rect.height * 2;
+                    
+                    // Criar uma imagem simples com o conteúdo do elemento
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    
+                    ctx.fillStyle = '#333333';
+                    ctx.font = '16px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('Gráfico não disponível', canvas.width / 2, canvas.height / 2);
+                    
+                    resolve(canvas.toDataURL('image/png'));
+                } catch (error) {
+                    console.error('Erro ao criar canvas:', error);
+                    resolve(null);
+                }
+            }
+        });
+    }
+
+    async fetchReportData(userId, period, startDate, endDate) {
+        const params = new URLSearchParams({
+            userId: userId,
+            period: period
+        });
+        
+        if (startDate && endDate) {
+            params.append('startDate', startDate);
+            params.append('endDate', endDate);
+        }
+        
+        const response = await fetch(`${this.apiBaseUrl}/reports?${params}`);
+        const data = await response.json();
+        return data.data;
+    }
+
+    generatePDFHTMLWithCharts(data, period, chartImages) {
+        const periodText = period === 'month' ? 'Este Mês' : 
+                          period === 'year' ? 'Este Ano' : 'Período Personalizado';
+        
+        return `
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Relatório Financeiro - Controle-se</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .header { text-align: center; margin-bottom: 30px; }
+        .summary-cards { display: flex; justify-content: space-around; margin: 20px 0; }
+        .card { background: #f5f5f5; padding: 15px; border-radius: 8px; text-align: center; }
+        .card h3 { margin: 0 0 10px 0; color: #333; }
+        .card .amount { font-size: 24px; font-weight: bold; margin: 5px 0; }
+        .card.income .amount { color: #27ae60; }
+        .card.expense .amount { color: #e74c3c; }
+        .card.balance .amount { color: #3498db; }
+        .section { margin: 30px 0; }
+        .section h2 { color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 5px; }
+        .top-expenses { list-style: none; padding: 0; }
+        .top-expenses li { background: #f8f9fa; margin: 5px 0; padding: 10px; border-radius: 5px; }
+        .chart-placeholder { background: #f0f0f0; padding: 40px; text-align: center; border-radius: 8px; margin: 20px 0; }
+        .chart-image { border: 1px solid #ddd; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .summary-section { text-align: center; margin: 20px 0; }
+        @media print { 
+            body { margin: 0; }
+            .chart-image { border: none; box-shadow: none; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Relatório Financeiro - Controle-se</h1>
+        <p>Período: ${periodText}</p>
+        <p>Gerado em: ${new Date().toLocaleDateString('pt-BR')}</p>
+    </div>
+    
+        ${chartImages.summary ? 
+            `<div class="summary-section">
+                <img src="${chartImages.summary}" alt="Cards de Resumo" class="chart-image" style="width: 100%; max-width: 800px; height: auto; margin: 20px 0;">
+            </div>` :
+        `<div class="summary-cards">
+            <div class="card income">
+                <h3>Total de Receitas</h3>
+                <div class="amount">R$ ${data.totalIncomes.toFixed(2).replace('.', ',')}</div>
+                <p>${data.incomeCount} transações</p>
+            </div>
+            <div class="card expense">
+                <h3>Total de Gastos</h3>
+                <div class="amount">R$ ${data.totalExpenses.toFixed(2).replace('.', ',')}</div>
+                <p>${data.expenseCount} transações</p>
+            </div>
+            <div class="card balance">
+                <h3>Saldo</h3>
+                <div class="amount">R$ ${data.balance.toFixed(2).replace('.', ',')}</div>
+            </div>
+        </div>`
+    }
+    
+    <div class="section">
+        <h2>Análise por Categoria</h2>
+        ${chartImages.category ? 
+            `<img src="${chartImages.category}" alt="Gráfico de Categorias" class="chart-image" style="width: 100%; max-width: 600px; height: auto; margin: 20px 0;">` :
+            `<div class="chart-placeholder">
+                <p>Gráfico de Pizza - Gastos por Categoria</p>
+                <p>Dados: ${Object.keys(data.categoryAnalysis).map(cat => `${cat}: R$ ${data.categoryAnalysis[cat].toFixed(2)}`).join(', ')}</p>
+            </div>`
+        }
+    </div>
+    
+    <div class="section">
+        <h2>Evolução Mensal</h2>
+        ${chartImages.monthly ? 
+            `<img src="${chartImages.monthly}" alt="Gráfico Mensal" class="chart-image" style="width: 100%; max-width: 600px; height: auto; margin: 20px 0;">` :
+            `<div class="chart-placeholder">
+                <p>Gráfico de Linha - Evolução de Receitas vs Gastos</p>
+                <p>Últimos 12 meses de dados disponíveis</p>
+            </div>`
+        }
+    </div>
+    
+    <div class="section">
+        <h2>Análise por Conta</h2>
+        ${chartImages.account ? 
+            `<img src="${chartImages.account}" alt="Gráfico de Contas" class="chart-image" style="width: 100%; max-width: 600px; height: auto; margin: 20px 0;">` :
+            `<div class="chart-placeholder">
+                <p>Gráfico de Barras - Gastos por Conta</p>
+                <p>Dados: ${Object.keys(data.accountAnalysis).map(acc => `${acc}: R$ ${data.accountAnalysis[acc].toFixed(2)}`).join(', ')}</p>
+            </div>`
+        }
+    </div>
+    
+    <div class="section">
+        <h2>Top 5 Maiores Gastos</h2>
+        ${chartImages.topExpenses ? 
+            `<img src="${chartImages.topExpenses}" alt="Top Gastos" class="chart-image" style="width: 100%; max-width: 600px; height: auto; margin: 20px 0;">` :
+            `<ul class="top-expenses">
+                ${data.topExpenses.map(expense => `
+                    <li>
+                        <strong>${expense.description}</strong> - 
+                        R$ ${expense.value.toFixed(2).replace('.', ',')} 
+                        (${expense.category}) - 
+                        ${new Date(expense.date).toLocaleDateString('pt-BR')}
+                    </li>
+                `).join('')}
+            </ul>`
+        }
+    </div>
+</body>
+</html>`;
+    }
+
+    generatePDFHTML(data, period) {
+        const periodText = period === 'month' ? 'Este Mês' : 
+                          period === 'year' ? 'Este Ano' : 'Período Personalizado';
+        
+        return `
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Relatório Financeiro - Controle-se</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .header { text-align: center; margin-bottom: 30px; }
+        .summary-cards { display: flex; justify-content: space-around; margin: 20px 0; }
+        .card { background: #f5f5f5; padding: 15px; border-radius: 8px; text-align: center; }
+        .card h3 { margin: 0 0 10px 0; color: #333; }
+        .card .amount { font-size: 24px; font-weight: bold; margin: 5px 0; }
+        .card.income .amount { color: #27ae60; }
+        .card.expense .amount { color: #e74c3c; }
+        .card.balance .amount { color: #3498db; }
+        .section { margin: 30px 0; }
+        .section h2 { color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 5px; }
+        .top-expenses { list-style: none; padding: 0; }
+        .top-expenses li { background: #f8f9fa; margin: 5px 0; padding: 10px; border-radius: 5px; }
+        .chart-placeholder { background: #f0f0f0; padding: 40px; text-align: center; border-radius: 8px; margin: 20px 0; }
+        @media print { body { margin: 0; } }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Relatório Financeiro - Controle-se</h1>
+        <p>Período: ${periodText}</p>
+        <p>Gerado em: ${new Date().toLocaleDateString('pt-BR')}</p>
+    </div>
+    
+    <div class="summary-cards">
+        <div class="card income">
+            <h3>Total de Receitas</h3>
+            <div class="amount">R$ ${data.totalIncomes.toFixed(2).replace('.', ',')}</div>
+            <p>${data.incomeCount} transações</p>
+        </div>
+        <div class="card expense">
+            <h3>Total de Gastos</h3>
+            <div class="amount">R$ ${data.totalExpenses.toFixed(2).replace('.', ',')}</div>
+            <p>${data.expenseCount} transações</p>
+        </div>
+        <div class="card balance">
+            <h3>Saldo</h3>
+            <div class="amount">R$ ${data.balance.toFixed(2).replace('.', ',')}</div>
+        </div>
+    </div>
+    
+    <div class="section">
+        <h2>Análise por Categoria</h2>
+        <div class="chart-placeholder">
+            <p>Gráfico de Pizza - Gastos por Categoria</p>
+            <p>Dados: ${Object.keys(data.categoryAnalysis).map(cat => `${cat}: R$ ${data.categoryAnalysis[cat].toFixed(2)}`).join(', ')}</p>
+        </div>
+    </div>
+    
+    <div class="section">
+        <h2>Análise por Conta</h2>
+        <div class="chart-placeholder">
+            <p>Gráfico de Barras - Gastos por Conta</p>
+            <p>Dados: ${Object.keys(data.accountAnalysis).map(acc => `${acc}: R$ ${data.accountAnalysis[acc].toFixed(2)}`).join(', ')}</p>
+        </div>
+    </div>
+    
+    <div class="section">
+        <h2>Top 5 Maiores Gastos</h2>
+        <ul class="top-expenses">
+            ${data.topExpenses.map(expense => `
+                <li>
+                    <strong>${expense.description}</strong> - 
+                    R$ ${expense.value.toFixed(2).replace('.', ',')} 
+                    (${expense.category}) - 
+                    ${new Date(expense.date).toLocaleDateString('pt-BR')}
+                </li>
+            `).join('')}
+        </ul>
+    </div>
+    
+    <div class="section">
+        <h2>Evolução Mensal</h2>
+        <div class="chart-placeholder">
+            <p>Gráfico de Linha - Evolução de Receitas vs Gastos</p>
+            <p>Últimos 12 meses de dados disponíveis</p>
+        </div>
+    </div>
+</body>
+</html>`;
     }
     
     // ===== FUNÇÕES DE EDIÇÃO =====
