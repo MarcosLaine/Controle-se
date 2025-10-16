@@ -107,7 +107,7 @@ public class BancoDados {
         // Carrega dados persistidos
         carregarDados();
         
-        System.out.println("✓ Banco de dados inicializado");
+        System.out.println("Banco de dados inicializado");
         imprimirEstatisticas();
     }
     
@@ -1018,7 +1018,7 @@ public class BancoDados {
             carregarTransacaoTag(); // Carrega relacionamentos N:N Tags
             System.out.println("✓ Dados carregados do disco");
         } catch (Exception e) {
-            System.out.println("⚠ Primeira execução ou erro ao carregar dados: " + e.getMessage());
+            // System.out.println("⚠ Primeira execução ou erro ao carregar dados: " + e.getMessage());
         }
     }
     
@@ -1145,7 +1145,7 @@ public class BancoDados {
         
         try (ObjectInputStream ois = new ObjectInputStream(new FileInputStream(GASTOS_DB))) {
             List<Gasto> gastos = (List<Gasto>) ois.readObject();
-            System.out.println("Carregando " + gastos.size() + " gastos...");
+            // System.out.println("Carregando " + gastos.size() + " gastos...");
             
             for (Gasto gasto : gastos) {
                 // Inicializa observacoes se for null (compatibilidade com dados antigos)
@@ -1158,7 +1158,7 @@ public class BancoDados {
                 indiceDataGastos.inserir(gasto.getData().hashCode(), gasto);
                 // Não insere mais no indiceCategoriaGastos - isso é feito via CategoriaGasto
             }
-            System.out.println("✓ " + gastos.size() + " gastos carregados com sucesso");
+            // System.out.println("✓ " + gastos.size() + " gastos carregados com sucesso");
         } catch (Exception e) {
             System.err.println("Erro ao carregar gastos: " + e.getMessage());
             e.printStackTrace();

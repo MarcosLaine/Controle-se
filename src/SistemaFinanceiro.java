@@ -282,7 +282,7 @@ public class SistemaFinanceiro {
         LocalDate data = lerData("Data (dd/mm/aaaa): ");
         String frequencia = lerString("Frequência (ex: Único, Mensal, Semanal): ");
         
-        int idGasto = bancoDados.cadastrarGasto(descricao, valor, data, frequencia, usuarioLogado.getIdUsuario(), categoriaEscolhida.getIdCategoria());
+        int idGasto = bancoDados.cadastrarGasto(descricao, valor, data, frequencia, usuarioLogado.getIdUsuario(), categoriaEscolhida.getIdCategoria(), 1);
         System.out.println("Gasto registrado com sucesso! ID: " + idGasto);
     }
     
@@ -293,7 +293,7 @@ public class SistemaFinanceiro {
         double valor = lerDouble("Valor: ");
         LocalDate data = lerData("Data (dd/mm/aaaa): ");
         
-        int idReceita = bancoDados.cadastrarReceita(descricao, valor, data, usuarioLogado.getIdUsuario());
+        int idReceita = bancoDados.cadastrarReceita(descricao, valor, data, usuarioLogado.getIdUsuario(), 1);
         System.out.println("Receita registrada com sucesso! ID: " + idReceita);
     }
     
