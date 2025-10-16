@@ -1,4 +1,4 @@
-# 💰 Controle-se - Sistema Financeiro Pessoal
+# 💰 Controle-se - Sistema de Controle Financeiro Pessoal
 
 Sistema completo de controle financeiro pessoal com **estruturas de dados avançadas**, **frontend web moderno** e **API REST** implementados em Java puro.
 
@@ -395,7 +395,7 @@ DELETE /api/tags?id={id}                  # Excluir tag (lógica)
 
 
 
-## 🤝 Desenvolvimento
+## 🖥️ Desenvolvimento
 
 ### Interface de Linha de Comando (CLI)
 Execute o sistema em modo CLI:
