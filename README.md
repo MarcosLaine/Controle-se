@@ -175,37 +175,50 @@ Abra o navegador e acesse: **http://localhost:8080**
 Controle-se/
 ├── src/                              # Código fonte Java
 │   ├── ControleSe.java               # Programa principal (CLI)
-│   ├── ControleSeServer.java         # Servidor HTTP + API REST
-│   ├── BancoDados.java               # Gerenciador de dados
-│   ├── Entidades.java                # Classes de domínio
-│   ├── ArvoreBPlus.java              # Índices primários
-│   ├── HashExtensivel.java           # Índices secundários
+│   ├── ControleSeServer.java         # Servidor HTTP + API REST (monolítico)
+│   ├── ControleSeServerModular.java  # Servidor modular (em desenvolvimento)
+│   ├── BancoDados.java               # Gerenciador de dados e persistência
+│   ├── Entidades.java                # Classes de domínio (Usuario, Categoria, etc)
+│   ├── ArvoreBPlus.java              # Implementação Árvore B+ (índices primários)
+│   ├── HashExtensivel.java           # Implementação Hash Extensível (índices secundários)
 │   ├── SistemaFinanceiro.java        # Interface CLI
-│   └── server/                       # Módulos do servidor (em progresso)
-│       ├── utils/
-│       │   ├── JsonUtil.java         # Parser JSON
-│       │   ├── RequestUtil.java      # Utilitários de request
-│       │   └── ResponseUtil.java     # Utilitários de response
-│       └── handlers/
-│           ├── StaticFileHandler.java     # Handler de arquivos estáticos
-│           ├── CategoriesHandler.java     # Handler de categorias
-│           └── AccountsHandler.java       # Handler de contas
-├── bin/                              # Classes compiladas
-├── data/                             # Arquivos de persistência
+│   └── server/                       # Módulos do servidor (modularização)
+│       ├── handlers/                 # Handlers HTTP separados
+│       │   ├── AccountsHandler.java       # Handler de contas
+│       │   ├── CategoriesHandler.java     # Handler de categorias
+│       │   └── StaticFileHandler.java     # Handler de arquivos estáticos
+│       └── utils/                    # Utilitários do servidor
+│           ├── JsonUtil.java         # Parser e serialização JSON
+│           ├── RequestUtil.java      # Utilitários de requisição HTTP
+│           └── ResponseUtil.java     # Utilitários de resposta HTTP
+├── bin/                              # Classes compiladas (.class)
+│   └── server/                       # Estrutura espelhada do src/
+│       ├── handlers/
+│       └── utils/
+├── data/                             # Arquivos de persistência binária
 │   ├── usuarios.db                   # Dados de usuários
 │   ├── categorias.db                 # Dados de categorias
 │   ├── gastos.db                     # Dados de gastos
 │   ├── receitas.db                   # Dados de receitas
 │   ├── contas.db                     # Dados de contas
 │   ├── orcamentos.db                 # Dados de orçamentos
-│   └── contadores.db                 # Contadores de IDs
+│   ├── tags.db                       # Dados de tags
+│   ├── categoria_gasto.db            # Relacionamento N:N Categoria-Gasto
+│   ├── transacao_tag.db              # Relacionamento N:N Transação-Tag
+│   └── contadores.db                 # Contadores de IDs auto-incremento
 ├── docs/                             # Documentação do projeto
 │   ├── TP_Aeds3_Fase1.pdf            # Especificação Fase I
 │   ├── Fase II - TP.pdf              # Especificação Fase II
-│   └── ARQUITETURA_MODULAR.md        # Documentação da arquitetura
-├── app.js                            # JavaScript do frontend
-├── index.html                        # Interface web
-├── styles.css                        # Estilos CSS
+│   ├── der.png                       # Diagrama Entidade-Relacionamento
+│   ├── caso.png                      # Diagrama de Casos de Uso
+│   └── main.tex                      # Fonte LaTeX da documentação
+├── app.js                            # JavaScript do frontend (2642 linhas)
+├── index.html                        # Interface web principal
+├── styles.css                        # Estilos CSS da aplicação
+├── Dockerfile                        # Configuração Docker
+├── render.yaml                       # Configuração deploy Render
+├── test-docker.bat                   # Script teste Docker (Windows)
+├── test-docker.sh                    # Script teste Docker (Linux/Mac)
 └── README.md                         # Este arquivo
 ```
 
@@ -236,6 +249,7 @@ DELETE /api/accounts?id={id}                 # Excluir conta (lógica)
 ### Transações
 ```http
 GET    /api/transactions?userId={id}&categoryId={cat}&date={date}  # Listar com filtros
+GET    /api/transactions/recent?userId={id}&limit={n}              # Listar transações recentes (padrão: 10)
 ```
 
 ### Gastos
