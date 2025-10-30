@@ -261,28 +261,53 @@ body {
     -moz-appearance: none;
     padding-right: 40px;
     cursor: pointer;
-    background: linear-gradient(to bottom, #ffffff, #fafafa);
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath fill='%23666' d='M4.427 6.427l3.396 3.396a.25.25 0 00.354 0l3.396-3.396A.25.25 0 0011.396 6H4.604a.25.25 0 00-.177.427z'/%3E%3C/svg%3E");
-    background-repeat: no-repeat;
-    background-position: right 12px center;
-    background-size: 16px;
     font-weight: 500;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    
+    /* Background separado */
+    background-color: #fafafa;
+    background-image: 
+        linear-gradient(to bottom, #ffffff, #fafafa),
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath fill='%23666' d='M4.427 6.427l3.396 3.396a.25.25 0 00.354 0l3.396-3.396A.25.25 0 0011.396 6H4.604a.25.25 0 00-.177.427z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat, no-repeat;
+    background-position: 0 0, right 12px center;
+    background-size: 100% 100%, 16px;
+}
+
+/* Remove seta nativa do IE nos formulários */
+.form-group select::-ms-expand {
+    display: none;
 }
 
 .form-group select:hover {
     border-color: var(--primary-color);
-    background: linear-gradient(to bottom, #ffffff, #f8f9ff);
+    background-color: #f8f9ff;
+    background-image: 
+        linear-gradient(to bottom, #ffffff, #f8f9ff),
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath fill='%23666' d='M4.427 6.427l3.396 3.396a.25.25 0 00.354 0l3.396-3.396A.25.25 0 0011.396 6H4.604a.25.25 0 00-.177.427z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat, no-repeat;
+    background-position: 0 0, right 12px center;
+    background-size: 100% 100%, 16px;
     box-shadow: 0 2px 8px rgba(74, 85, 254, 0.1);
     transform: translateY(-1px);
 }
 
 .form-group input:focus,
-.form-group select:focus,
 .form-group textarea:focus {
     outline: none;
     border-color: var(--primary-color);
     background: #ffffff;
+    box-shadow: 0 0 0 3px rgba(74, 85, 254, 0.1), 0 2px 8px rgba(74, 85, 254, 0.15);
+}
+
+.form-group select:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    background-color: #ffffff;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath fill='%23666' d='M4.427 6.427l3.396 3.396a.25.25 0 00.354 0l3.396-3.396A.25.25 0 0011.396 6H4.604a.25.25 0 00-.177.427z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    background-size: 16px;
     box-shadow: 0 0 0 3px rgba(74, 85, 254, 0.1), 0 2px 8px rgba(74, 85, 254, 0.15);
 }
 
@@ -778,29 +803,48 @@ body {
 
 /* ===== DROPDOWNS/SELECTS (Modernos e Bonitos) ===== */
 select {
+    /* Remove aparência nativa */
     appearance: none;
     -webkit-appearance: none;
     -moz-appearance: none;
+    
+    /* Estrutura */
     padding: 12px 40px 12px 16px;
     border: 2px solid var(--neutral-300);
     border-radius: var(--radius-lg);
     font-size: var(--font-size-sm);
     font-weight: 500;
     color: var(--text-primary);
-    background: linear-gradient(to bottom, #ffffff, #fafafa);
     cursor: pointer;
     transition: all 0.3s ease;
     position: relative;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath fill='%23666' d='M4.427 6.427l3.396 3.396a.25.25 0 00.354 0l3.396-3.396A.25.25 0 0011.396 6H4.604a.25.25 0 00-.177.427z'/%3E%3C/svg%3E");
-    background-repeat: no-repeat;
-    background-position: right 12px center;
-    background-size: 16px;
+    
+    /* Background separado em propriedades específicas */
+    background-color: #fafafa;
+    background-image: 
+        linear-gradient(to bottom, #ffffff, #fafafa),
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath fill='%23666' d='M4.427 6.427l3.396 3.396a.25.25 0 00.354 0l3.396-3.396A.25.25 0 0011.396 6H4.604a.25.25 0 00-.177.427z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat, no-repeat;
+    background-position: 0 0, right 12px center;
+    background-size: 100% 100%, 16px;
+    
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+/* Remove seta nativa do IE */
+select::-ms-expand {
+    display: none;
 }
 
 select:hover {
     border-color: var(--primary-color);
-    background: linear-gradient(to bottom, #ffffff, #f8f9ff);
+    background-color: #f8f9ff;
+    background-image: 
+        linear-gradient(to bottom, #ffffff, #f8f9ff),
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath fill='%23666' d='M4.427 6.427l3.396 3.396a.25.25 0 00.354 0l3.396-3.396A.25.25 0 0011.396 6H4.604a.25.25 0 00-.177.427z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat, no-repeat;
+    background-position: 0 0, right 12px center;
+    background-size: 100% 100%, 16px;
     box-shadow: 0 2px 8px rgba(74, 85, 254, 0.1);
     transform: translateY(-1px);
 }
@@ -808,7 +852,11 @@ select:hover {
 select:focus {
     outline: none;
     border-color: var(--primary-color);
-    background: #ffffff;
+    background-color: #ffffff;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath fill='%23666' d='M4.427 6.427l3.396 3.396a.25.25 0 00.354 0l3.396-3.396A.25.25 0 0011.396 6H4.604a.25.25 0 00-.177.427z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    background-size: 16px;
     box-shadow: 0 0 0 3px rgba(74, 85, 254, 0.1), 0 2px 8px rgba(74, 85, 254, 0.15);
 }
 
@@ -819,13 +867,18 @@ select:active {
 select:disabled {
     opacity: 0.6;
     cursor: not-allowed;
-    background: #f5f5f5;
+    background-color: #f5f5f5;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath fill='%23999' d='M4.427 6.427l3.396 3.396a.25.25 0 00.354 0l3.396-3.396A.25.25 0 0011.396 6H4.604a.25.25 0 00-.177.427z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    background-size: 16px;
     border-color: var(--neutral-200);
 }
 
 select:disabled:hover {
     transform: none;
     border-color: var(--neutral-200);
+    background-color: #f5f5f5;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
@@ -849,29 +902,68 @@ select option:checked {
 /* Dropdown com ícone especial para período */
 #period-select,
 #report-period {
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath fill='%234A55FE' d='M4.427 6.427l3.396 3.396a.25.25 0 00.354 0l3.396-3.396A.25.25 0 0011.396 6H4.604a.25.25 0 00-.177.427z'/%3E%3C/svg%3E");
     border-color: var(--primary-color);
     background-color: #f8f9ff;
+    background-image: 
+        linear-gradient(to bottom, #ffffff, #f8f9ff),
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath fill='%234A55FE' d='M4.427 6.427l3.396 3.396a.25.25 0 00.354 0l3.396-3.396A.25.25 0 0011.396 6H4.604a.25.25 0 00-.177.427z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat, no-repeat;
+    background-position: 0 0, right 12px center;
+    background-size: 100% 100%, 16px;
     font-weight: 600;
 }
 
 #period-select:hover,
 #report-period:hover {
-    background: linear-gradient(to bottom, #f8f9ff, #f0f1ff);
+    background-color: #f0f1ff;
+    background-image: 
+        linear-gradient(to bottom, #f8f9ff, #f0f1ff),
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath fill='%234A55FE' d='M4.427 6.427l3.396 3.396a.25.25 0 00.354 0l3.396-3.396A.25.25 0 0011.396 6H4.604a.25.25 0 00-.177.427z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat, no-repeat;
+    background-position: 0 0, right 12px center;
+    background-size: 100% 100%, 16px;
     box-shadow: 0 4px 12px rgba(74, 85, 254, 0.15);
+}
+
+#period-select:focus,
+#report-period:focus {
+    background-color: #ffffff;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath fill='%234A55FE' d='M4.427 6.427l3.396 3.396a.25.25 0 00.354 0l3.396-3.396A.25.25 0 0011.396 6H4.604a.25.25 0 00-.177.427z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    background-size: 16px;
 }
 
 /* Dropdown de exportação com cor especial */
 #export-format {
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath fill='%2310b981' d='M4.427 6.427l3.396 3.396a.25.25 0 00.354 0l3.396-3.396A.25.25 0 0011.396 6H4.604a.25.25 0 00-.177.427z'/%3E%3C/svg%3E");
     border-color: #10b981;
     background-color: #f0fdf4;
+    background-image: 
+        linear-gradient(to bottom, #ffffff, #f0fdf4),
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath fill='%2310b981' d='M4.427 6.427l3.396 3.396a.25.25 0 00.354 0l3.396-3.396A.25.25 0 0011.396 6H4.604a.25.25 0 00-.177.427z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat, no-repeat;
+    background-position: 0 0, right 12px center;
+    background-size: 100% 100%, 16px;
 }
 
 #export-format:hover {
-    background: linear-gradient(to bottom, #f0fdf4, #dcfce7);
-    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.15);
     border-color: #059669;
+    background-color: #dcfce7;
+    background-image: 
+        linear-gradient(to bottom, #f0fdf4, #dcfce7),
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath fill='%2310b981' d='M4.427 6.427l3.396 3.396a.25.25 0 00.354 0l3.396-3.396A.25.25 0 0011.396 6H4.604a.25.25 0 00-.177.427z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat, no-repeat;
+    background-position: 0 0, right 12px center;
+    background-size: 100% 100%, 16px;
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.15);
+}
+
+#export-format:focus {
+    background-color: #ffffff;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath fill='%2310b981' d='M4.427 6.427l3.396 3.396a.25.25 0 00.354 0l3.396-3.396A.25.25 0 0011.396 6H4.604a.25.25 0 00-.177.427z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    background-size: 16px;
 }
 
 /* Dropdowns de filtro */
