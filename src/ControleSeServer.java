@@ -104,6 +104,7 @@ public class ControleSeServer {
         server.createContext("/api/dashboard/overview", new OverviewHandler());
         server.createContext("/api/categories", new CategoriesHandler());
         server.createContext("/api/accounts", new AccountsHandler());
+        server.createContext("/api/transactions/recent", new RecentTransactionsHandler());
         server.createContext("/api/transactions", new TransactionsHandler());
         server.createContext("/api/expenses", new ExpensesHandler());
         server.createContext("/api/incomes", new IncomesHandler());
@@ -558,6 +559,82 @@ public class ControleSeServer {
                 response.put("message", e.getMessage());
                 
                 sendJsonResponse(exchange, 400, response);
+            }
+        }
+    }
+    
+    static class RecentTransactionsHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            if (!"GET".equals(exchange.getRequestMethod())) {
+                sendErrorResponse(exchange, 405, "Método não permitido");
+                return;
+            }
+            
+            try {
+                // Parâmetros opcionais
+                String userIdParam = getQueryParam(exchange, "userId");
+                String limitParam = getQueryParam(exchange, "limit");
+                
+                int userId = userIdParam != null ? Integer.parseInt(userIdParam) : 1;
+                int limit = limitParam != null ? Integer.parseInt(limitParam) : 10;
+                
+                // Busca todas as transações do usuário
+                List<Gasto> expenses = bancoDados.buscarGastosComFiltros(userId, null, null);
+                List<Receita> incomes = bancoDados.buscarReceitasComFiltros(userId, null);
+                
+                List<Map<String, Object>> transactions = new ArrayList<>();
+                
+                // Add expenses
+                for (Gasto gasto : expenses) {
+                    // Busca todas as categorias do gasto
+                    List<Categoria> categorias = bancoDados.buscarCategoriasDoGasto(gasto.getIdGasto());
+                    List<String> nomesCategorias = new ArrayList<>();
+                    
+                    for (Categoria cat : categorias) {
+                        nomesCategorias.add(cat.getNome());
+                    }
+                    
+                    String categoriasStr = nomesCategorias.isEmpty() ? "Sem Categoria" : String.join(", ", nomesCategorias);
+                    
+                    Map<String, Object> transaction = new HashMap<>();
+                    transaction.put("id", gasto.getIdGasto());
+                    transaction.put("type", "expense");
+                    transaction.put("description", gasto.getDescricao());
+                    transaction.put("value", gasto.getValor());
+                    transaction.put("date", gasto.getData().toString());
+                    transaction.put("category", categoriasStr);
+                    transactions.add(transaction);
+                }
+                
+                // Add incomes
+                for (Receita receita : incomes) {
+                    Map<String, Object> transaction = new HashMap<>();
+                    transaction.put("id", receita.getIdReceita());
+                    transaction.put("type", "income");
+                    transaction.put("description", receita.getDescricao());
+                    transaction.put("value", receita.getValor());
+                    transaction.put("date", receita.getData().toString());
+                    transaction.put("category", "Receita");
+                    transactions.add(transaction);
+                }
+                
+                // Sort by date (most recent first)
+                transactions.sort((a, b) -> ((String) b.get("date")).compareTo((String) a.get("date")));
+                
+                // Limit to recent transactions
+                if (transactions.size() > limit) {
+                    transactions = transactions.subList(0, limit);
+                }
+                
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", true);
+                response.put("data", transactions);
+                
+                sendJsonResponse(exchange, 200, response);
+            } catch (Exception e) {
+                e.printStackTrace();
+                sendErrorResponse(exchange, 500, "Erro interno do servidor");
             }
         }
     }
