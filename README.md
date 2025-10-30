@@ -168,45 +168,6 @@ API disponível em: http://localhost:8080/api/
 
 Abra o navegador e acesse: **http://localhost:8080**
 
-## 🌐 Deploy na Web (Render)
-
-Este projeto está pronto para ser hospedado no **Render** com suporte a persistência de dados!
-
-### 📚 Guias de Deploy
-
-- **[START-DEPLOY.md](START-DEPLOY.md)** - Guia rápido (5 minutos)
-- **[DEPLOY.md](DEPLOY.md)** - Documentação completa
-- **[POSTGRESQL-MIGRATION.md](POSTGRESQL-MIGRATION.md)** - Migração para PostgreSQL (gratuito + persistente)
-
-### ⚡ Deploy Rápido
-
-```bash
-# 1. Teste localmente com Docker
-./test-docker.sh  # Linux/Mac
-# ou
-test-docker.bat   # Windows
-
-# 2. Commit e push
-git add .
-git commit -m "🚀 Deploy configuration"
-git push origin main
-
-# 3. No Render Dashboard:
-# - New + → Web Service
-# - Conecte seu repositório
-# - Runtime: Docker
-# - Deploy!
-```
-
-### 💰 Opções de Deploy
-
-| Opção | Custo | Persistência | Uso |
-|-------|-------|--------------|-----|
-| **Free + Arquivos .db** | $0 | ❌ | Apenas testes |
-| **Starter + Render Disk** | $7/mês | ✅ | Produção |
-| **Free + PostgreSQL** | $0 | ✅ | **Recomendado** |
-
-Para mais detalhes, consulte os guias de deploy na raiz do projeto.
 
 ## 📁 Estrutura do Projeto
 

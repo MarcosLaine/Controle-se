@@ -2,7 +2,10 @@
 class ControleSeApp {
     constructor() {
         this.currentUser = null;
-        this.apiBaseUrl = 'http://localhost:8080/api'; // Backend API URL
+        // Detecta automaticamente a URL da API (produção ou desenvolvimento)
+        this.apiBaseUrl = window.location.hostname === 'localhost' 
+            ? 'http://localhost:8080/api' 
+            : `${window.location.origin}/api`;
         this.categoriesCache = []; // Cache de categorias
         this.accountsCache = []; // Cache de contas
         this.tagsCache = []; // Cache de tags
