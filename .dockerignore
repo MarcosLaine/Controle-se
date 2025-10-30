@@ -1,0 +1,16 @@
+# Ignora arquivos compilados localmente
+bin/
+*.class
+
+# Ignora documentação
+docs/
+README.md
+
+# Ignora arquivos git
+.git/
+.gitignore
+
+# Ignora arquivos temporários
+*.tmp
+*.log
+
