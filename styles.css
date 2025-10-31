@@ -68,11 +68,54 @@
     --transition-slow: 350ms ease-in-out;
 }
 
+/* ===== DARK MODE VARIABLES ===== */
+[data-theme="dark"] {
+    /* Color Palette - Dark Mode */
+    --primary-color: #3b82f6;
+    --primary-hover: #2563eb;
+    --primary-light: #1e3a8a;
+    --primary-50: #172554;
+    
+    --secondary-color: #94a3b8;
+    --secondary-hover: #cbd5e1;
+    
+    --success-color: #10b981;
+    --success-light: #064e3b;
+    
+    --danger-color: #ef4444;
+    --danger-light: #7f1d1d;
+    
+    --warning-color: #f59e0b;
+    --warning-light: #78350f;
+    
+    /* Neutrals inverted for dark mode */
+    --neutral-50: #0f172a;
+    --neutral-100: #1e293b;
+    --neutral-200: #334155;
+    --neutral-300: #475569;
+    --neutral-400: #64748b;
+    --neutral-500: #94a3b8;
+    --neutral-600: #cbd5e1;
+    --neutral-700: #e2e8f0;
+    --neutral-800: #f1f5f9;
+    --neutral-900: #f8fafc;
+    
+    /* Shadows for dark mode */
+    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.3);
+    --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.3), 0 2px 4px -2px rgb(0 0 0 / 0.3);
+    --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.3), 0 4px 6px -4px rgb(0 0 0 / 0.3);
+    --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.4), 0 8px 10px -6px rgb(0 0 0 / 0.4);
+}
+
 /* ===== RESET & BASE STYLES ===== */
 * {
     margin: 0;
     padding: 0;
     box-sizing: border-box;
+}
+
+html {
+    transition: background-color var(--transition-normal), color var(--transition-normal);
 }
 
 body {
@@ -82,6 +125,16 @@ body {
     color: var(--neutral-800);
     background-color: var(--neutral-50);
     overflow-x: hidden;
+    transition: background-color var(--transition-normal), color var(--transition-normal);
+}
+
+/* Smooth transitions for theme changes */
+*,
+*::before,
+*::after {
+    transition-property: background-color, border-color, color, fill, stroke;
+    transition-duration: var(--transition-normal);
+    transition-timing-function: ease-in-out;
 }
 
 /* ===== LOADING SCREEN ===== */
@@ -169,6 +222,36 @@ body {
     gap: var(--spacing-4);
 }
 
+/* Dark Mode Toggle */
+.theme-toggle {
+    background: var(--neutral-200);
+    border: none;
+    padding: var(--spacing-2);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    font-size: var(--font-size-lg);
+    color: var(--neutral-700);
+}
+
+.theme-toggle:hover {
+    background: var(--neutral-300);
+    transform: scale(1.05);
+}
+
+.theme-toggle i {
+    transition: transform var(--transition-normal);
+}
+
+.theme-toggle:active i {
+    transform: rotate(180deg);
+}
+
 .btn-logout {
     background: var(--danger-color);
     color: white;
@@ -253,6 +336,8 @@ body {
     border-radius: var(--radius-md);
     font-size: var(--font-size-base);
     transition: all 0.3s ease;
+    background-color: var(--neutral-50);
+    color: var(--neutral-900);
 }
 
 .form-group select {
@@ -292,11 +377,23 @@ body {
     transform: translateY(-1px);
 }
 
+.form-group input[type="date"],
+.form-group input[type="time"],
+.form-group input[type="datetime-local"] {
+    color-scheme: light dark;
+}
+
+[data-theme="dark"] .form-group input[type="date"],
+[data-theme="dark"] .form-group input[type="time"],
+[data-theme="dark"] .form-group input[type="datetime-local"] {
+    color-scheme: dark;
+}
+
 .form-group input:focus,
 .form-group textarea:focus {
     outline: none;
     border-color: var(--primary-color);
-    background: #ffffff;
+    background: var(--neutral-50);
     box-shadow: 0 0 0 3px rgba(74, 85, 254, 0.1), 0 2px 8px rgba(74, 85, 254, 0.15);
 }
 
@@ -814,15 +911,15 @@ select {
     border-radius: var(--radius-lg);
     font-size: var(--font-size-sm);
     font-weight: 500;
-    color: var(--text-primary);
+    color: var(--neutral-900);
     cursor: pointer;
     transition: all 0.3s ease;
     position: relative;
     
     /* Background separado em propriedades específicas */
-    background-color: #fafafa;
+    background-color: var(--neutral-50);
     background-image: 
-        linear-gradient(to bottom, #ffffff, #fafafa),
+        linear-gradient(to bottom, var(--neutral-50), var(--neutral-100)),
         url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath fill='%23666' d='M4.427 6.427l3.396 3.396a.25.25 0 00.354 0l3.396-3.396A.25.25 0 0011.396 6H4.604a.25.25 0 00-.177.427z'/%3E%3C/svg%3E");
     background-repeat: no-repeat, no-repeat;
     background-position: 0 0, right 12px center;
@@ -838,9 +935,9 @@ select::-ms-expand {
 
 select:hover {
     border-color: var(--primary-color);
-    background-color: #f8f9ff;
+    background-color: var(--neutral-100);
     background-image: 
-        linear-gradient(to bottom, #ffffff, #f8f9ff),
+        linear-gradient(to bottom, var(--neutral-50), var(--neutral-100)),
         url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath fill='%23666' d='M4.427 6.427l3.396 3.396a.25.25 0 00.354 0l3.396-3.396A.25.25 0 0011.396 6H4.604a.25.25 0 00-.177.427z'/%3E%3C/svg%3E");
     background-repeat: no-repeat, no-repeat;
     background-position: 0 0, right 12px center;
@@ -852,7 +949,7 @@ select:hover {
 select:focus {
     outline: none;
     border-color: var(--primary-color);
-    background-color: #ffffff;
+    background-color: var(--neutral-50);
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath fill='%23666' d='M4.427 6.427l3.396 3.396a.25.25 0 00.354 0l3.396-3.396A.25.25 0 0011.396 6H4.604a.25.25 0 00-.177.427z'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
     background-position: right 12px center;
@@ -885,8 +982,8 @@ select:disabled:hover {
 /* Estilização das opções (quando suportado) */
 select option {
     padding: 10px;
-    background: #ffffff;
-    color: var(--text-primary);
+    background: var(--neutral-50);
+    color: var(--neutral-900);
     font-weight: 500;
 }
 
@@ -988,25 +1085,32 @@ select option:checked {
     border-radius: var(--radius-lg);
     font-size: var(--font-size-sm);
     transition: all 0.3s ease;
+    background-color: var(--neutral-50);
+    color: var(--neutral-900);
 }
 
 .filters input[type="date"] {
     cursor: pointer;
     font-weight: 500;
-    background: linear-gradient(to bottom, #ffffff, #fafafa);
+    background: linear-gradient(to bottom, var(--neutral-50), var(--neutral-100));
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    color-scheme: light dark;
+}
+
+[data-theme="dark"] .filters input[type="date"] {
+    color-scheme: dark;
 }
 
 .filters input[type="date"]:hover {
     border-color: var(--primary-color);
-    background: linear-gradient(to bottom, #ffffff, #f8f9ff);
+    background: linear-gradient(to bottom, var(--neutral-50), var(--neutral-100));
     box-shadow: 0 2px 8px rgba(74, 85, 254, 0.1);
 }
 
 .filters input[type="date"]:focus {
     outline: none;
     border-color: var(--primary-color);
-    background: #ffffff;
+    background: var(--neutral-50);
     box-shadow: 0 0 0 3px rgba(74, 85, 254, 0.1), 0 2px 8px rgba(74, 85, 254, 0.15);
 }
 
@@ -1055,6 +1159,10 @@ select option:checked {
     opacity: 0;
     visibility: hidden;
     transition: all var(--transition-normal);
+}
+
+[data-theme="dark"] .modal-overlay {
+    background: rgba(0, 0, 0, 0.8);
 }
 
 .modal-overlay.active {
