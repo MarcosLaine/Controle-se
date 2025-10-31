@@ -1539,12 +1539,12 @@ class ControleSeApp {
     }
     
     renderCategoryChart(categoryData) {
-        const ctx = document.getElementById('category-chart');
+        const ctx = document.getElementById('report-category-chart');
         if (!ctx) return;
         
         // Destroy existing chart if it exists
-        if (this.categoryChart) {
-            this.categoryChart.destroy();
+        if (this.reportCategoryChart) {
+            this.reportCategoryChart.destroy();
         }
         
         const labels = Object.keys(categoryData);
@@ -1555,7 +1555,7 @@ class ControleSeApp {
             return;
         }
         
-        this.categoryChart = new Chart(ctx, {
+        this.reportCategoryChart = new Chart(ctx, {
             type: 'doughnut',
             data: {
                 labels: labels,
@@ -1597,12 +1597,12 @@ class ControleSeApp {
     }
     
     renderMonthlyChart(monthlyData) {
-        const ctx = document.getElementById('monthly-chart');
+        const ctx = document.getElementById('report-monthly-chart');
         if (!ctx) return;
         
         // Destroy existing chart if it exists
-        if (this.monthlyChart) {
-            this.monthlyChart.destroy();
+        if (this.reportMonthlyChart) {
+            this.reportMonthlyChart.destroy();
         }
         
         const labels = monthlyData.map(item => {
@@ -1613,7 +1613,7 @@ class ControleSeApp {
         const expenses = monthlyData.map(item => item.expenses);
         const incomes = monthlyData.map(item => item.incomes);
         
-        this.monthlyChart = new Chart(ctx, {
+        this.reportMonthlyChart = new Chart(ctx, {
             type: 'line',
             data: {
                 labels: labels,
@@ -1664,12 +1664,12 @@ class ControleSeApp {
     }
     
     renderAccountChart(accountData) {
-        const ctx = document.getElementById('account-chart');
+        const ctx = document.getElementById('report-account-chart');
         if (!ctx) return;
         
         // Destroy existing chart if it exists
-        if (this.accountChart) {
-            this.accountChart.destroy();
+        if (this.reportAccountChart) {
+            this.reportAccountChart.destroy();
         }
         
         const labels = Object.keys(accountData);
@@ -1680,7 +1680,7 @@ class ControleSeApp {
             return;
         }
         
-        this.accountChart = new Chart(ctx, {
+        this.reportAccountChart = new Chart(ctx, {
             type: 'bar',
             data: {
                 labels: labels,
@@ -1911,7 +1911,7 @@ class ControleSeApp {
             }
             
             // Capturar e adicionar gráfico de categorias
-            const categoryChart = document.getElementById('category-chart');
+            const categoryChart = document.getElementById('report-category-chart');
             if (categoryChart && categoryChart.chart) {
                 const categoryCanvas = await html2canvas(categoryChart, {
                     backgroundColor: '#ffffff',
@@ -1926,7 +1926,7 @@ class ControleSeApp {
             }
             
             // Capturar e adicionar gráfico mensal
-            const monthlyChart = document.getElementById('monthly-chart');
+            const monthlyChart = document.getElementById('report-monthly-chart');
             if (monthlyChart && monthlyChart.chart) {
                 const monthlyCanvas = await html2canvas(monthlyChart, {
                     backgroundColor: '#ffffff',
@@ -1946,7 +1946,7 @@ class ControleSeApp {
             yPosition = margin;
             
             // Capturar e adicionar gráfico de contas
-            const accountChart = document.getElementById('account-chart');
+            const accountChart = document.getElementById('report-account-chart');
             if (accountChart && accountChart.chart) {
                 const accountCanvas = await html2canvas(accountChart, {
                     backgroundColor: '#ffffff',
@@ -2139,19 +2139,19 @@ class ControleSeApp {
         
         try {
             // Capturar gráfico de categorias
-            const categoryChart = document.getElementById('category-chart');
+            const categoryChart = document.getElementById('report-category-chart');
             if (categoryChart) {
                 charts.category = await this.captureElementAsImage(categoryChart);
             }
             
             // Capturar gráfico mensal
-            const monthlyChart = document.getElementById('monthly-chart');
+            const monthlyChart = document.getElementById('report-monthly-chart');
             if (monthlyChart) {
                 charts.monthly = await this.captureElementAsImage(monthlyChart);
             }
             
             // Capturar gráfico de contas
-            const accountChart = document.getElementById('account-chart');
+            const accountChart = document.getElementById('report-account-chart');
             if (accountChart) {
                 charts.account = await this.captureElementAsImage(accountChart);
             }
