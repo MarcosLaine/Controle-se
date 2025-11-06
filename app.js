@@ -173,6 +173,12 @@ class ControleSeApp {
         // Save user to localStorage
         localStorage.setItem('controle-se-user', JSON.stringify(this.currentUser));
         
+        // Limpa o cache para garantir que os dados sejam recarregados com o userId correto
+        this.categoriesCache = [];
+        this.accountsCache = [];
+        this.tagsCache = [];
+        this.transactionsCache = [];
+        
         // Load dashboard data
         this.loadDashboardData();
     }
@@ -238,7 +244,8 @@ class ControleSeApp {
 
     async updateOverview() {
         try {
-            const response = await this.apiCall('/dashboard/overview', 'GET');
+            const userId = this.currentUser ? this.currentUser.id : 1;
+            const response = await this.apiCall(`/dashboard/overview?userId=${userId}`, 'GET');
             if (response.success) {
                 this.updateSummaryCards(response.data);
                 this.updateCategoryChart(response.data.categoryBreakdown);
@@ -257,7 +264,8 @@ class ControleSeApp {
 
     async loadRecentTransactions() {
         try {
-            const response = await this.apiCall('/transactions/recent', 'GET');
+            const userId = this.currentUser ? this.currentUser.id : 1;
+            const response = await this.apiCall(`/transactions/recent?userId=${userId}`, 'GET');
             if (response.success) {
                 this.renderRecentTransactions(response.data);
             }
@@ -340,7 +348,8 @@ class ControleSeApp {
 
     async loadAccounts() {
         try {
-            const response = await this.apiCall('/accounts', 'GET');
+            const userId = this.currentUser ? this.currentUser.id : 1;
+            const response = await this.apiCall(`/accounts?userId=${userId}`, 'GET');
             if (response.success) {
                 this.accountsCache = response.data; // Atualiza o cache
                 this.renderAccounts(response.data);
@@ -381,7 +390,8 @@ class ControleSeApp {
 
     async loadTransactions(categoryId = null, date = null, tagId = null) {
         try {
-            let url = '/transactions?userId=1';
+            const userId = this.currentUser ? this.currentUser.id : 1;
+            let url = `/transactions?userId=${userId}`;
             if (categoryId) {
                 url += `&categoryId=${categoryId}`;
             }
@@ -1002,7 +1012,8 @@ class ControleSeApp {
         const balance = parseFloat(document.getElementById('account-balance').value);
         
         try {
-            const response = await this.apiCall('/accounts', 'POST', { name, type, balance });
+            const userId = this.currentUser ? this.currentUser.id : 1;
+            const response = await this.apiCall('/accounts', 'POST', { name, type, balance, userId });
             if (response.success) {
                 this.showToast('Conta adicionada com sucesso!', 'success');
                 this.closeModal();
@@ -1041,8 +1052,9 @@ class ControleSeApp {
         }
         
         try {
+            const userId = this.currentUser ? this.currentUser.id : 1;
             const response = await this.apiCall('/expenses', 'POST', {
-                description, value, date, categoryIds, accountId, frequency, tagIds, observacoes: observations
+                description, value, date, categoryIds, accountId, frequency, tagIds, observacoes: observations, userId
             });
             if (response.success) {
                 this.showToast('Gasto adicionado com sucesso!', 'success');
@@ -1070,7 +1082,8 @@ class ControleSeApp {
         const tagIds = Array.from(checkedTags).map(checkbox => parseInt(checkbox.value));
         
         try {
-            const response = await this.apiCall('/incomes', 'POST', { description, value, date, accountId, tagIds });
+            const userId = this.currentUser ? this.currentUser.id : 1;
+            const response = await this.apiCall('/incomes', 'POST', { description, value, date, accountId, tagIds, userId });
             if (response.success) {
                 this.showToast('Receita adicionada com sucesso!', 'success');
                 this.closeModal();
@@ -1124,7 +1137,7 @@ class ControleSeApp {
             
             // Agora cria o orçamento com a categoria (nova ou existente)
             const response = await this.apiCall('/budgets', 'POST', {
-                categoryId, value, period
+                categoryId, value, period, userId
             });
             
             if (response.success) {

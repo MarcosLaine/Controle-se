@@ -263,7 +263,8 @@ public class ControleSeServer {
                 List<Map<String, Object>> categoryBreakdown = new ArrayList<>();
                 
                 for (Categoria categoria : categories) {
-                    double categoryTotal = bancoDados.calcularTotalGastosPorCategoria(categoria.getIdCategoria());
+                    // Calcula apenas os gastos do usuário para esta categoria
+                    double categoryTotal = bancoDados.calcularTotalGastosPorCategoriaEUsuario(categoria.getIdCategoria(), userId);
                     Map<String, Object> categoryData = new HashMap<>();
                     categoryData.put("name", categoria.getNome());
                     categoryData.put("value", categoryTotal);
@@ -492,7 +493,13 @@ public class ControleSeServer {
                 String name = data.get("name");
                 String type = data.get("type");
                 double balance = Double.parseDouble(data.get("balance"));
-                int userId = 1; // In real app, get from token
+                
+                // Obtém userId do request
+                String userIdStr = data.get("userId");
+                int userId = 1; // Default para compatibilidade
+                if (userIdStr != null && !userIdStr.isEmpty()) {
+                    userId = Integer.parseInt(userIdStr);
+                }
                 
                 int accountId = bancoDados.cadastrarConta(name, type, balance, userId);
                 
@@ -768,7 +775,13 @@ public class ControleSeServer {
                 LocalDate date = LocalDate.parse(data.get("date"));
                 int accountId = Integer.parseInt(data.get("accountId"));
                 String frequency = data.get("frequency");
-                int userId = 1; // In real app, get from token
+                
+                // Obtém userId do request
+                String userIdStr = data.get("userId");
+                int userId = 1; // Default para compatibilidade
+                if (userIdStr != null && !userIdStr.isEmpty()) {
+                    userId = Integer.parseInt(userIdStr);
+                }
                 
                 // Parse categoryIds - pode ser array ou valor único
                 List<Integer> categoryIds = new ArrayList<>();
@@ -860,7 +873,13 @@ public class ControleSeServer {
                 double value = Double.parseDouble(data.get("value"));
                 LocalDate date = LocalDate.parse(data.get("date"));
                 int accountId = Integer.parseInt(data.get("accountId"));
-                int userId = 1; // In real app, get from token
+                
+                // Obtém userId do request
+                String userIdStr = data.get("userId");
+                int userId = 1; // Default para compatibilidade
+                if (userIdStr != null && !userIdStr.isEmpty()) {
+                    userId = Integer.parseInt(userIdStr);
+                }
                 
                 // Parse tagIds (opcional)
                 List<Integer> tagIds = new ArrayList<>();
@@ -927,7 +946,8 @@ public class ControleSeServer {
                 
                 for (Orcamento orcamento : budgets) {
                     Categoria categoria = bancoDados.buscarCategoria(orcamento.getIdCategoria());
-                    double spent = bancoDados.calcularTotalGastosPorCategoria(orcamento.getIdCategoria());
+                    // Calcula apenas os gastos do usuário para esta categoria
+                    double spent = bancoDados.calcularTotalGastosPorCategoriaEUsuario(orcamento.getIdCategoria(), userId);
                     double percentageUsed = orcamento.getValorPlanejado() > 0 ? 
                         (spent / orcamento.getValorPlanejado()) * 100 : 0;
                     
@@ -958,7 +978,13 @@ public class ControleSeServer {
                 int categoryId = Integer.parseInt(data.get("categoryId"));
                 double value = Double.parseDouble(data.get("value"));
                 String period = data.get("period");
-                int userId = 1; // In real app, get from token
+                
+                // Obtém userId do request
+                String userIdStr = data.get("userId");
+                int userId = 1; // Default para compatibilidade
+                if (userIdStr != null && !userIdStr.isEmpty()) {
+                    userId = Integer.parseInt(userIdStr);
+                }
                 
                 int budgetId = bancoDados.cadastrarOrcamento(value, period, categoryId, userId);
                 

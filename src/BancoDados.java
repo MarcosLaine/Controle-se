@@ -584,6 +584,18 @@ public class BancoDados {
         return gastos.stream().mapToDouble(Gasto::getValor).sum();
     }
     
+    /**
+     * Calcula o total de gastos por categoria para um usuário específico
+     */
+    public double calcularTotalGastosPorCategoriaEUsuario(int idCategoria, int idUsuario) {
+        List<Gasto> gastos = buscarGastosPorCategoria(idCategoria);
+        // Filtra apenas os gastos do usuário
+        return gastos.stream()
+            .filter(gasto -> gasto.getIdUsuario() == idUsuario && gasto.isAtivo())
+            .mapToDouble(Gasto::getValor)
+            .sum();
+    }
+    
     public double calcularTotalGastosUsuario(int idUsuario) {
         List<Gasto> gastos = buscarGastosPorUsuario(idUsuario);
         return gastos.stream().mapToDouble(Gasto::getValor).sum();
