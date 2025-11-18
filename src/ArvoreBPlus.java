@@ -1,3 +1,4 @@
+import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -35,13 +36,22 @@ class NoBPlus {
     }
 }
 
-class Registro {
+class Registro implements Serializable {
+    private static final long serialVersionUID = 1L;
     int chave;
     Object dados;
     
     public Registro(int chave, Object dados) {
         this.chave = chave;
         this.dados = dados;
+    }
+    
+    public int getChave() {
+        return chave;
+    }
+    
+    public Object getDados() {
+        return dados;
     }
 }
 
@@ -135,6 +145,21 @@ public class ArvoreBPlus {
             for (Registro registro : atual.registros) {
                 resultado.add(registro.dados);
             }
+            atual = atual.proximo;
+        }
+        
+        return resultado;
+    }
+    
+    /**
+     * Retorna todos os pares (chave, dados) para serialização
+     */
+    public List<Registro> listarRegistros() {
+        List<Registro> resultado = new ArrayList<>();
+        NoBPlus atual = encontrarPrimeiraFolha();
+        
+        while (atual != null) {
+            resultado.addAll(atual.registros);
             atual = atual.proximo;
         }
         

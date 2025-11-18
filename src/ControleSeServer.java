@@ -594,12 +594,19 @@ public class ControleSeServer {
                 
                 // Add expenses
                 for (Gasto gasto : expenses) {
+                    // Verifica se o gasto está ativo
+                    if (gasto == null || !gasto.isAtivo()) {
+                        continue;
+                    }
+                    
                     // Busca todas as categorias do gasto
                     List<Categoria> categorias = bancoDados.buscarCategoriasDoGasto(gasto.getIdGasto());
                     List<String> nomesCategorias = new ArrayList<>();
                     
                     for (Categoria cat : categorias) {
-                        nomesCategorias.add(cat.getNome());
+                        if (cat != null && cat.isAtivo()) {
+                            nomesCategorias.add(cat.getNome());
+                        }
                     }
                     
                     String categoriasStr = nomesCategorias.isEmpty() ? "Sem Categoria" : String.join(", ", nomesCategorias);
@@ -616,6 +623,11 @@ public class ControleSeServer {
                 
                 // Add incomes
                 for (Receita receita : incomes) {
+                    // Verifica se a receita está ativa
+                    if (receita == null || !receita.isAtivo()) {
+                        continue;
+                    }
+                    
                     Map<String, Object> transaction = new HashMap<>();
                     transaction.put("id", receita.getIdReceita());
                     transaction.put("type", "income");
@@ -768,69 +780,119 @@ public class ControleSeServer {
             
             try {
                 String requestBody = readRequestBody(exchange);
-                Map<String, String> data = parseJson(requestBody);
+                Map<String, Object> data = parseJsonWithNested(requestBody);
                 
-                String description = data.get("description");
-                double value = Double.parseDouble(data.get("value"));
-                LocalDate date = LocalDate.parse(data.get("date"));
-                int accountId = Integer.parseInt(data.get("accountId"));
-                String frequency = data.get("frequency");
+                String description = (String) data.get("description");
+                double value = ((Number) data.get("value")).doubleValue();
+                LocalDate date = LocalDate.parse((String) data.get("date"));
+                int accountId = ((Number) data.get("accountId")).intValue();
+                String frequency = (String) data.get("frequency");
                 
                 // Obtém userId do request
-                String userIdStr = data.get("userId");
+                Object userIdObj = data.get("userId");
                 int userId = 1; // Default para compatibilidade
-                if (userIdStr != null && !userIdStr.isEmpty()) {
-                    userId = Integer.parseInt(userIdStr);
+                if (userIdObj != null) {
+                    if (userIdObj instanceof Number) {
+                        userId = ((Number) userIdObj).intValue();
+                    } else if (userIdObj instanceof String) {
+                        userId = Integer.parseInt((String) userIdObj);
+                    }
                 }
                 
                 // Parse categoryIds - pode ser array ou valor único
                 List<Integer> categoryIds = new ArrayList<>();
-                String categoryIdsStr = data.get("categoryIds");
+                Object categoryIdsObj = data.get("categoryIds");
                 
-                if (categoryIdsStr != null && !categoryIdsStr.isEmpty()) {
-                    // Remove colchetes e espaços
-                    categoryIdsStr = categoryIdsStr.replaceAll("[\\[\\]\\s]", "");
-                    for (String idStr : categoryIdsStr.split(",")) {
-                        if (!idStr.isEmpty()) {
-                            categoryIds.add(Integer.parseInt(idStr));
+                if (categoryIdsObj != null) {
+                    if (categoryIdsObj instanceof List) {
+                        @SuppressWarnings("unchecked")
+                        List<Object> categoryList = (List<Object>) categoryIdsObj;
+                        for (Object catId : categoryList) {
+                            if (catId instanceof Number) {
+                                categoryIds.add(((Number) catId).intValue());
+                            }
                         }
+                    } else if (categoryIdsObj instanceof String) {
+                        // Fallback: parse string como array
+                        String categoryIdsStr = (String) categoryIdsObj;
+                        categoryIdsStr = categoryIdsStr.replaceAll("[\\[\\]\\s]", "");
+                        for (String idStr : categoryIdsStr.split(",")) {
+                            if (!idStr.isEmpty()) {
+                                categoryIds.add(Integer.parseInt(idStr));
+                            }
+                        }
+                    } else if (categoryIdsObj instanceof Number) {
+                        categoryIds.add(((Number) categoryIdsObj).intValue());
                     }
                 } else {
                     // Fallback para categoryId único (compatibilidade)
-                    String categoryIdStr = data.get("categoryId");
-                    if (categoryIdStr != null) {
-                        categoryIds.add(Integer.parseInt(categoryIdStr));
+                    Object categoryIdObj = data.get("categoryId");
+                    if (categoryIdObj instanceof Number) {
+                        categoryIds.add(((Number) categoryIdObj).intValue());
+                    } else if (categoryIdObj instanceof String) {
+                        categoryIds.add(Integer.parseInt((String) categoryIdObj));
                     }
                 }
                 
-                // Parse tagIds (opcional)
+                // Parse tagIds (opcional) - pode ser array
                 List<Integer> tagIds = new ArrayList<>();
-                String tagIdsStr = data.get("tagIds");
+                Object tagIdsObj = data.get("tagIds");
                 
-                if (tagIdsStr != null && !tagIdsStr.isEmpty()) {
-                    tagIdsStr = tagIdsStr.replaceAll("[\\[\\]\\s]", "");
-                    for (String idStr : tagIdsStr.split(",")) {
-                        if (!idStr.isEmpty()) {
-                            tagIds.add(Integer.parseInt(idStr));
+                if (tagIdsObj != null) {
+                    if (tagIdsObj instanceof List) {
+                        @SuppressWarnings("unchecked")
+                        List<Object> tagList = (List<Object>) tagIdsObj;
+                        for (Object tagId : tagList) {
+                            if (tagId instanceof Number) {
+                                tagIds.add(((Number) tagId).intValue());
+                            }
                         }
+                    } else if (tagIdsObj instanceof String) {
+                        // Fallback: parse string como array
+                        String tagIdsStr = (String) tagIdsObj;
+                        tagIdsStr = tagIdsStr.replaceAll("[\\[\\]\\s]", "");
+                        for (String idStr : tagIdsStr.split(",")) {
+                            if (!idStr.isEmpty()) {
+                                tagIds.add(Integer.parseInt(idStr));
+                            }
+                        }
+                    } else if (tagIdsObj instanceof Number) {
+                        tagIds.add(((Number) tagIdsObj).intValue());
                     }
                 }
                 
                 // Parse observações (opcional)
                 String[] observacoes = null;
-                String observacoesStr = data.get("observacoes");
-                if (observacoesStr != null && !observacoesStr.trim().isEmpty()) {
-                    // Divide por quebras de linha ou vírgulas
-                    String[] obsArray = observacoesStr.split("[\\n,;]");
-                    List<String> obsList = new ArrayList<>();
-                    for (String obs : obsArray) {
-                        String trimmed = obs.trim();
-                        if (!trimmed.isEmpty()) {
-                            obsList.add(trimmed);
+                Object observacoesObj = data.get("observacoes");
+                if (observacoesObj != null) {
+                    if (observacoesObj instanceof String) {
+                        String observacoesStr = (String) observacoesObj;
+                        if (!observacoesStr.trim().isEmpty()) {
+                            // Divide por quebras de linha ou vírgulas
+                            String[] obsArray = observacoesStr.split("[\\n,;]");
+                            List<String> obsList = new ArrayList<>();
+                            for (String obs : obsArray) {
+                                String trimmed = obs.trim();
+                                if (!trimmed.isEmpty()) {
+                                    obsList.add(trimmed);
+                                }
+                            }
+                            if (!obsList.isEmpty()) {
+                                observacoes = obsList.toArray(new String[0]);
+                            }
                         }
-                    }
-                    if (!obsList.isEmpty()) {
-                        observacoes = obsList.toArray(new String[0]);
+                    } else if (observacoesObj instanceof List) {
+                        @SuppressWarnings("unchecked")
+                        List<Object> obsList = (List<Object>) observacoesObj;
+                        List<String> obsStringList = new ArrayList<>();
+                        for (Object obs : obsList) {
+                            if (obs != null) {
+                                obsStringList.add(obs.toString().trim());
+                            }
+                        }
+                        if (!obsStringList.isEmpty()) {
+                            observacoes = obsStringList.toArray(new String[0]);
+                        }
                     }
                 }
                 
@@ -867,30 +929,48 @@ public class ControleSeServer {
             
             try {
                 String requestBody = readRequestBody(exchange);
-                Map<String, String> data = parseJson(requestBody);
+                Map<String, Object> data = parseJsonWithNested(requestBody);
                 
-                String description = data.getOrDefault("description", "Receita");
-                double value = Double.parseDouble(data.get("value"));
-                LocalDate date = LocalDate.parse(data.get("date"));
-                int accountId = Integer.parseInt(data.get("accountId"));
+                String description = (String) data.getOrDefault("description", "Receita");
+                double value = ((Number) data.get("value")).doubleValue();
+                LocalDate date = LocalDate.parse((String) data.get("date"));
+                int accountId = ((Number) data.get("accountId")).intValue();
                 
                 // Obtém userId do request
-                String userIdStr = data.get("userId");
+                Object userIdObj = data.get("userId");
                 int userId = 1; // Default para compatibilidade
-                if (userIdStr != null && !userIdStr.isEmpty()) {
-                    userId = Integer.parseInt(userIdStr);
+                if (userIdObj != null) {
+                    if (userIdObj instanceof Number) {
+                        userId = ((Number) userIdObj).intValue();
+                    } else if (userIdObj instanceof String) {
+                        userId = Integer.parseInt((String) userIdObj);
+                    }
                 }
                 
-                // Parse tagIds (opcional)
+                // Parse tagIds (opcional) - pode ser array
                 List<Integer> tagIds = new ArrayList<>();
-                String tagIdsStr = data.get("tagIds");
+                Object tagIdsObj = data.get("tagIds");
                 
-                if (tagIdsStr != null && !tagIdsStr.isEmpty()) {
-                    tagIdsStr = tagIdsStr.replaceAll("[\\[\\]\\s]", "");
-                    for (String idStr : tagIdsStr.split(",")) {
-                        if (!idStr.isEmpty()) {
-                            tagIds.add(Integer.parseInt(idStr));
+                if (tagIdsObj != null) {
+                    if (tagIdsObj instanceof List) {
+                        @SuppressWarnings("unchecked")
+                        List<Object> tagList = (List<Object>) tagIdsObj;
+                        for (Object tagId : tagList) {
+                            if (tagId instanceof Number) {
+                                tagIds.add(((Number) tagId).intValue());
+                            }
                         }
+                    } else if (tagIdsObj instanceof String) {
+                        // Fallback: parse string como array
+                        String tagIdsStr = (String) tagIdsObj;
+                        tagIdsStr = tagIdsStr.replaceAll("[\\[\\]\\s]", "");
+                        for (String idStr : tagIdsStr.split(",")) {
+                            if (!idStr.isEmpty()) {
+                                tagIds.add(Integer.parseInt(idStr));
+                            }
+                        }
+                    } else if (tagIdsObj instanceof Number) {
+                        tagIds.add(((Number) tagIdsObj).intValue());
                     }
                 }
                 
@@ -1599,12 +1679,17 @@ public class ControleSeServer {
                     String nestedJson = json.substring(objStart, i);
                     value = parseJsonWithNested(nestedJson);
                 } else if (firstChar == '[') {
-                    // Array - mantém como string por simplicidade
-                    int bracketEnd = json.indexOf("]", i);
-                    if (bracketEnd != -1) {
-                        value = json.substring(i, bracketEnd + 1);
-                        i = bracketEnd + 1;
+                    // Array - parse como List
+                    int bracketCount = 1;
+                    int arrayStart = i;
+                    i++;
+                    while (i < json.length() && bracketCount > 0) {
+                        if (json.charAt(i) == '[') bracketCount++;
+                        else if (json.charAt(i) == ']') bracketCount--;
+                        i++;
                     }
+                    String arrayJson = json.substring(arrayStart, i);
+                    value = parseJsonArray(arrayJson);
                 } else {
                     // Número ou boolean
                     int valueEnd = i;
@@ -1686,6 +1771,118 @@ public class ControleSeServer {
                   .replace("\n", "\\n")
                   .replace("\r", "\\r")
                   .replace("\t", "\\t");
+    }
+    
+    /**
+     * Parse um array JSON para List<Object>
+     */
+    @SuppressWarnings("unchecked")
+    private static List<Object> parseJsonArray(String json) {
+        List<Object> result = new ArrayList<>();
+        
+        try {
+            json = json.trim();
+            if (json.startsWith("[")) {
+                json = json.substring(1);
+            }
+            if (json.endsWith("]")) {
+                json = json.substring(0, json.length() - 1);
+            }
+            
+            if (json.trim().isEmpty()) {
+                return result;
+            }
+            
+            // Parse manual dos elementos do array
+            int i = 0;
+            while (i < json.length()) {
+                // Pula espaços
+                while (i < json.length() && Character.isWhitespace(json.charAt(i))) {
+                    i++;
+                }
+                if (i >= json.length()) break;
+                
+                char firstChar = json.charAt(i);
+                Object value = null;
+                
+                if (firstChar == '\"') {
+                    // String value
+                    int valueEnd = json.indexOf("\"", i + 1);
+                    if (valueEnd != -1) {
+                        value = json.substring(i + 1, valueEnd);
+                        i = valueEnd + 1;
+                    }
+                } else if (firstChar == '{') {
+                    // Nested object
+                    int braceCount = 1;
+                    int objStart = i;
+                    i++;
+                    while (i < json.length() && braceCount > 0) {
+                        if (json.charAt(i) == '{') braceCount++;
+                        else if (json.charAt(i) == '}') braceCount--;
+                        i++;
+                    }
+                    String nestedJson = json.substring(objStart, i);
+                    value = parseJsonWithNested(nestedJson);
+                } else if (firstChar == '[') {
+                    // Nested array
+                    int bracketCount = 1;
+                    int arrayStart = i;
+                    i++;
+                    while (i < json.length() && bracketCount > 0) {
+                        if (json.charAt(i) == '[') bracketCount++;
+                        else if (json.charAt(i) == ']') bracketCount--;
+                        i++;
+                    }
+                    String nestedArrayJson = json.substring(arrayStart, i);
+                    value = parseJsonArray(nestedArrayJson);
+                } else {
+                    // Número ou boolean
+                    int valueEnd = i;
+                    while (valueEnd < json.length() && 
+                           json.charAt(valueEnd) != ',' && 
+                           json.charAt(valueEnd) != ']') {
+                        valueEnd++;
+                    }
+                    String valueStr = json.substring(i, valueEnd).trim();
+                    
+                    // Tenta converter para número
+                    try {
+                        if (valueStr.contains(".")) {
+                            value = Double.parseDouble(valueStr);
+                        } else {
+                            value = Integer.parseInt(valueStr);
+                        }
+                    } catch (NumberFormatException e) {
+                        if (valueStr.equalsIgnoreCase("true")) {
+                            value = true;
+                        } else if (valueStr.equalsIgnoreCase("false")) {
+                            value = false;
+                        } else if (valueStr.equalsIgnoreCase("null")) {
+                            value = null;
+                        } else {
+                            value = valueStr;
+                        }
+                    }
+                    
+                    i = valueEnd;
+                }
+                
+                if (value != null) {
+                    result.add(value);
+                }
+                
+                // Pula vírgula se houver
+                while (i < json.length() && (json.charAt(i) == ',' || Character.isWhitespace(json.charAt(i)))) {
+                    i++;
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("Erro ao fazer parse do array JSON: " + e.getMessage());
+            System.err.println("JSON recebido: " + json);
+        }
+        
+        return result;
     }
     
     private static String getQueryParam(HttpExchange exchange, String paramName) {

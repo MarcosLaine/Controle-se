@@ -219,7 +219,10 @@ class ControleSeApp {
     async loadSectionData(section) {
         switch (section) {
             case 'overview':
-                await this.updateOverview();
+                await Promise.all([
+                    this.updateOverview(),
+                    this.loadRecentTransactions()
+                ]);
                 break;
             case 'categories':
                 await this.loadCategories();
@@ -259,45 +262,55 @@ class ControleSeApp {
         document.getElementById('total-income').textContent = this.formatCurrency(data.totalIncome);
         document.getElementById('total-expense').textContent = this.formatCurrency(data.totalExpense);
         document.getElementById('total-balance').textContent = this.formatCurrency(data.balance);
-        document.getElementById('total-accounts').textContent = this.formatCurrency(data.totalAccounts);
     }
 
     async loadRecentTransactions() {
         try {
             const userId = this.currentUser ? this.currentUser.id : 1;
             const response = await this.apiCall(`/transactions/recent?userId=${userId}`, 'GET');
-            if (response.success) {
-                this.renderRecentTransactions(response.data);
+            if (response && response.success) {
+                this.renderRecentTransactions(response.data || []);
+            } else {
+                console.warn('loadRecentTransactions: response not successful', response);
+                this.renderRecentTransactions([]);
             }
         } catch (error) {
             console.error('Error loading recent transactions:', error);
+            this.renderRecentTransactions([]);
         }
     }
 
     renderRecentTransactions(transactions) {
         const container = document.getElementById('recent-transactions-list');
+        if (!container) {
+            console.error('recent-transactions-list container not found');
+            return;
+        }
+        
         container.innerHTML = '';
 
-        if (transactions.length === 0) {
+        if (!transactions || !Array.isArray(transactions) || transactions.length === 0) {
             container.innerHTML = '<p class="text-center">Nenhuma transação recente</p>';
             return;
         }
 
         transactions.forEach(transaction => {
+            if (!transaction) return;
+            
             const item = document.createElement('div');
             item.className = 'transaction-item';
             item.innerHTML = `
                 <div class="transaction-info">
-                    <div class="transaction-icon ${transaction.type}">
+                    <div class="transaction-icon ${transaction.type || 'expense'}">
                         <i class="fas ${transaction.type === 'income' ? 'fa-arrow-up' : 'fa-arrow-down'}"></i>
                     </div>
                     <div class="transaction-details">
-                        <h4>${transaction.description}</h4>
-                        <p>${this.formatDate(transaction.date)}</p>
+                        <h4>${transaction.description || 'Sem descrição'}</h4>
+                        <p>${transaction.date ? this.formatDate(transaction.date) : ''}</p>
                     </div>
                 </div>
-                <div class="transaction-amount ${transaction.type}">
-                    ${transaction.type === 'income' ? '+' : '-'}${this.formatCurrency(transaction.value)}
+                <div class="transaction-amount ${transaction.type || 'expense'}">
+                    ${transaction.type === 'income' ? '+' : '-'}${this.formatCurrency(transaction.value || 0)}
                 </div>
             `;
             container.appendChild(item);

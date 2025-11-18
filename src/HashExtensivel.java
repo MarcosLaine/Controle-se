@@ -1,3 +1,4 @@
+import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -20,6 +21,14 @@ class Bucket {
     
     public void removerEntrada(int chave) {
         entradas.removeIf(entrada -> entrada.chave == chave);
+    }
+    
+    /**
+     * Remove uma entrada específica (chave + valor)
+     * Útil para remover entradas específicas quando o valor muda
+     */
+    public boolean removerEntradaEspecifica(int chave, Object valor) {
+        return entradas.removeIf(entrada -> entrada.chave == chave && entrada.valor.equals(valor));
     }
     
     public List<Object> buscarValores(int chave) {
@@ -61,13 +70,22 @@ class Bucket {
     }
 }
 
-class EntradaHash {
+class EntradaHash implements Serializable {
+    private static final long serialVersionUID = 1L;
     int chave;
     Object valor;
     
     public EntradaHash(int chave, Object valor) {
         this.chave = chave;
         this.valor = valor;
+    }
+    
+    public int getChave() {
+        return chave;
+    }
+    
+    public Object getValor() {
+        return valor;
     }
 }
 
@@ -124,6 +142,16 @@ public class HashExtensivel {
         return false;
     }
     
+    /**
+     * Remove uma entrada específica (chave + valor)
+     * Útil para atualizar índices quando atributos mudam
+     */
+    public boolean removerEspecifico(int chave, Object valor) {
+        int indiceBucket = calcularIndiceBucket(chave);
+        Bucket bucket = diretorio.get(indiceBucket);
+        return bucket.removerEntradaEspecifica(chave, valor);
+    }
+    
     public boolean contemChave(int chave) {
         int indiceBucket = calcularIndiceBucket(chave);
         Bucket bucket = diretorio.get(indiceBucket);
@@ -168,6 +196,17 @@ public class HashExtensivel {
             for (EntradaHash entrada : bucket.getEntradas()) {
                 resultado.add(entrada.valor);
             }
+        }
+        return resultado;
+    }
+    
+    /**
+     * Retorna todas as entradas (chave, valor) para serialização
+     */
+    public List<EntradaHash> listarEntradas() {
+        List<EntradaHash> resultado = new ArrayList<>();
+        for (Bucket bucket : diretorio) {
+            resultado.addAll(bucket.getEntradas());
         }
         return resultado;
     }

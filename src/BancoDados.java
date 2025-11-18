@@ -22,6 +22,34 @@ public class BancoDados {
     private static final String TAGS_DB = DATA_DIR + "/tags.db";
     private static final String TRANSACAO_TAG_DB = DATA_DIR + "/transacao_tag.db";
     
+    // Arquivos de índices
+    private static final String IDX_USUARIOS = DATA_DIR + "/idx_usuarios.db";
+    private static final String IDX_CATEGORIAS = DATA_DIR + "/idx_categorias.db";
+    private static final String IDX_GASTOS = DATA_DIR + "/idx_gastos.db";
+    private static final String IDX_RECEITAS = DATA_DIR + "/idx_receitas.db";
+    private static final String IDX_CONTAS = DATA_DIR + "/idx_contas.db";
+    private static final String IDX_ORCAMENTOS = DATA_DIR + "/idx_orcamentos.db";
+    private static final String IDX_TAGS = DATA_DIR + "/idx_tags.db";
+    
+    // Arquivos de índices Hash Extensível
+    private static final String IDX_USUARIO_CATEGORIAS = DATA_DIR + "/idx_usuario_categorias.db";
+    private static final String IDX_USUARIO_GASTOS = DATA_DIR + "/idx_usuario_gastos.db";
+    private static final String IDX_USUARIO_RECEITAS = DATA_DIR + "/idx_usuario_receitas.db";
+    private static final String IDX_USUARIO_CONTAS = DATA_DIR + "/idx_usuario_contas.db";
+    private static final String IDX_USUARIO_ORCAMENTOS = DATA_DIR + "/idx_usuario_orcamentos.db";
+    private static final String IDX_CATEGORIA_ORCAMENTOS = DATA_DIR + "/idx_categoria_orcamentos.db";
+    private static final String IDX_EMAIL_USUARIOS = DATA_DIR + "/idx_email_usuarios.db";
+    private static final String IDX_DATA_GASTOS = DATA_DIR + "/idx_data_gastos.db";
+    private static final String IDX_DATA_RECEITAS = DATA_DIR + "/idx_data_receitas.db";
+    private static final String IDX_TIPO_CONTAS = DATA_DIR + "/idx_tipo_contas.db";
+    private static final String IDX_CATEGORIA_GASTOS = DATA_DIR + "/idx_categoria_gastos.db";
+    private static final String IDX_GASTO_CATEGORIAS = DATA_DIR + "/idx_gasto_categorias.db";
+    private static final String IDX_USUARIO_TAGS = DATA_DIR + "/idx_usuario_tags.db";
+    private static final String IDX_TAG_GASTOS = DATA_DIR + "/idx_tag_gastos.db";
+    private static final String IDX_TAG_RECEITAS = DATA_DIR + "/idx_tag_receitas.db";
+    private static final String IDX_GASTO_TAGS = DATA_DIR + "/idx_gasto_tags.db";
+    private static final String IDX_RECEITA_TAGS = DATA_DIR + "/idx_receita_tags.db";
+    
     // Tabelas principais com índices primários (Árvore B+)
     private ArvoreBPlus tabelaUsuarios;
     private ArvoreBPlus tabelaCategorias;
@@ -104,11 +132,44 @@ public class BancoDados {
         indiceGastoTags = new HashExtensivel(3);
         indiceReceitaTags = new HashExtensivel(3);
         
-        // Carrega dados persistidos
-        carregarDados();
+        // Tenta carregar índices primeiro
+        boolean indicesExistem = verificarIndicesExistem();
+        
+        if (indicesExistem) {
+            // Carrega índices dos arquivos (os dados já estão nos índices)
+            System.out.println("Carregando índices dos arquivos...");
+            carregarTodosIndicesPrimarios();
+            carregarTodosIndicesSecundarios();
+            try {
+                carregarContadores();
+                // Carrega apenas as listas de relacionamentos (já estão nos índices Hash)
+                carregarCategoriaGasto(false); // Carrega lista relacionamentosCategoriaGasto sem reconstruir índices
+                carregarTransacaoTag(false); // Carrega lista relacionamentosTransacaoTag sem reconstruir índices
+            } catch (IOException | ClassNotFoundException e) {
+                System.err.println("Erro ao carregar dados auxiliares: " + e.getMessage());
+            }
+            System.out.println("✓ Índices carregados dos arquivos");
+        } else {
+            // Reconstroi índices a partir dos dados
+            System.out.println("Reconstruindo índices a partir dos dados...");
+            carregarDados(); // Já reconstrói os índices de relacionamentos N:N
+            // Salva os índices reconstruídos
+            salvarTodosIndicesPrimarios();
+            salvarTodosIndicesSecundarios();
+            System.out.println("✓ Índices reconstruídos e salvos");
+        }
         
         System.out.println("Banco de dados inicializado");
         imprimirEstatisticas();
+    }
+    
+    /**
+     * Verifica se os arquivos de índice existem
+     */
+    private boolean verificarIndicesExistem() {
+        File idxUsuarios = new File(IDX_USUARIOS);
+        File idxCategorias = new File(IDX_CATEGORIAS);
+        return idxUsuarios.exists() && idxCategorias.exists();
     }
     
     // ========== OPERAÇÕES DE USUÁRIO ==========
@@ -128,9 +189,11 @@ public class BancoDados {
         // Atualiza índice de email
         indiceEmailUsuarios.inserir(email.hashCode(), usuario);
         
-        // Persiste os dados
+        // Persiste os dados e índices
         salvarUsuarios();
         salvarContadores();
+        salvarIndiceArvoreBPlus(tabelaUsuarios, IDX_USUARIOS);
+        salvarIndiceHashExtensivel(indiceEmailUsuarios, IDX_EMAIL_USUARIOS);
         
         return idUsuario;
     }
@@ -167,9 +230,11 @@ public class BancoDados {
         // Atualiza índice de relacionamento
         indiceUsuarioCategorias.inserir(idUsuario, categoria);
         
-        // Persiste os dados
+        // Persiste os dados e índices
         salvarCategorias();
         salvarContadores();
+        salvarIndiceArvoreBPlus(tabelaCategorias, IDX_CATEGORIAS);
+        salvarIndiceHashExtensivel(indiceUsuarioCategorias, IDX_USUARIO_CATEGORIAS);
         
         return idCategoria;
     }
@@ -227,10 +292,15 @@ public class BancoDados {
             salvarContas();
         }
         
-        // Persiste os dados (uma vez só, depois do loop)
+        // Persiste os dados e índices (uma vez só, depois do loop)
         salvarGastos();
         salvarCategoriaGasto();
         salvarContadores();
+        salvarIndiceArvoreBPlus(tabelaGastos, IDX_GASTOS);
+        salvarIndiceHashExtensivel(indiceUsuarioGastos, IDX_USUARIO_GASTOS);
+        salvarIndiceHashExtensivel(indiceDataGastos, IDX_DATA_GASTOS);
+        salvarIndiceHashExtensivel(indiceCategoriaGastos, IDX_CATEGORIA_GASTOS);
+        salvarIndiceHashExtensivel(indiceGastoCategorias, IDX_GASTO_CATEGORIAS);
         
         return idGasto;
     }
@@ -428,9 +498,12 @@ public class BancoDados {
             salvarContas();
         }
         
-        // Persiste os dados
+        // Persiste os dados e índices
         salvarReceitas();
         salvarContadores();
+        salvarIndiceArvoreBPlus(tabelaReceitas, IDX_RECEITAS);
+        salvarIndiceHashExtensivel(indiceUsuarioReceitas, IDX_USUARIO_RECEITAS);
+        salvarIndiceHashExtensivel(indiceDataReceitas, IDX_DATA_RECEITAS);
         
         return idReceita;
     }
@@ -497,9 +570,12 @@ public class BancoDados {
         indiceUsuarioContas.inserir(idUsuario, conta);
         indiceTipoContas.inserir(tipo.hashCode(), conta);
         
-        // Persiste os dados
+        // Persiste os dados e índices
         salvarContas();
         salvarContadores();
+        salvarIndiceArvoreBPlus(tabelaContas, IDX_CONTAS);
+        salvarIndiceHashExtensivel(indiceUsuarioContas, IDX_USUARIO_CONTAS);
+        salvarIndiceHashExtensivel(indiceTipoContas, IDX_TIPO_CONTAS);
         
         return idConta;
     }
@@ -545,9 +621,12 @@ public class BancoDados {
         indiceUsuarioOrcamentos.inserir(idUsuario, orcamento);
         indiceCategoriaOrcamentos.inserir(idCategoria, orcamento);
         
-        // Persiste os dados
+        // Persiste os dados e índices
         salvarOrcamentos();
         salvarContadores();
+        salvarIndiceArvoreBPlus(tabelaOrcamentos, IDX_ORCAMENTOS);
+        salvarIndiceHashExtensivel(indiceUsuarioOrcamentos, IDX_USUARIO_ORCAMENTOS);
+        salvarIndiceHashExtensivel(indiceCategoriaOrcamentos, IDX_CATEGORIA_ORCAMENTOS);
         
         return idOrcamento;
     }
@@ -653,38 +732,88 @@ public class BancoDados {
         Categoria categoria = buscarCategoria(idCategoria);
         if (categoria != null) {
             categoria.setNome(novoNome);
+            // Persiste dados e índices
             salvarCategorias();
+            salvarIndiceArvoreBPlus(tabelaCategorias, IDX_CATEGORIAS);
         }
     }
     
     public void atualizarConta(int idConta, String novoNome, String novoTipo, double novoSaldo) {
         Conta conta = buscarConta(idConta);
         if (conta != null) {
+            // Remove dos índices antigos se o tipo mudou
+            String tipoAntigo = conta.getTipo();
+            if (!tipoAntigo.equals(novoTipo)) {
+                indiceTipoContas.removerEspecifico(tipoAntigo.hashCode(), conta);
+            }
+            
+            // Atualiza o objeto
             conta.setNome(novoNome);
             conta.setTipo(novoTipo);
             conta.setSaldoAtual(novoSaldo);
+            
+            // Atualiza índices com novo tipo
+            if (!tipoAntigo.equals(novoTipo)) {
+                indiceTipoContas.inserir(novoTipo.hashCode(), conta);
+            }
+            
+            // Persiste dados e índices
             salvarContas();
+            salvarIndiceArvoreBPlus(tabelaContas, IDX_CONTAS);
+            salvarIndiceHashExtensivel(indiceTipoContas, IDX_TIPO_CONTAS);
         }
     }
     
     public void atualizarGasto(int idGasto, String novaDescricao, double novoValor, LocalDate novaData, String novaFrequencia) {
         Gasto gasto = buscarGasto(idGasto);
         if (gasto != null) {
+            // Remove dos índices antigos se a data mudou
+            LocalDate dataAntiga = gasto.getData();
+            if (!dataAntiga.equals(novaData)) {
+                indiceDataGastos.removerEspecifico(dataAntiga.hashCode(), gasto);
+            }
+            
+            // Atualiza o objeto
             gasto.setDescricao(novaDescricao);
             gasto.setValor(novoValor);
             gasto.setData(novaData);
             gasto.setFrequencia(novaFrequencia);
+            
+            // Atualiza índices com nova data
+            if (!dataAntiga.equals(novaData)) {
+                indiceDataGastos.inserir(novaData.hashCode(), gasto);
+            }
+            
+            // Persiste dados e índices
             salvarGastos();
+            salvarIndiceArvoreBPlus(tabelaGastos, IDX_GASTOS);
+            salvarIndiceHashExtensivel(indiceDataGastos, IDX_DATA_GASTOS);
         }
     }
     
     public void atualizarReceita(int idReceita, String novaDescricao, double novoValor, LocalDate novaData) {
         Receita receita = buscarReceita(idReceita);
         if (receita != null) {
+            // Remove dos índices antigos se a data mudou
+            LocalDate dataAntiga = receita.getData();
+            if (!dataAntiga.equals(novaData)) {
+                indiceDataReceitas.removerEspecifico(dataAntiga.hashCode(), receita);
+            }
+            
+            // Atualiza o objeto
             receita.setDescricao(novaDescricao);
             receita.setValor(novoValor);
             receita.setData(novaData);
+            
+            // Atualiza índices com nova data
+            if (!dataAntiga.equals(novaData)) {
+                indiceDataReceitas.inserir(novaData.hashCode(), receita);
+            }
+            
+            // Persiste dados e índices
             salvarReceitas();
+            salvarIndiceArvoreBPlus(tabelaReceitas, IDX_RECEITAS);
+            salvarIndiceHashExtensivel(indiceDataReceitas, IDX_DATA_RECEITAS);
         }
     }
     
@@ -693,7 +822,9 @@ public class BancoDados {
         if (orcamento != null) {
             orcamento.setValorPlanejado(novoValorPlanejado);
             orcamento.setPeriodo(novoPeriodo);
+            // Persiste dados e índices
             salvarOrcamentos();
+            salvarIndiceArvoreBPlus(tabelaOrcamentos, IDX_ORCAMENTOS);
         }
     }
     
@@ -703,7 +834,9 @@ public class BancoDados {
         Categoria categoria = buscarCategoria(idCategoria);
         if (categoria != null) {
             categoria.setAtivo(false);
+            // Persiste dados e índices
             salvarCategorias();
+            salvarIndiceArvoreBPlus(tabelaCategorias, IDX_CATEGORIAS);
         }
     }
     
@@ -711,7 +844,9 @@ public class BancoDados {
         Conta conta = buscarConta(idConta);
         if (conta != null) {
             conta.setAtivo(false);
+            // Persiste dados e índices
             salvarContas();
+            salvarIndiceArvoreBPlus(tabelaContas, IDX_CONTAS);
         }
     }
     
@@ -719,7 +854,9 @@ public class BancoDados {
         Gasto gasto = buscarGasto(idGasto);
         if (gasto != null) {
             gasto.setAtivo(false);
+            // Persiste dados e índices
             salvarGastos();
+            salvarIndiceArvoreBPlus(tabelaGastos, IDX_GASTOS);
         }
     }
     
@@ -727,7 +864,9 @@ public class BancoDados {
         Receita receita = buscarReceita(idReceita);
         if (receita != null) {
             receita.setAtivo(false);
+            // Persiste dados e índices
             salvarReceitas();
+            salvarIndiceArvoreBPlus(tabelaReceitas, IDX_RECEITAS);
         }
     }
     
@@ -735,7 +874,9 @@ public class BancoDados {
         Orcamento orcamento = buscarOrcamento(idOrcamento);
         if (orcamento != null) {
             orcamento.setAtivo(false);
+            // Persiste dados e índices
             salvarOrcamentos();
+            salvarIndiceArvoreBPlus(tabelaOrcamentos, IDX_ORCAMENTOS);
         }
     }
     
@@ -898,9 +1039,11 @@ public class BancoDados {
         // Atualiza índice
         indiceUsuarioTags.inserir(idUsuario, tag);
         
-        // Persiste os dados
+        // Persiste os dados e índices
         salvarTags();
         salvarContadores();
+        salvarIndiceArvoreBPlus(tabelaTags, IDX_TAGS);
+        salvarIndiceHashExtensivel(indiceUsuarioTags, IDX_USUARIO_TAGS);
         
         return idTag;
     }
@@ -926,7 +1069,9 @@ public class BancoDados {
         if (tag != null) {
             tag.setNome(novoNome);
             tag.setCor(novaCor);
+            // Persiste dados e índices
             salvarTags();
+            salvarIndiceArvoreBPlus(tabelaTags, IDX_TAGS);
         }
     }
     
@@ -934,7 +1079,9 @@ public class BancoDados {
         Tag tag = buscarTag(idTag);
         if (tag != null) {
             tag.setAtivo(false);
+            // Persiste dados e índices
             salvarTags();
+            salvarIndiceArvoreBPlus(tabelaTags, IDX_TAGS);
         }
     }
     
@@ -949,9 +1096,15 @@ public class BancoDados {
         if (tipoTransacao.equals("GASTO")) {
             indiceTagGastos.inserir(idTag, idTransacao);
             indiceGastoTags.inserir(idTransacao, idTag);
+            // Salva apenas os índices relevantes para GASTO
+            salvarIndiceHashExtensivel(indiceTagGastos, IDX_TAG_GASTOS);
+            salvarIndiceHashExtensivel(indiceGastoTags, IDX_GASTO_TAGS);
         } else if (tipoTransacao.equals("RECEITA")) {
             indiceTagReceitas.inserir(idTag, idTransacao);
             indiceReceitaTags.inserir(idTransacao, idTag);
+            // Salva apenas os índices relevantes para RECEITA
+            salvarIndiceHashExtensivel(indiceTagReceitas, IDX_TAG_RECEITAS);
+            salvarIndiceHashExtensivel(indiceReceitaTags, IDX_RECEITA_TAGS);
         }
         
         salvarTransacaoTag();
@@ -1188,15 +1341,28 @@ public class BancoDados {
     
     @SuppressWarnings("unchecked")
     private void carregarCategoriaGasto() throws IOException, ClassNotFoundException {
+        carregarCategoriaGasto(true); // Por padrão, reconstrói índices
+    }
+    
+    @SuppressWarnings("unchecked")
+    private void carregarCategoriaGasto(boolean reconstruirIndices) throws IOException, ClassNotFoundException {
         File file = new File(CATEGORIA_GASTO_DB);
         if (!file.exists()) return;
         
         try (ObjectInputStream ois = new ObjectInputStream(new FileInputStream(CATEGORIA_GASTO_DB))) {
             relacionamentosCategoriaGasto = (List<CategoriaGasto>) ois.readObject();
-            for (CategoriaGasto rel : relacionamentosCategoriaGasto) {
-                indiceCategoriaGastos.inserir(rel.getIdCategoria(), rel);
-                indiceGastoCategorias.inserir(rel.getIdGasto(), rel);
+            
+            // Se deve reconstruir índices (quando carregando dados para reconstruir)
+            if (reconstruirIndices) {
+                for (CategoriaGasto rel : relacionamentosCategoriaGasto) {
+                    if (rel.isAtivo()) {
+                        indiceCategoriaGastos.inserir(rel.getIdCategoria(), rel);
+                        indiceGastoCategorias.inserir(rel.getIdGasto(), rel);
+                    }
+                }
             }
+            // Se não deve reconstruir (quando índices já foram carregados dos arquivos),
+            // apenas carrega a lista para ter os objetos em memória
         }
     }
     
@@ -1335,24 +1501,176 @@ public class BancoDados {
     
     @SuppressWarnings("unchecked")
     private void carregarTransacaoTag() throws IOException, ClassNotFoundException {
+        carregarTransacaoTag(true); // Por padrão, reconstrói índices
+    }
+    
+    @SuppressWarnings("unchecked")
+    private void carregarTransacaoTag(boolean reconstruirIndices) throws IOException, ClassNotFoundException {
         File file = new File(TRANSACAO_TAG_DB);
         if (!file.exists()) return;
         
         try (ObjectInputStream ois = new ObjectInputStream(new FileInputStream(TRANSACAO_TAG_DB))) {
             List<TransacaoTag> transacoesTags = (List<TransacaoTag>) ois.readObject();
-            for (TransacaoTag transacaoTag : transacoesTags) {
-                relacionamentosTransacaoTag.add(transacaoTag);
-                
-                // Reconstrói índices
-                if (transacaoTag.getTipoTransacao().equals("GASTO")) {
-                    indiceTagGastos.inserir(transacaoTag.getIdTag(), transacaoTag.getIdTransacao());
-                    indiceGastoTags.inserir(transacaoTag.getIdTransacao(), transacaoTag.getIdTag());
-                } else if (transacaoTag.getTipoTransacao().equals("RECEITA")) {
-                    indiceTagReceitas.inserir(transacaoTag.getIdTag(), transacaoTag.getIdTransacao());
-                    indiceReceitaTags.inserir(transacaoTag.getIdTransacao(), transacaoTag.getIdTag());
+            relacionamentosTransacaoTag = transacoesTags;
+            
+            // Se deve reconstruir índices (quando carregando dados para reconstruir)
+            if (reconstruirIndices) {
+                for (TransacaoTag transacaoTag : relacionamentosTransacaoTag) {
+                    if (transacaoTag.isAtivo()) {
+                        // Reconstrói índices
+                        if (transacaoTag.getTipoTransacao().equals("GASTO")) {
+                            indiceTagGastos.inserir(transacaoTag.getIdTag(), transacaoTag.getIdTransacao());
+                            indiceGastoTags.inserir(transacaoTag.getIdTransacao(), transacaoTag.getIdTag());
+                        } else if (transacaoTag.getTipoTransacao().equals("RECEITA")) {
+                            indiceTagReceitas.inserir(transacaoTag.getIdTag(), transacaoTag.getIdTransacao());
+                            indiceReceitaTags.inserir(transacaoTag.getIdTransacao(), transacaoTag.getIdTag());
+                        }
+                    }
                 }
             }
+            // Se não deve reconstruir (quando índices já foram carregados dos arquivos),
+            // apenas carrega a lista para ter os objetos em memória
         }
+    }
+    
+    // ========== PERSISTÊNCIA DE ÍNDICES ==========
+    
+    /**
+     * Salva um índice Árvore B+ em arquivo
+     */
+    private void salvarIndiceArvoreBPlus(ArvoreBPlus arvore, String arquivo) {
+        try (ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(arquivo))) {
+            List<Registro> registros = arvore.listarRegistros();
+            oos.writeObject(registros);
+        } catch (IOException e) {
+            System.err.println("Erro ao salvar índice " + arquivo + ": " + e.getMessage());
+        }
+    }
+    
+    /**
+     * Carrega um índice Árvore B+ de arquivo
+     */
+    @SuppressWarnings("unchecked")
+    private void carregarIndiceArvoreBPlus(ArvoreBPlus arvore, String arquivo) {
+        File file = new File(arquivo);
+        if (!file.exists()) return;
+        
+        try (ObjectInputStream ois = new ObjectInputStream(new FileInputStream(arquivo))) {
+            List<Registro> registros = (List<Registro>) ois.readObject();
+            for (Registro registro : registros) {
+                arvore.inserir(registro.getChave(), registro.getDados());
+            }
+        } catch (IOException | ClassNotFoundException e) {
+            System.err.println("Erro ao carregar índice " + arquivo + ": " + e.getMessage());
+        }
+    }
+    
+    /**
+     * Salva um índice Hash Extensível em arquivo
+     */
+    private void salvarIndiceHashExtensivel(HashExtensivel hash, String arquivo) {
+        try (ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(arquivo))) {
+            List<EntradaHash> entradas = hash.listarEntradas();
+            if (entradas == null || entradas.isEmpty()) {
+                System.out.println("Aviso: Tentando salvar índice vazio: " + arquivo);
+            } else {
+                System.out.println("Salvando índice " + arquivo + " com " + entradas.size() + " entradas");
+            }
+            oos.writeObject(entradas);
+        } catch (IOException e) {
+            System.err.println("Erro ao salvar índice " + arquivo + ": " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+    
+    /**
+     * Carrega um índice Hash Extensível de arquivo
+     */
+    @SuppressWarnings("unchecked")
+    private void carregarIndiceHashExtensivel(HashExtensivel hash, String arquivo) {
+        File file = new File(arquivo);
+        if (!file.exists()) return;
+        
+        try (ObjectInputStream ois = new ObjectInputStream(new FileInputStream(arquivo))) {
+            List<EntradaHash> entradas = (List<EntradaHash>) ois.readObject();
+            for (EntradaHash entrada : entradas) {
+                hash.inserir(entrada.getChave(), entrada.getValor());
+            }
+        } catch (IOException | ClassNotFoundException e) {
+            System.err.println("Erro ao carregar índice " + arquivo + ": " + e.getMessage());
+        }
+    }
+    
+    /**
+     * Salva todos os índices primários (Árvore B+)
+     */
+    private void salvarTodosIndicesPrimarios() {
+        salvarIndiceArvoreBPlus(tabelaUsuarios, IDX_USUARIOS);
+        salvarIndiceArvoreBPlus(tabelaCategorias, IDX_CATEGORIAS);
+        salvarIndiceArvoreBPlus(tabelaGastos, IDX_GASTOS);
+        salvarIndiceArvoreBPlus(tabelaReceitas, IDX_RECEITAS);
+        salvarIndiceArvoreBPlus(tabelaContas, IDX_CONTAS);
+        salvarIndiceArvoreBPlus(tabelaOrcamentos, IDX_ORCAMENTOS);
+        salvarIndiceArvoreBPlus(tabelaTags, IDX_TAGS);
+    }
+    
+    /**
+     * Carrega todos os índices primários (Árvore B+)
+     */
+    private void carregarTodosIndicesPrimarios() {
+        carregarIndiceArvoreBPlus(tabelaUsuarios, IDX_USUARIOS);
+        carregarIndiceArvoreBPlus(tabelaCategorias, IDX_CATEGORIAS);
+        carregarIndiceArvoreBPlus(tabelaGastos, IDX_GASTOS);
+        carregarIndiceArvoreBPlus(tabelaReceitas, IDX_RECEITAS);
+        carregarIndiceArvoreBPlus(tabelaContas, IDX_CONTAS);
+        carregarIndiceArvoreBPlus(tabelaOrcamentos, IDX_ORCAMENTOS);
+        carregarIndiceArvoreBPlus(tabelaTags, IDX_TAGS);
+    }
+    
+    /**
+     * Salva todos os índices secundários (Hash Extensível)
+     */
+    private void salvarTodosIndicesSecundarios() {
+        salvarIndiceHashExtensivel(indiceUsuarioCategorias, IDX_USUARIO_CATEGORIAS);
+        salvarIndiceHashExtensivel(indiceUsuarioGastos, IDX_USUARIO_GASTOS);
+        salvarIndiceHashExtensivel(indiceUsuarioReceitas, IDX_USUARIO_RECEITAS);
+        salvarIndiceHashExtensivel(indiceUsuarioContas, IDX_USUARIO_CONTAS);
+        salvarIndiceHashExtensivel(indiceUsuarioOrcamentos, IDX_USUARIO_ORCAMENTOS);
+        salvarIndiceHashExtensivel(indiceCategoriaOrcamentos, IDX_CATEGORIA_ORCAMENTOS);
+        salvarIndiceHashExtensivel(indiceEmailUsuarios, IDX_EMAIL_USUARIOS);
+        salvarIndiceHashExtensivel(indiceDataGastos, IDX_DATA_GASTOS);
+        salvarIndiceHashExtensivel(indiceDataReceitas, IDX_DATA_RECEITAS);
+        salvarIndiceHashExtensivel(indiceTipoContas, IDX_TIPO_CONTAS);
+        salvarIndiceHashExtensivel(indiceCategoriaGastos, IDX_CATEGORIA_GASTOS);
+        salvarIndiceHashExtensivel(indiceGastoCategorias, IDX_GASTO_CATEGORIAS);
+        salvarIndiceHashExtensivel(indiceUsuarioTags, IDX_USUARIO_TAGS);
+        salvarIndiceHashExtensivel(indiceTagGastos, IDX_TAG_GASTOS);
+        salvarIndiceHashExtensivel(indiceTagReceitas, IDX_TAG_RECEITAS);
+        salvarIndiceHashExtensivel(indiceGastoTags, IDX_GASTO_TAGS);
+        salvarIndiceHashExtensivel(indiceReceitaTags, IDX_RECEITA_TAGS);
+    }
+    
+    /**
+     * Carrega todos os índices secundários (Hash Extensível)
+     */
+    private void carregarTodosIndicesSecundarios() {
+        carregarIndiceHashExtensivel(indiceUsuarioCategorias, IDX_USUARIO_CATEGORIAS);
+        carregarIndiceHashExtensivel(indiceUsuarioGastos, IDX_USUARIO_GASTOS);
+        carregarIndiceHashExtensivel(indiceUsuarioReceitas, IDX_USUARIO_RECEITAS);
+        carregarIndiceHashExtensivel(indiceUsuarioContas, IDX_USUARIO_CONTAS);
+        carregarIndiceHashExtensivel(indiceUsuarioOrcamentos, IDX_USUARIO_ORCAMENTOS);
+        carregarIndiceHashExtensivel(indiceCategoriaOrcamentos, IDX_CATEGORIA_ORCAMENTOS);
+        carregarIndiceHashExtensivel(indiceEmailUsuarios, IDX_EMAIL_USUARIOS);
+        carregarIndiceHashExtensivel(indiceDataGastos, IDX_DATA_GASTOS);
+        carregarIndiceHashExtensivel(indiceDataReceitas, IDX_DATA_RECEITAS);
+        carregarIndiceHashExtensivel(indiceTipoContas, IDX_TIPO_CONTAS);
+        carregarIndiceHashExtensivel(indiceCategoriaGastos, IDX_CATEGORIA_GASTOS);
+        carregarIndiceHashExtensivel(indiceGastoCategorias, IDX_GASTO_CATEGORIAS);
+        carregarIndiceHashExtensivel(indiceUsuarioTags, IDX_USUARIO_TAGS);
+        carregarIndiceHashExtensivel(indiceTagGastos, IDX_TAG_GASTOS);
+        carregarIndiceHashExtensivel(indiceTagReceitas, IDX_TAG_RECEITAS);
+        carregarIndiceHashExtensivel(indiceGastoTags, IDX_GASTO_TAGS);
+        carregarIndiceHashExtensivel(indiceReceitaTags, IDX_RECEITA_TAGS);
     }
     
     // ========== OPERAÇÕES DE ESTATÍSTICAS ==========
