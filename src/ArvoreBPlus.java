@@ -330,13 +330,200 @@ public class ArvoreBPlus {
             if (indice != -1) {
                 no.chaves.remove(indice);
                 no.registros.remove(indice);
+                
+                // Trata underflow em folha (exceto raiz)
+                if (no.pai != null && no.chaves.size() < 1 && raiz != no) {
+                    tratarUnderflowFolha(no);
+                }
+                
                 return true;
             }
             return false;
         }
         
+        // Nó interno: encontra o filho apropriado
         int indice = encontrarIndiceInsercao(no, chave);
-        return removerRecursivo(no.filhos.get(indice), chave);
+        boolean removido = removerRecursivo(no.filhos.get(indice), chave);
+        
+        if (removido) {
+            // Atualiza chave no nó interno se necessário
+            if (indice < no.chaves.size() && no.filhos.get(indice).ehFolha) {
+                NoBPlus filho = no.filhos.get(indice);
+                if (!filho.chaves.isEmpty()) {
+                    // Atualiza a chave de roteamento no nó interno
+                    if (indice > 0) {
+                        no.chaves.set(indice - 1, filho.chaves.get(0));
+                    }
+                }
+            }
+            
+            // Trata underflow em nó interno (exceto raiz)
+            int minChaves = (ordem / 2) - 1; // Mínimo: ⌈ordem/2⌉ - 1
+            if (no.pai != null && no.chaves.size() < minChaves && raiz != no) {
+                tratarUnderflowInterno(no);
+            }
+            
+            // Se a raiz ficou com apenas 1 filho, reduz a altura
+            if (raiz == no && !raiz.ehFolha && raiz.chaves.isEmpty() && raiz.filhos.size() == 1) {
+                raiz = raiz.filhos.get(0);
+                raiz.pai = null;
+            }
+        }
+        
+        return removido;
+    }
+    
+    /**
+     * Trata underflow em nó folha através de empréstimo ou fusão
+     */
+    private void tratarUnderflowFolha(NoBPlus folha) {
+        if (folha.pai == null) return; // Raiz pode ter menos elementos
+        
+        NoBPlus pai = folha.pai;
+        int indiceNoPai = encontrarIndiceFilhoNoPai(pai, folha);
+        
+        // Tenta emprestar do irmão esquerdo
+        if (indiceNoPai > 0) {
+            NoBPlus irmaoEsquerdo = pai.filhos.get(indiceNoPai - 1);
+            if (irmaoEsquerdo.chaves.size() > 1) {
+                // Empresta do irmão esquerdo
+                int ultimaChaveIrmao = irmaoEsquerdo.chaves.remove(irmaoEsquerdo.chaves.size() - 1);
+                Registro ultimoRegistroIrmao = irmaoEsquerdo.registros.remove(irmaoEsquerdo.registros.size() - 1);
+                folha.chaves.add(0, ultimaChaveIrmao);
+                folha.registros.add(0, ultimoRegistroIrmao);
+                // Atualiza chave no pai
+                if (indiceNoPai > 0) {
+                    pai.chaves.set(indiceNoPai - 1, folha.chaves.get(0));
+                }
+                return;
+            }
+        }
+        
+        // Tenta emprestar do irmão direito
+        if (indiceNoPai < pai.filhos.size() - 1) {
+            NoBPlus irmaoDireito = pai.filhos.get(indiceNoPai + 1);
+            if (irmaoDireito.chaves.size() > 1) {
+                // Empresta do irmão direito
+                int primeiraChaveIrmao = irmaoDireito.chaves.remove(0);
+                Registro primeiroRegistroIrmao = irmaoDireito.registros.remove(0);
+                folha.chaves.add(primeiraChaveIrmao);
+                folha.registros.add(primeiroRegistroIrmao);
+                // Atualiza chave no pai
+                if (indiceNoPai < pai.chaves.size()) {
+                    pai.chaves.set(indiceNoPai, irmaoDireito.chaves.get(0));
+                }
+                return;
+            }
+        }
+        
+        // Se não pode emprestar, faz fusão com irmão esquerdo
+        if (indiceNoPai > 0) {
+            NoBPlus irmaoEsquerdo = pai.filhos.get(indiceNoPai - 1);
+            // Move todos os elementos para o irmão esquerdo
+            irmaoEsquerdo.chaves.addAll(folha.chaves);
+            irmaoEsquerdo.registros.addAll(folha.registros);
+            irmaoEsquerdo.proximo = folha.proximo;
+            // Remove do pai
+            pai.filhos.remove(indiceNoPai);
+            if (indiceNoPai > 0) {
+                pai.chaves.remove(indiceNoPai - 1);
+            }
+        } else if (indiceNoPai < pai.filhos.size() - 1) {
+            // Fusão com irmão direito
+            NoBPlus irmaoDireito = pai.filhos.get(indiceNoPai + 1);
+            folha.chaves.addAll(irmaoDireito.chaves);
+            folha.registros.addAll(irmaoDireito.registros);
+            folha.proximo = irmaoDireito.proximo;
+            // Remove do pai
+            pai.filhos.remove(indiceNoPai + 1);
+            if (indiceNoPai < pai.chaves.size()) {
+                pai.chaves.remove(indiceNoPai);
+            }
+        }
+    }
+    
+    /**
+     * Trata underflow em nó interno através de empréstimo ou fusão
+     */
+    private void tratarUnderflowInterno(NoBPlus no) {
+        if (no.pai == null) return; // Raiz pode ter menos elementos
+        
+        NoBPlus pai = no.pai;
+        int indiceNoPai = encontrarIndiceFilhoNoPai(pai, no);
+        int minChaves = (ordem / 2) - 1;
+        
+        // Tenta emprestar do irmão esquerdo
+        if (indiceNoPai > 0) {
+            NoBPlus irmaoEsquerdo = pai.filhos.get(indiceNoPai - 1);
+            if (irmaoEsquerdo.chaves.size() > minChaves) {
+                // Empresta do irmão esquerdo
+                int chavePai = pai.chaves.get(indiceNoPai - 1);
+                int ultimaChaveIrmao = irmaoEsquerdo.chaves.remove(irmaoEsquerdo.chaves.size() - 1);
+                NoBPlus ultimoFilhoIrmao = irmaoEsquerdo.filhos.remove(irmaoEsquerdo.filhos.size() - 1);
+                ultimoFilhoIrmao.pai = no;
+                
+                no.chaves.add(0, chavePai);
+                no.filhos.add(0, ultimoFilhoIrmao);
+                pai.chaves.set(indiceNoPai - 1, ultimaChaveIrmao);
+                return;
+            }
+        }
+        
+        // Tenta emprestar do irmão direito
+        if (indiceNoPai < pai.filhos.size() - 1) {
+            NoBPlus irmaoDireito = pai.filhos.get(indiceNoPai + 1);
+            if (irmaoDireito.chaves.size() > minChaves) {
+                // Empresta do irmão direito
+                int chavePai = pai.chaves.get(indiceNoPai);
+                int primeiraChaveIrmao = irmaoDireito.chaves.remove(0);
+                NoBPlus primeiroFilhoIrmao = irmaoDireito.filhos.remove(0);
+                primeiroFilhoIrmao.pai = no;
+                
+                no.chaves.add(chavePai);
+                no.filhos.add(primeiroFilhoIrmao);
+                pai.chaves.set(indiceNoPai, primeiraChaveIrmao);
+                return;
+            }
+        }
+        
+        // Se não pode emprestar, faz fusão
+        if (indiceNoPai > 0) {
+            // Fusão com irmão esquerdo
+            NoBPlus irmaoEsquerdo = pai.filhos.get(indiceNoPai - 1);
+            int chavePai = pai.chaves.get(indiceNoPai - 1);
+            irmaoEsquerdo.chaves.add(chavePai);
+            irmaoEsquerdo.chaves.addAll(no.chaves);
+            irmaoEsquerdo.filhos.addAll(no.filhos);
+            for (NoBPlus filho : no.filhos) {
+                filho.pai = irmaoEsquerdo;
+            }
+            pai.filhos.remove(indiceNoPai);
+            pai.chaves.remove(indiceNoPai - 1);
+        } else if (indiceNoPai < pai.filhos.size() - 1) {
+            // Fusão com irmão direito
+            NoBPlus irmaoDireito = pai.filhos.get(indiceNoPai + 1);
+            int chavePai = pai.chaves.get(indiceNoPai);
+            no.chaves.add(chavePai);
+            no.chaves.addAll(irmaoDireito.chaves);
+            no.filhos.addAll(irmaoDireito.filhos);
+            for (NoBPlus filho : irmaoDireito.filhos) {
+                filho.pai = no;
+            }
+            pai.filhos.remove(indiceNoPai + 1);
+            pai.chaves.remove(indiceNoPai);
+        }
+    }
+    
+    /**
+     * Encontra o índice de um filho no array de filhos do pai
+     */
+    private int encontrarIndiceFilhoNoPai(NoBPlus pai, NoBPlus filho) {
+        for (int i = 0; i < pai.filhos.size(); i++) {
+            if (pai.filhos.get(i) == filho) {
+                return i;
+            }
+        }
+        return -1;
     }
     
     private void imprimirRecursivo(NoBPlus no, int nivel) {

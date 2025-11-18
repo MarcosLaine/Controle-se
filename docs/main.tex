@@ -28,13 +28,11 @@
 \hline
 \textbf{Disciplina} & Algoritmos e Estruturas de Dados III \\
 \hline
-\textbf{Professor} & [Nome do Professor] \\
+\textbf{Professor} & Walisson Ferreira \\
 \hline
 \textbf{Período} & 2025/1 \\
 \hline
 \textbf{Alunos} & Ana Carolina Couto Machado e Marcos Paulo Da Silva Laine \\
-\hline
-\textbf{Matrículas} & [Matrícula Ana] e [Matrícula Marcos] \\
 \hline
 \textbf{Título do Projeto} & Controle-se: Aplicação Web de Controle de Gastos Pessoais \\
 \hline
@@ -229,6 +227,7 @@ as estruturas de dados em arquivos binários \texttt{.db}.
   \item \textbf{Carregamento}: Automático na inicialização do servidor
   \item \textbf{Formato}: Serialização Java (ObjectOutputStream/ObjectInputStream)
   \item \textbf{Exclusão lógica}: Registros marcados como \texttt{ativo = false} (lápide)
+  \item \textbf{Verificação de Índices}: O sistema realiza verificação completa de integridade dos índices na inicialização, checando todos os índices primários (B+ Tree) e secundários essenciais (Hash Extensível). Se algum índice primário estiver ausente, o sistema automaticamente reconstrói todos os índices a partir dos dados persistidos, garantindo consistência e recuperação automática de possíveis corrupções.
 \end{itemize}
 
 \section{Operações CRUD Implementadas}
@@ -548,7 +547,9 @@ Os relacionamentos 1:N foram implementados através de:
   \item \textbf{Formato}: Serialização Java nativa (\texttt{.db} files)
   \item \textbf{Atualização}: Índices são atualizados imediatamente após cada operação de escrita
   \item \textbf{Sincronização}: Salvamento automático após cada modificação (insert, update, delete)
-  \item \textbf{Estrutura}: Cada índice é um arquivo separado (ex: \texttt{usuarios.db}, \texttt{categorias.db})
+  \item \textbf{Estrutura}: Cada índice é um arquivo separado (ex: \texttt{idx\_usuarios.db}, \texttt{idx\_categorias.db})
+  \item \textbf{Verificação de Integridade}: O sistema verifica a existência de todos os índices primários (7 arquivos) e índices secundários essenciais (6 arquivos) antes do carregamento. Se algum índice primário estiver faltando, o sistema força a reconstrução completa dos índices a partir dos dados persistidos, garantindo consistência.
+  \item \textbf{Carregamento Inteligente}: Na inicialização, o sistema verifica se os arquivos de índice existem. Se existirem, carrega os índices diretamente dos arquivos. Caso contrário, reconstrói os índices a partir dos dados e os salva para uso futuro.
 \end{itemize}
 
 \textbf{h) Como está estruturado o projeto no GitHub?}
@@ -570,22 +571,34 @@ Os relacionamentos 1:N foram implementados através de:
 
 \subsection{Implementação dos Relacionamentos Muitos-para-Muitos}
 
-O sistema implementa dois relacionamentos N:N principais através de tabelas de junção:
+O sistema implementa dois relacionamentos N:N principais através de tabelas de junção, permitindo que múltiplas entidades se relacionem de forma flexível e eficiente.
 
 \subsubsection*{Categoria ↔ Gasto (N:N)}
 \begin{itemize}
   \item \textbf{Tabela de Junção}: \texttt{CategoriaGasto}
-  \item \textbf{Chaves}: \texttt{idCategoria} e \texttt{idGasto}
-  \item \textbf{Propósito}: Permitir que um gasto tenha múltiplas categorias
-  \item \textbf{Implementação}: Hash Extensível para indexação eficiente
+  \item \textbf{Chaves}: \texttt{idCategoriaGasto} (PK), \texttt{idCategoria} (FK), \texttt{idGasto} (FK)
+  \item \textbf{Propósito}: Permitir que um gasto tenha múltiplas categorias e uma categoria possa estar associada a múltiplos gastos
+  \item \textbf{Implementação}: Hash Extensível para indexação bidirecional eficiente
+  \item \textbf{Índices}: 
+    \begin{itemize}
+      \item \texttt{indiceCategoriaGastos}: Categoria → Lista<CategoriaGasto>
+      \item \texttt{indiceGastoCategorias}: Gasto → Lista<CategoriaGasto>
+    \end{itemize}
 \end{itemize}
 
 \subsubsection*{Tag ↔ Transação (N:N)}
 \begin{itemize}
   \item \textbf{Tabela de Junção}: \texttt{TransacaoTag}
-  \item \textbf{Chaves}: \texttt{idTag} e \texttt{idTransacao} (pode ser gasto ou receita)
-  \item \textbf{Propósito}: Sistema de tags personalizáveis para categorização flexível
-  \item \textbf{Implementação}: Hash Extensível para indexação eficiente
+  \item \textbf{Chaves}: \texttt{idTransacaoTag} (PK), \texttt{idTransacao} (FK), \texttt{tipoTransacao} ("GASTO" ou "RECEITA"), \texttt{idTag} (FK)
+  \item \textbf{Propósito}: Sistema de tags personalizáveis que permite múltiplas tags por transação (gasto ou receita)
+  \item \textbf{Implementação}: Hash Extensível para indexação bidirecional eficiente
+  \item \textbf{Índices}:
+    \begin{itemize}
+      \item \texttt{indiceTagGastos}: Tag → Lista<Gasto>
+      \item \texttt{indiceGastoTags}: Gasto → Lista<Tag>
+      \item \texttt{indiceTagReceitas}: Tag → Lista<Receita>
+      \item \texttt{indiceReceitaTags}: Receita → Lista<Tag>
+    \end{itemize}
 \end{itemize}
 
 \subsection{Estruturas de Dados para N:N}
@@ -593,51 +606,419 @@ O sistema implementa dois relacionamentos N:N principais através de tabelas de 
 \subsubsection*{Hash Extensível para Relacionamentos}
 \begin{itemize}
   \item \textbf{Capacidade por bucket}: 3 registros
-  \item \textbf{Chave composta}: Combinação das chaves estrangeiras
+  \item \textbf{Chave de indexação}: ID da entidade (categoria, gasto, tag ou transação)
+  \item \textbf{Valor armazenado}: Objeto de relacionamento (\texttt{CategoriaGasto} ou \texttt{TransacaoTag}) ou ID da entidade relacionada
   \item \textbf{Operações}: Inserção, busca e remoção de relacionamentos
   \item \textbf{Complexidade}: O(1) médio para operações de relacionamento
+  \item \textbf{Crescimento dinâmico}: Diretório duplica automaticamente quando necessário
+\end{itemize}
+
+\subsection{Operações Implementadas}
+
+\subsubsection*{Relacionamento Categoria-Gasto}
+
+\textbf{Inserção de Relacionamento:}
+\begin{itemize}
+  \item \texttt{adicionarCategoriaAoGasto(idCategoria, idGasto)}: Cria novo relacionamento N:N
+  \item \texttt{adicionarCategoriaAoGastoSemSalvar()}: Versão otimizada sem persistência imediata
+  \item Validação automática da existência das entidades antes de criar relacionamento
+  \item Atualização automática dos índices bidirecionais
+\end{itemize}
+
+\textbf{Busca de Relacionamentos:}
+\begin{itemize}
+  \item \texttt{buscarGastosPorCategoria(idCategoria)}: Retorna todos os gastos de uma categoria — O(1) médio + O(k) onde k = número de gastos
+  \item \texttt{buscarCategoriasDoGasto(idGasto)}: Retorna todas as categorias de um gasto — O(1) médio + O(k) onde k = número de categorias
+  \item \texttt{gastoTemCategoria(idGasto, idCategoria)}: Verifica se um gasto possui uma categoria específica — O(1) médio
+\end{itemize}
+
+\textbf{Remoção de Relacionamento:}
+\begin{itemize}
+  \item \texttt{removerCategoriaDoGasto(idCategoria, idGasto)}: Exclusão lógica do relacionamento
+  \item Campo \texttt{ativo = false} mantém histórico dos dados
+  \item Persistência automática após remoção
+\end{itemize}
+
+\subsubsection*{Relacionamento Tag-Transação}
+
+\textbf{Inserção de Relacionamento:}
+\begin{itemize}
+  \item \texttt{associarTagTransacao(idTransacao, tipoTransacao, idTag)}: Associa tag a gasto ou receita
+  \item Suporte para tipos "GASTO" e "RECEITA"
+  \item Atualização automática dos índices específicos por tipo
+\end{itemize}
+
+\textbf{Busca de Relacionamentos:}
+\begin{itemize}
+  \item \texttt{buscarTagsGasto(idGasto)}: Retorna todas as tags de um gasto — O(1) médio + O(k)
+  \item \texttt{buscarTagsReceita(idReceita)}: Retorna todas as tags de uma receita — O(1) médio + O(k)
+  \item \texttt{buscarGastosPorTag(idTag)}: Retorna todos os gastos com uma tag específica — O(1) médio + O(k)
+  \item \texttt{buscarReceitasPorTag(idTag)}: Retorna todas as receitas com uma tag específica — O(1) médio + O(k)
+\end{itemize}
+
+\subsection{Persistência dos Relacionamentos N:N}
+
+\subsubsection*{Arquivos de Persistência}
+\begin{itemize}
+  \item \texttt{data/categoria\_gasto.db}: Armazena todos os relacionamentos Categoria-Gasto
+  \item \texttt{data/transacao\_tag.db}: Armazena todos os relacionamentos Tag-Transação
+  \item \textbf{Formato}: Serialização Java nativa (\texttt{ObjectOutputStream})
+  \item \textbf{Estrutura}: Lista de objetos \texttt{CategoriaGasto} ou \texttt{TransacaoTag}
+\end{itemize}
+
+\subsubsection*{Estratégia de Persistência}
+\begin{itemize}
+  \item \textbf{Salvamento}: Após cada operação de escrita (inserção, remoção)
+  \item \textbf{Carregamento}: Automático na inicialização do servidor
+  \item \textbf{Verificação de Índices}: O sistema verifica a integridade dos índices Hash Extensível antes do carregamento. Se os índices existirem, são carregados diretamente. Caso contrário, são reconstruídos a partir dos relacionamentos persistidos.
+  \item \textbf{Reconstrução de índices}: Os índices Hash Extensível são reconstruídos a partir dos relacionamentos carregados quando necessário, garantindo sincronização entre dados e índices.
+  \item \textbf{Exclusão lógica}: Relacionamentos marcados como \texttt{ativo = false} são mantidos no arquivo mas não aparecem nas consultas
 \end{itemize}
 
 \subsection{Operações de Navegação}
 
-\subsubsection*{Busca de Relacionamentos}
+\subsubsection*{Navegação Bidirecional}
+O sistema permite navegação eficiente em ambas as direções dos relacionamentos N:N:
+
 \begin{itemize}
-  \item \textbf{Gastos por Categoria}: Busca todos os gastos de uma categoria específica
-  \item \textbf{Categorias por Gasto}: Busca todas as categorias de um gasto específico
-  \item \textbf{Transações por Tag}: Busca todas as transações com uma tag específica
-  \item \textbf{Tags por Transação}: Busca todas as tags de uma transação específica
+  \item \textbf{Categoria → Gastos}: Dada uma categoria, encontrar todos os gastos associados
+  \item \textbf{Gasto → Categorias}: Dado um gasto, encontrar todas as categorias associadas
+  \item \textbf{Tag → Transações}: Dada uma tag, encontrar todas as transações (gastos e receitas) associadas
+  \item \textbf{Transação → Tags}: Dada uma transação, encontrar todas as tags associadas
 \end{itemize}
 
-\subsubsection*{Integridade Referencial}
+\subsubsection*{Filtros Combinados}
+O sistema suporta filtros combinados que utilizam os relacionamentos N:N:
+
 \begin{itemize}
-  \item \textbf{Validação}: Verificação de existência das entidades antes de criar relacionamentos
-  \item \textbf{Exclusão em Cascata}: Remoção automática de relacionamentos quando entidades são excluídas
-  \item \textbf{Consistência}: Manutenção da integridade dos dados através de validações
+  \item \texttt{buscarGastosComFiltros(idUsuario, idCategoria, data)}: Combina filtro por categoria (via N:N) com filtro por data
+  \item Validação de relacionamento através do método \texttt{gastoTemCategoria()}
+  \item Complexidade: O(n) onde n = número de gastos do usuário, com verificação O(1) por gasto
+\end{itemize}
+
+\subsection{Integridade Referencial}
+
+\subsubsection*{Validações Implementadas}
+\begin{itemize}
+  \item \textbf{Validação de existência}: Verificação de existência das entidades antes de criar relacionamentos
+  \item \textbf{Validação de estado}: Apenas entidades ativas (\texttt{ativo = true}) podem ser relacionadas
+  \item \textbf{Prevenção de duplicatas}: Sistema permite múltiplas categorias/tags por gasto, mas evita relacionamentos duplicados
+\end{itemize}
+
+\subsubsection*{Exclusão em Cascata}
+\begin{itemize}
+  \item \textbf{Exclusão de entidade}: Quando uma categoria, gasto ou tag é excluída (lógica), os relacionamentos permanecem mas não aparecem nas consultas
+  \item \textbf{Manutenção de histórico}: Relacionamentos antigos são preservados para análise histórica
+  \item \textbf{Consistência}: Os índices são atualizados automaticamente para refletir exclusões lógicas
 \end{itemize}
 
 \subsection{Interface de Usuário para N:N}
 
 \subsubsection*{Seleção Múltipla de Categorias}
 \begin{itemize}
-  \item \textbf{Checkboxes}: Interface para seleção de múltiplas categorias em gastos
-  \item \textbf{Validação}: Pelo menos uma categoria deve ser selecionada
-  \item \textbf{Persistência}: Salvamento automático dos relacionamentos criados
+  \item \textbf{Checkboxes}: Interface web com checkboxes para seleção de múltiplas categorias em gastos
+  \item \textbf{Validação}: Pelo menos uma categoria deve ser selecionada ao criar um gasto
+  \item \textbf{Persistência}: Salvamento automático dos relacionamentos criados via API REST
+  \item \textbf{Exibição}: Gastos exibem todas as categorias associadas na interface
 \end{itemize}
 
 \subsubsection*{Sistema de Tags}
 \begin{itemize}
-  \item \textbf{Criação Dinâmica}: Tags são criadas automaticamente quando utilizadas
-  \item \textbf{Associação Múltipla}: Uma transação pode ter múltiplas tags
-  \item \textbf{Filtros}: Busca de transações por tags específicas
+  \item \textbf{Criação e associação}: Tags podem ser criadas e associadas a transações via interface web
+  \item \textbf{Associação múltipla}: Uma transação pode ter múltiplas tags simultaneamente
+  \item \textbf{Filtros visuais}: Interface permite filtrar transações por tags específicas
+  \item \textbf{Badges coloridos}: Tags são exibidas como badges coloridos para identificação visual rápida
+  \item \textbf{Gerenciamento}: CRUD completo de tags com interface dedicada
 \end{itemize}
+
+\subsection{Análise de Complexidade}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{|l|c|c|}
+\hline
+\textbf{Operação} & \textbf{Estrutura} & \textbf{Complexidade} \\
+\hline
+Adicionar relacionamento Categoria-Gasto & Hash Extensível & O(1) médio \\
+Buscar gastos por categoria & Hash Extensível & O(1) médio + O(k) \\
+Buscar categorias de um gasto & Hash Extensível & O(1) médio + O(k) \\
+Remover relacionamento & Hash Extensível & O(1) médio + O(k) \\
+Associar tag a transação & Hash Extensível & O(1) médio \\
+Buscar tags de uma transação & Hash Extensível & O(1) médio + O(k) \\
+Filtro combinado (categoria + data) & Hash + Árvore B+ & O(n) onde n = gastos do usuário \\
+\hline
+\end{tabular}
+\caption{Complexidade temporal das operações de relacionamento N:N. k = número de registros retornados.}
+\end{table}
 
 \subsection{Benefícios dos Relacionamentos N:N}
 
 \begin{itemize}
-  \item \textbf{Flexibilidade}: Categorização múltipla permite análise mais detalhada
-  \item \textbf{Organização}: Sistema de tags oferece categorização personalizada
-  \item \textbf{Escalabilidade}: Estruturas eficientes suportam grandes volumes de dados
-  \item \textbf{Usabilidade}: Interface intuitiva para gerenciamento de relacionamentos
+  \item \textbf{Flexibilidade}: Categorização múltipla permite análise mais detalhada e precisa dos gastos
+  \item \textbf{Organização}: Sistema de tags oferece categorização personalizada além das categorias tradicionais
+  \item \textbf{Escalabilidade}: Estruturas Hash Extensível suportam grandes volumes de dados com complexidade O(1) médio
+  \item \textbf{Usabilidade}: Interface intuitiva para gerenciamento de relacionamentos múltiplos
+  \item \textbf{Performance}: Busca eficiente através de índices bidirecionais
+  \item \textbf{Integridade}: Validações automáticas garantem consistência dos dados
+\end{itemize}
+
+\subsection{Exemplos de Uso}
+
+\subsubsection*{Criação de Gasto com Múltiplas Categorias}
+Ao registrar um gasto, o sistema permite associar múltiplas categorias. Por exemplo, um gasto de "Supermercado" pode ser categorizado como "Alimentação" e "Casa" simultaneamente, permitindo análises mais flexíveis.
+
+\subsubsection*{Sistema de Tags para Organização}
+Tags permitem organização adicional além das categorias. Por exemplo, uma receita pode ter tags como "Salário", "Freelance" e "Urgente", facilitando filtros e análises personalizadas.
+
+\subsubsection*{Filtros Avançados}
+O sistema permite combinar filtros por categoria (via relacionamento N:N) com outros critérios como data, permitindo consultas complexas de forma eficiente.
+
+\section*{Questionário Técnico - Fase III}
+
+\textbf{1. Qual foi o relacionamento N:N escolhido e quais tabelas ele conecta?}
+
+O sistema implementa dois relacionamentos N:N principais:
+
+\begin{itemize}
+  \item \textbf{Categoria ↔ Gasto (N:N)}: Conecta as tabelas \texttt{Categoria} e \texttt{Gasto} através da tabela intermediária \texttt{CategoriaGasto}. Este relacionamento permite que um gasto tenha múltiplas categorias e que uma categoria possa estar associada a múltiplos gastos.
+  \item \textbf{Tag ↔ Transação (N:N)}: Conecta as tabelas \texttt{Tag} e \texttt{Transação} (que pode ser \texttt{Gasto} ou \texttt{Receita}) através da tabela intermediária \texttt{TransacaoTag}. Este relacionamento permite que uma transação tenha múltiplas tags e que uma tag possa estar associada a múltiplas transações.
+\end{itemize}
+
+O relacionamento principal escolhido para a Fase III é o \textbf{Categoria ↔ Gasto}, que é o relacionamento N:N fundamental do sistema, permitindo categorização múltipla e flexível dos gastos.
+
+\textbf{2. Qual estrutura de índice foi utilizada (B+ ou Hash Extensível)? Justifique a escolha.}
+
+Foi utilizada a estrutura \textbf{Hash Extensível} para indexar os relacionamentos N:N. A justificativa para esta escolha é:
+
+\begin{itemize}
+  \item \textbf{Complexidade de busca}: Hash Extensível oferece O(1) médio para busca, inserção e remoção, enquanto Árvore B+ oferece O(log n). Para relacionamentos N:N, onde as buscas são frequentes e não requerem ordenação, o Hash Extensível é mais eficiente.
+  \item \textbf{Natureza das consultas}: As consultas em relacionamentos N:N são tipicamente por igualdade (buscar todos os gastos de uma categoria, buscar todas as categorias de um gasto), não por intervalo ou ordenação, o que favorece o uso de hash.
+  \item \textbf{Navegação bidirecional}: O Hash Extensível permite criar índices bidirecionais eficientes (categoria → gastos e gasto → categorias) sem duplicação excessiva de dados.
+  \item \textbf{Crescimento dinâmico}: O Hash Extensível cresce dinamicamente conforme necessário, adaptando-se ao volume de relacionamentos sem necessidade de rebalanceamento complexo.
+  \item \textbf{Performance em operações frequentes}: Como os relacionamentos N:N são consultados frequentemente durante filtros e navegação, o O(1) médio do Hash Extensível oferece melhor performance prática.
+\end{itemize}
+
+\textbf{3. Como foi implementada a chave composta da tabela intermediária?}
+
+A chave composta da tabela intermediária \texttt{CategoriaGasto} foi implementada da seguinte forma:
+
+\begin{itemize}
+  \item \textbf{Chave primária}: \texttt{idCategoriaGasto} (PK) — ID auto-incremental único para cada relacionamento
+  \item \textbf{Chaves estrangeiras}: 
+    \begin{itemize}
+      \item \texttt{idCategoria} (FK) — Referência à tabela \texttt{Categoria}
+      \item \texttt{idGasto} (FK) — Referência à tabela \texttt{Gasto}
+    \end{itemize}
+  \item \textbf{Implementação}: A combinação \texttt{(idCategoria, idGasto)} forma uma chave composta lógica que identifica unicamente cada relacionamento. Embora não seja uma constraint física no código, a validação é feita através de métodos que verificam a existência de relacionamentos duplicados antes de criar novos.
+  \item \textbf{Índices}: Os índices Hash Extensível são criados usando \texttt{idCategoria} e \texttt{idGasto} separadamente, permitindo busca eficiente em ambas as direções:
+    \begin{itemize}
+      \item \texttt{indiceCategoriaGastos}: Usa \texttt{idCategoria} como chave
+      \item \texttt{indiceGastoCategorias}: Usa \texttt{idGasto} como chave
+    \end{itemize}
+  \item \textbf{Campo adicional}: \texttt{ativo} (boolean) para exclusão lógica, permitindo manter histórico dos relacionamentos
+\end{itemize}
+
+\textbf{4. Como é feita a busca eficiente de registros por meio do índice?}
+
+A busca eficiente é realizada através dos índices Hash Extensível bidirecionais:
+
+\begin{itemize}
+  \item \textbf{Busca por categoria}: Para encontrar todos os gastos de uma categoria específica:
+    \begin{itemize}
+      \item Utiliza o índice \texttt{indiceCategoriaGastos} com a chave \texttt{idCategoria}
+      \item O Hash Extensível calcula o hash de \texttt{idCategoria} e acessa diretamente o bucket correspondente — O(1) médio
+      \item Retorna a lista de objetos \texttt{CategoriaGasto} associados àquela categoria
+      \item Filtra apenas relacionamentos com \texttt{ativo = true}
+      \item Para cada relacionamento ativo, busca o \texttt{Gasto} correspondente na Árvore B+ usando \texttt{idGasto} — O(log n)
+    \end{itemize}
+  \item \textbf{Busca por gasto}: Para encontrar todas as categorias de um gasto específico:
+    \begin{itemize}
+      \item Utiliza o índice \texttt{indiceGastoCategorias} com a chave \texttt{idGasto}
+      \item O Hash Extensível calcula o hash de \texttt{idGasto} e acessa diretamente o bucket — O(1) médio
+      \item Retorna a lista de objetos \texttt{CategoriaGasto} associados àquele gasto
+      \item Filtra relacionamentos ativos e busca as categorias correspondentes na Árvore B+ — O(log n) por categoria
+    \end{itemize}
+  \item \textbf{Complexidade total}: O(1) médio para acessar o índice + O(k) onde k = número de relacionamentos retornados + O(k × log n) para buscar as entidades relacionadas na Árvore B+
+  \item \textbf{Vantagem}: O Hash Extensível elimina a necessidade de percorrer todos os relacionamentos, acessando diretamente os relevantes através do hash
+\end{itemize}
+
+\textbf{5. Como o sistema trata a integridade referencial (remoção/atualização) entre as tabelas?}
+
+O sistema trata a integridade referencial através de exclusão lógica e validações:
+
+\begin{itemize}
+  \item \textbf{Exclusão lógica (Lápide)}:
+    \begin{itemize}
+      \item Quando uma \texttt{Categoria} ou \texttt{Gasto} é excluído, o campo \texttt{ativo} é marcado como \texttt{false}
+      \item Os relacionamentos \texttt{CategoriaGasto} permanecem no banco de dados, mas são filtrados nas consultas
+      \item Relacionamentos com entidades inativas não aparecem nos resultados de busca
+      \item Isso mantém o histórico e permite recuperação de dados se necessário
+    \end{itemize}
+  \item \textbf{Validação antes de criar relacionamento}:
+    \begin{itemize}
+      \item Antes de criar um relacionamento N:N, o sistema verifica se ambas as entidades existem e estão ativas
+      \item Método \texttt{buscarCategoria(idCategoria)} e \texttt{buscarGasto(idGasto)} são chamados para validar existência
+      \item Apenas entidades com \texttt{ativo = true} podem ser relacionadas
+    \end{itemize}
+  \item \textbf{Remoção de relacionamento}:
+    \begin{itemize}
+      \item Método \texttt{removerCategoriaDoGasto()} marca o relacionamento como \texttt{ativo = false}
+      \item O relacionamento permanece no arquivo mas não aparece nas consultas
+      \item Os índices são atualizados automaticamente ao salvar
+    \end{itemize}
+  \item \textbf{Atualização de entidades}:
+    \begin{itemize}
+      \item Atualizações em \texttt{Categoria} ou \texttt{Gasto} não afetam os relacionamentos diretamente
+      \item Os relacionamentos referenciam apenas os IDs, que permanecem constantes
+      \item Se uma entidade for marcada como inativa, os relacionamentos automaticamente deixam de aparecer nas consultas
+    \end{itemize}
+  \item \textbf{Consistência de índices}:
+    \begin{itemize}
+      \item Os índices bidirecionais são atualizados simultaneamente ao criar ou remover relacionamentos
+      \item Ao carregar do disco, os índices são reconstruídos a partir dos relacionamentos ativos
+    \end{itemize}
+\end{itemize}
+
+\textbf{6. Como foi organizada a persistência dos dados dessa nova tabela (mesmo padrão de cabeçalho e lápide)?}
+
+A persistência da tabela \texttt{CategoriaGasto} segue o mesmo padrão das outras tabelas do sistema:
+
+\begin{itemize}
+  \item \textbf{Arquivo de persistência}: \texttt{data/categoria\_gasto.db}
+  \item \textbf{Formato}: Serialização Java nativa usando \texttt{ObjectOutputStream} e \texttt{ObjectInputStream}
+  \item \textbf{Estrutura de armazenamento}:
+    \begin{itemize}
+      \item Lista de objetos \texttt{CategoriaGasto} serializados diretamente
+      \item Não há cabeçalho separado — a lista é serializada como um único objeto
+      \item Cada objeto \texttt{CategoriaGasto} contém: \texttt{idCategoriaGasto}, \texttt{idCategoria}, \texttt{idGasto} e \texttt{ativo}
+    \end{itemize}
+  \item \textbf{Exclusão lógica (Lápide)}:
+    \begin{itemize}
+      \item Campo \texttt{ativo} (boolean) em cada objeto \texttt{CategoriaGasto}
+      \item Relacionamentos excluídos são marcados como \texttt{ativo = false} mas permanecem no arquivo
+      \item Ao carregar, apenas relacionamentos com \texttt{ativo = true} são considerados nas consultas
+      \item Isso mantém histórico completo dos relacionamentos para análise e possível recuperação
+    \end{itemize}
+  \item \textbf{Salvamento}:
+    \begin{itemize}
+      \item Método \texttt{salvarCategoriaGasto()} é chamado após cada operação de escrita (inserção, remoção)
+      \item Serializa a lista completa de relacionamentos (incluindo inativos) para o arquivo
+    \end{itemize}
+  \item \textbf{Carregamento}:
+    \begin{itemize}
+      \item Método \texttt{carregarCategoriaGasto()} é executado automaticamente na inicialização do servidor
+      \item Deserializa a lista de relacionamentos do arquivo
+      \item Reconstrói os índices Hash Extensível inserindo todos os relacionamentos (ativos e inativos)
+      \item As consultas filtram apenas relacionamentos ativos durante a execução
+    \end{itemize}
+  \item \textbf{Contador de IDs}: O contador \texttt{proximoIdCategoriaGasto} é salvo em \texttt{data/contadores.db} junto com os outros contadores
+\end{itemize}
+
+\textbf{7. Descreva como o código da tabela intermediária se integra com o CRUD das tabelas principais.}
+
+A tabela intermediária \texttt{CategoriaGasto} se integra com o CRUD das tabelas principais da seguinte forma:
+
+\begin{itemize}
+  \item \textbf{CREATE (Criação de Gasto)}:
+    \begin{itemize}
+      \item No método \texttt{cadastrarGasto()}, após inserir o gasto na Árvore B+, o sistema recebe uma lista de IDs de categorias
+      \item Para cada categoria na lista, chama \texttt{adicionarCategoriaAoGastoSemSalvar()} que:
+        \begin{itemize}
+          \item Valida se a categoria existe e está ativa
+          \item Cria um novo objeto \texttt{CategoriaGasto} com ID auto-incremental
+          \item Adiciona à lista \texttt{relacionamentosCategoriaGasto}
+          \item Atualiza os índices bidirecionais (\texttt{indiceCategoriaGastos} e \texttt{indiceGastoCategorias})
+        \end{itemize}
+      \item Após criar todos os relacionamentos, chama \texttt{salvarCategoriaGasto()} uma única vez para persistir
+    \end{itemize}
+  \item \textbf{READ (Leitura de Gastos e Categorias)}:
+    \begin{itemize}
+      \item Ao buscar um gasto, o método \texttt{buscarCategoriasDoGasto(idGasto)} é chamado para retornar todas as categorias associadas
+      \item Utiliza o índice \texttt{indiceGastoCategorias} para buscar relacionamentos — O(1) médio
+      \item Filtra relacionamentos ativos e busca as categorias correspondentes na Árvore B+
+      \item Similarmente, \texttt{buscarGastosPorCategoria(idCategoria)} retorna todos os gastos de uma categoria
+    \end{itemize}
+  \item \textbf{UPDATE (Atualização)}:
+    \begin{itemize}
+      \item Atualizações em \texttt{Categoria} ou \texttt{Gasto} não modificam diretamente os relacionamentos
+      \item Os relacionamentos referenciam apenas IDs, que permanecem constantes
+      \item Se necessário adicionar/remover categorias de um gasto existente, métodos específicos são chamados:
+        \begin{itemize}
+          \item \texttt{adicionarCategoriaAoGasto()} para adicionar nova categoria
+          \item \texttt{removerCategoriaDoGasto()} para remover categoria (exclusão lógica)
+        \end{itemize}
+    \end{itemize}
+  \item \textbf{DELETE (Exclusão Lógica)}:
+    \begin{itemize}
+      \item Quando um \texttt{Gasto} é excluído (lógica), os relacionamentos permanecem mas não aparecem nas consultas
+      \item Quando uma \texttt{Categoria} é excluída (lógica), os relacionamentos permanecem mas não aparecem nas consultas
+      \item O método \texttt{removerCategoriaDoGasto()} marca um relacionamento específico como inativo
+      \item Todos os métodos de busca filtram relacionamentos com \texttt{ativo = false}
+    \end{itemize}
+  \item \textbf{Integração com API REST}:
+    \begin{itemize}
+      \item O endpoint \texttt{POST /api/expenses} recebe \texttt{categoryIds} como array
+      \item O handler chama \texttt{cadastrarGasto()} que internamente cria os relacionamentos N:N
+      \item Ao retornar gastos via \texttt{GET /api/transactions}, o sistema inclui as categorias associadas usando \texttt{buscarCategoriasDoGasto()}
+    \end{itemize}
+  \item \textbf{Sincronização}:
+    \begin{itemize}
+      \item Todas as operações que modificam relacionamentos chamam \texttt{salvarCategoriaGasto()} para persistir
+      \item Os índices são atualizados imediatamente após cada modificação
+      \item A persistência garante que os dados sejam mantidos entre execuções do servidor
+    \end{itemize}
+\end{itemize}
+
+\textbf{8. Descreva como está organizada a estrutura de diretórios e módulos no repositório após esta fase.}
+
+Após a implementação da Fase III, a estrutura de diretórios e módulos do repositório está organizada da seguinte forma:
+
+\begin{itemize}
+  \item \textbf{src/} — Código-fonte Java:
+    \begin{itemize}
+      \item \texttt{BancoDados.java}: Classe principal que gerencia todas as tabelas, índices e relacionamentos N:N
+      \item \texttt{Entidades.java}: Contém as classes de domínio, incluindo \texttt{CategoriaGasto} e \texttt{TransacaoTag}
+      \item \texttt{ArvoreBPlus.java}: Implementação da Árvore B+ para índices primários
+      \item \texttt{HashExtensivel.java}: Implementação do Hash Extensível para índices secundários e relacionamentos N:N
+      \item \texttt{ControleSeServer.java}: Servidor HTTP com API REST e handlers para todas as operações
+      \item \texttt{server/handlers/}: Handlers modulares para diferentes endpoints (CategoriesHandler, AccountsHandler, etc.)
+      \item \texttt{server/utils/}: Utilitários (JsonUtil, RequestUtil, ResponseUtil)
+    \end{itemize}
+  \item \textbf{data/} — Arquivos de persistência:
+    \begin{itemize}
+      \item \texttt{usuarios.db}, \texttt{categorias.db}, \texttt{gastos.db}, \texttt{receitas.db}, \texttt{contas.db}, \texttt{orcamentos.db}, \texttt{tags.db}: Tabelas principais
+      \item \texttt{categoria\_gasto.db}: Tabela intermediária para relacionamento N:N Categoria-Gasto
+      \item \texttt{transacao\_tag.db}: Tabela intermediária para relacionamento N:N Tag-Transação
+      \item \texttt{contadores.db}: Contadores de IDs auto-incrementais (incluindo \texttt{proximoIdCategoriaGasto} e \texttt{proximoIdTransacaoTag})
+    \end{itemize}
+  \item \textbf{docs/} — Documentação:
+    \begin{itemize}
+      \item \texttt{main.tex}: Fonte LaTeX da documentação completa (Fases I, II e III)
+      \item \texttt{der.png}, \texttt{caso.png}: Diagramas do projeto
+      \item PDFs das especificações de cada fase
+    \end{itemize}
+  \item \textbf{Raiz do projeto}:
+    \begin{itemize}
+      \item \texttt{index.html}, \texttt{styles.css}, \texttt{app.js}: Frontend web completo
+      \item \texttt{README.md}: Documentação do projeto com instruções de uso
+      \item \texttt{Dockerfile}, \texttt{render.yaml}: Configurações para deploy
+    \end{itemize}
+  \item \textbf{Organização modular}:
+    \begin{itemize}
+      \item \textbf{Camada de persistência}: \texttt{BancoDados.java} centraliza todas as operações de banco de dados
+      \item \textbf{Camada de entidades}: \texttt{Entidades.java} contém todas as classes de domínio
+      \item \textbf{Camada de estruturas}: \texttt{ArvoreBPlus.java} e \texttt{HashExtensivel.java} são estruturas reutilizáveis
+      \item \textbf{Camada de API}: \texttt{ControleSeServer.java} e handlers modulares gerenciam requisições HTTP
+      \item \textbf{Separação de responsabilidades}: Cada módulo tem responsabilidade clara e bem definida
+    \end{itemize}
+  \item \textbf{Integração dos relacionamentos N:N}:
+    \begin{itemize}
+      \item Métodos de relacionamento N:N estão em \texttt{BancoDados.java} na seção "OPERAÇÕES DE RELACIONAMENTO N:N"
+      \item Classes \texttt{CategoriaGasto} e \texttt{TransacaoTag} estão em \texttt{Entidades.java}
+      \item Índices Hash Extensível para relacionamentos são inicializados em \texttt{BancoDados.java}
+      \item Persistência de relacionamentos segue o mesmo padrão das outras tabelas
+    \end{itemize}
 \end{itemize}
 
 \end{document}

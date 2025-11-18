@@ -165,11 +165,54 @@ public class BancoDados {
     
     /**
      * Verifica se os arquivos de índice existem
+     * Verifica todos os índices primários e secundários essenciais
      */
     private boolean verificarIndicesExistem() {
-        File idxUsuarios = new File(IDX_USUARIOS);
-        File idxCategorias = new File(IDX_CATEGORIAS);
-        return idxUsuarios.exists() && idxCategorias.exists();
+        // Verifica índices primários (B+ Tree) - essenciais
+        File[] indicesPrimarios = {
+            new File(IDX_USUARIOS),
+            new File(IDX_CATEGORIAS),
+            new File(IDX_GASTOS),
+            new File(IDX_RECEITAS),
+            new File(IDX_CONTAS),
+            new File(IDX_ORCAMENTOS),
+            new File(IDX_TAGS)
+        };
+        
+        // Verifica índices secundários essenciais (Hash Extensível)
+        File[] indicesSecundarios = {
+            new File(IDX_USUARIO_CATEGORIAS),
+            new File(IDX_USUARIO_GASTOS),
+            new File(IDX_USUARIO_RECEITAS),
+            new File(IDX_EMAIL_USUARIOS),
+            new File(IDX_CATEGORIA_GASTOS),
+            new File(IDX_GASTO_CATEGORIAS)
+        };
+        
+        // Verifica se todos os índices primários existem
+        for (File idx : indicesPrimarios) {
+            if (!idx.exists()) {
+                System.out.println("Índice primário não encontrado: " + idx.getName());
+                return false;
+            }
+        }
+        
+        // Verifica se pelo menos os índices secundários essenciais existem
+        // (alguns podem não existir se não houver dados ainda)
+        int indicesSecundariosExistentes = 0;
+        for (File idx : indicesSecundarios) {
+            if (idx.exists()) {
+                indicesSecundariosExistentes++;
+            }
+        }
+        
+        // Se nenhum índice secundário existe, considera que os índices não foram criados
+        if (indicesSecundariosExistentes == 0) {
+            System.out.println("Nenhum índice secundário encontrado - será necessário reconstruir");
+            return false;
+        }
+        
+        return true;
     }
     
     // ========== OPERAÇÕES DE USUÁRIO ==========
@@ -180,8 +223,12 @@ public class BancoDados {
             throw new RuntimeException("Email já cadastrado!");
         }
         
+        // Criptografa a senha usando RSA antes de salvar
+        RSAEncryption rsa = RSAKeyManager.obterInstancia();
+        String senhaCriptografada = rsa.criptografar(senha);
+        
         int idUsuario = proximoIdUsuario++;
-        Usuario usuario = new Usuario(idUsuario, nome, email, senha);
+        Usuario usuario = new Usuario(idUsuario, nome, email, senhaCriptografada);
         
         // Insere na tabela principal
         tabelaUsuarios.inserir(idUsuario, usuario);
@@ -215,7 +262,14 @@ public class BancoDados {
     
     public boolean autenticarUsuario(String email, String senha) {
         Usuario usuario = buscarUsuarioPorEmail(email);
-        return usuario != null && usuario.getSenha().equals(senha);
+        if (usuario == null) {
+            return false;
+        }
+        
+        // Descriptografa a senha armazenada e compara com a senha fornecida
+        RSAEncryption rsa = RSAKeyManager.obterInstancia();
+        String senhaDescriptografada = rsa.descriptografar(usuario.getSenha());
+        return senhaDescriptografada.equals(senha);
     }
     
     // ========== OPERAÇÕES DE CATEGORIA ==========
