@@ -3,7 +3,7 @@ import java.math.BigInteger;
 import java.util.Random;
 
 /**
- * Implementação do algoritmo RSA do zero
+ * Implementação do algoritmo RSA
  * Gera chaves pública e privada, criptografa e descriptografa dados
  */
 public class RSAEncryption {

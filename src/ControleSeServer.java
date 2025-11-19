@@ -31,15 +31,177 @@ public class ControleSeServer {
             // Inicia o scheduler de recorrências (executa diariamente)
             iniciarSchedulerRecorrencias();
             
-            System.out.println("=== SERVIDOR CONTROLE-SE INICIADO ===");
-            System.out.println("Servidor rodando em: http://localhost:" + PORT);
-            System.out.println("Frontend disponível em: http://localhost:" + PORT + "/");
-            System.out.println("API disponível em: http://localhost:" + PORT + "/api/");
-            System.out.println("Scheduler de recorrências: ATIVO (verifica diariamente às 00:05)");
-            System.out.println("Pressione Ctrl+C para parar o servidor");
+            // Exibe informações do servidor e inicia loop do menu
+            exibirInformacoesServidor();
+            iniciarLoopMenu();
             
         } catch (IOException e) {
             System.err.println("Erro ao iniciar servidor: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * Exibe informações do servidor
+     */
+    private static void exibirInformacoesServidor() {
+        System.out.println("\n=== SERVIDOR CONTROLE-SE INICIADO ===");
+        System.out.println("Servidor rodando em: http://localhost:" + PORT);
+        System.out.println("Frontend disponível em: http://localhost:" + PORT + "/");
+        System.out.println("API disponível em: http://localhost:" + PORT + "/api/");
+        // System.out.println("Scheduler de recorrências: ATIVO (verifica diariamente às 00:05)");
+        System.out.println("Pressione Ctrl+C para parar o servidor");
+    }
+    
+    /**
+     * Inicia loop contínuo do menu de compressão
+     */
+    private static void iniciarLoopMenu() {
+        Scanner scanner = new Scanner(System.in);
+        
+        while (true) {
+            try {
+                exibirMenuCompressao(scanner);
+            } catch (Exception e) {
+                System.err.println("Erro no menu: " + e.getMessage());
+                e.printStackTrace();
+                System.out.println("\nPressione Enter para continuar...");
+                try {
+                    scanner.nextLine();
+                } catch (Exception ex) {
+                    // Ignora
+                }
+            }
+        }
+    }
+    
+    /**
+     * Exibe menu CLI para compressão/descompressão de arquivos
+     */
+    private static void exibirMenuCompressao(Scanner scanner) {
+        System.out.println("\n========================================");
+        System.out.println("   SISTEMA DE COMPRESSÃO DE DADOS");
+        System.out.println("========================================");
+        System.out.println("1. Comprimir arquivos com LZW");
+        System.out.println("2. Comprimir arquivos com Huffman");
+        System.out.println("3. Descomprimir arquivo");
+        System.out.println("4. Mostrar informações do servidor");
+        System.out.println("========================================");
+        System.out.print("Escolha uma opção: ");
+        
+        try {
+            int opcao = scanner.nextInt();
+            scanner.nextLine(); // Limpa buffer
+            
+            switch (opcao) {
+                case 1:
+                    comprimirArquivos("LZW", scanner);
+                    break;
+                case 2:
+                    comprimirArquivos("HUFFMAN", scanner);
+                    break;
+                case 3:
+                    descomprimirArquivo(scanner);
+                    break;
+                case 4:
+                    exibirInformacoesServidor();
+                    System.out.println("\nPressione Enter para continuar...");
+                    scanner.nextLine();
+                    break;
+                default:
+                    System.out.println("Opção inválida. Tente novamente.");
+                    System.out.println("Pressione Enter para continuar...");
+                    scanner.nextLine();
+                    break;
+            }
+        } catch (Exception e) {
+            System.err.println("Erro ao processar opção: " + e.getMessage());
+            System.out.println("Pressione Enter para continuar...");
+            try {
+                scanner.nextLine();
+            } catch (Exception ex) {
+                // Ignora
+            }
+        }
+    }
+    
+    /**
+     * Comprime todos os arquivos .db usando o algoritmo especificado
+     */
+    private static void comprimirArquivos(String algoritmo, Scanner scanner) {
+        try {
+            System.out.println("\n=== COMPRESSÃO COM " + algoritmo + " ===\n");
+            String arquivoComprimido = FileCompressor.compressAllFiles(algoritmo);
+            System.out.println("\nCompressão concluída com sucesso!");
+            System.out.println("Arquivo salvo em: " + arquivoComprimido);
+            System.out.println("\nPressione Enter para continuar...");
+            scanner.nextLine();
+            exibirInformacoesServidor();
+        } catch (Exception e) {
+            System.err.println("\nErro ao comprimir arquivos: " + e.getMessage());
+            e.printStackTrace();
+            System.out.println("\nPressione Enter para continuar...");
+            try {
+                scanner.nextLine();
+            } catch (Exception ex) {
+                // Ignora
+            }
+            exibirInformacoesServidor();
+        }
+    }
+    
+    /**
+     * Descomprime um arquivo selecionado
+     */
+    private static void descomprimirArquivo(Scanner scanner) {
+        try {
+            System.out.println("\n=== DESCOMPRESSÃO DE ARQUIVO ===\n");
+            
+            List<String> arquivosComprimidos = FileCompressor.listCompressedFiles();
+            
+            if (arquivosComprimidos.isEmpty()) {
+                System.out.println("Nenhum arquivo comprimido encontrado no diretório atual.");
+                System.out.println("Pressione Enter para continuar...");
+                scanner.nextLine();
+                exibirInformacoesServidor();
+                return;
+            }
+            
+            System.out.println("Arquivos comprimidos disponíveis:");
+            for (int i = 0; i < arquivosComprimidos.size(); i++) {
+                File file = new File(arquivosComprimidos.get(i));
+                System.out.println((i + 1) + ". " + file.getName() + " (" + file.length() + " bytes)");
+            }
+            
+            System.out.print("\nEscolha o número do arquivo para descomprimir (ou 0 para cancelar): ");
+            int escolha = scanner.nextInt();
+            scanner.nextLine(); // Limpa buffer
+            
+            if (escolha < 1 || escolha > arquivosComprimidos.size()) {
+                System.out.println("Opção cancelada ou inválida.");
+                exibirInformacoesServidor();
+                return;
+            }
+            
+            String arquivoSelecionado = arquivosComprimidos.get(escolha - 1);
+            System.out.println("\nDescomprimindo: " + new File(arquivoSelecionado).getName());
+            
+            FileCompressor.decompressAllFiles(arquivoSelecionado);
+            
+            System.out.println("\nDescompressão concluída com sucesso!");
+            System.out.println("Pressione Enter para continuar...");
+            scanner.nextLine();
+            exibirInformacoesServidor();
+            
+        } catch (Exception e) {
+            System.err.println("\nErro ao descomprimir arquivo: " + e.getMessage());
+            e.printStackTrace();
+            System.out.println("\nPressione Enter para continuar...");
+            try {
+                scanner.nextLine();
+            } catch (Exception ex) {
+                // Ignora
+            }
+            exibirInformacoesServidor();
         }
     }
     
@@ -1031,12 +1193,16 @@ public class ControleSeServer {
                     double percentageUsed = orcamento.getValorPlanejado() > 0 ? 
                         (spent / orcamento.getValorPlanejado()) * 100 : 0;
                     
+                    // Formata para 2 casas decimais
+                    percentageUsed = Math.min(percentageUsed, 100);
+                    percentageUsed = Math.round(percentageUsed * 100.0) / 100.0;
+                    
                     Map<String, Object> budgetData = new HashMap<>();
                     budgetData.put("idOrcamento", orcamento.getIdOrcamento());
                     budgetData.put("valorPlanejado", orcamento.getValorPlanejado());
                     budgetData.put("periodo", orcamento.getPeriodo());
                     budgetData.put("categoryName", categoria != null ? categoria.getNome() : "Sem categoria");
-                    budgetData.put("percentageUsed", Math.min(percentageUsed, 100));
+                    budgetData.put("percentageUsed", percentageUsed);
                     budgetList.add(budgetData);
                 }
                 

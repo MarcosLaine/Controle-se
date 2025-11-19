@@ -11,6 +11,7 @@ import java.util.List;
 public class BancoDados {
     
     private static final String DATA_DIR = "data";
+    private static final String IDX_DIR = DATA_DIR + "/idx";
     private static final String USUARIOS_DB = DATA_DIR + "/usuarios.db";
     private static final String CATEGORIAS_DB = DATA_DIR + "/categorias.db";
     private static final String GASTOS_DB = DATA_DIR + "/gastos.db";
@@ -23,32 +24,32 @@ public class BancoDados {
     private static final String TRANSACAO_TAG_DB = DATA_DIR + "/transacao_tag.db";
     
     // Arquivos de índices
-    private static final String IDX_USUARIOS = DATA_DIR + "/idx_usuarios.db";
-    private static final String IDX_CATEGORIAS = DATA_DIR + "/idx_categorias.db";
-    private static final String IDX_GASTOS = DATA_DIR + "/idx_gastos.db";
-    private static final String IDX_RECEITAS = DATA_DIR + "/idx_receitas.db";
-    private static final String IDX_CONTAS = DATA_DIR + "/idx_contas.db";
-    private static final String IDX_ORCAMENTOS = DATA_DIR + "/idx_orcamentos.db";
-    private static final String IDX_TAGS = DATA_DIR + "/idx_tags.db";
+    private static final String IDX_USUARIOS = IDX_DIR + "/idx_usuarios.db";
+    private static final String IDX_CATEGORIAS = IDX_DIR + "/idx_categorias.db";
+    private static final String IDX_GASTOS = IDX_DIR + "/idx_gastos.db";
+    private static final String IDX_RECEITAS = IDX_DIR + "/idx_receitas.db";
+    private static final String IDX_CONTAS = IDX_DIR + "/idx_contas.db";
+    private static final String IDX_ORCAMENTOS = IDX_DIR + "/idx_orcamentos.db";
+    private static final String IDX_TAGS = IDX_DIR + "/idx_tags.db";
     
     // Arquivos de índices Hash Extensível
-    private static final String IDX_USUARIO_CATEGORIAS = DATA_DIR + "/idx_usuario_categorias.db";
-    private static final String IDX_USUARIO_GASTOS = DATA_DIR + "/idx_usuario_gastos.db";
-    private static final String IDX_USUARIO_RECEITAS = DATA_DIR + "/idx_usuario_receitas.db";
-    private static final String IDX_USUARIO_CONTAS = DATA_DIR + "/idx_usuario_contas.db";
-    private static final String IDX_USUARIO_ORCAMENTOS = DATA_DIR + "/idx_usuario_orcamentos.db";
-    private static final String IDX_CATEGORIA_ORCAMENTOS = DATA_DIR + "/idx_categoria_orcamentos.db";
-    private static final String IDX_EMAIL_USUARIOS = DATA_DIR + "/idx_email_usuarios.db";
-    private static final String IDX_DATA_GASTOS = DATA_DIR + "/idx_data_gastos.db";
-    private static final String IDX_DATA_RECEITAS = DATA_DIR + "/idx_data_receitas.db";
-    private static final String IDX_TIPO_CONTAS = DATA_DIR + "/idx_tipo_contas.db";
-    private static final String IDX_CATEGORIA_GASTOS = DATA_DIR + "/idx_categoria_gastos.db";
-    private static final String IDX_GASTO_CATEGORIAS = DATA_DIR + "/idx_gasto_categorias.db";
-    private static final String IDX_USUARIO_TAGS = DATA_DIR + "/idx_usuario_tags.db";
-    private static final String IDX_TAG_GASTOS = DATA_DIR + "/idx_tag_gastos.db";
-    private static final String IDX_TAG_RECEITAS = DATA_DIR + "/idx_tag_receitas.db";
-    private static final String IDX_GASTO_TAGS = DATA_DIR + "/idx_gasto_tags.db";
-    private static final String IDX_RECEITA_TAGS = DATA_DIR + "/idx_receita_tags.db";
+    private static final String IDX_USUARIO_CATEGORIAS = IDX_DIR + "/idx_usuario_categorias.db";
+    private static final String IDX_USUARIO_GASTOS = IDX_DIR + "/idx_usuario_gastos.db";
+    private static final String IDX_USUARIO_RECEITAS = IDX_DIR + "/idx_usuario_receitas.db";
+    private static final String IDX_USUARIO_CONTAS = IDX_DIR + "/idx_usuario_contas.db";
+    private static final String IDX_USUARIO_ORCAMENTOS = IDX_DIR + "/idx_usuario_orcamentos.db";
+    private static final String IDX_CATEGORIA_ORCAMENTOS = IDX_DIR + "/idx_categoria_orcamentos.db";
+    private static final String IDX_EMAIL_USUARIOS = IDX_DIR + "/idx_email_usuarios.db";
+    private static final String IDX_DATA_GASTOS = IDX_DIR + "/idx_data_gastos.db";
+    private static final String IDX_DATA_RECEITAS = IDX_DIR + "/idx_data_receitas.db";
+    private static final String IDX_TIPO_CONTAS = IDX_DIR + "/idx_tipo_contas.db";
+    private static final String IDX_CATEGORIA_GASTOS = IDX_DIR + "/idx_categoria_gastos.db";
+    private static final String IDX_GASTO_CATEGORIAS = IDX_DIR + "/idx_gasto_categorias.db";
+    private static final String IDX_USUARIO_TAGS = IDX_DIR + "/idx_usuario_tags.db";
+    private static final String IDX_TAG_GASTOS = IDX_DIR + "/idx_tag_gastos.db";
+    private static final String IDX_TAG_RECEITAS = IDX_DIR + "/idx_tag_receitas.db";
+    private static final String IDX_GASTO_TAGS = IDX_DIR + "/idx_gasto_tags.db";
+    private static final String IDX_RECEITA_TAGS = IDX_DIR + "/idx_receita_tags.db";
     
     // Tabelas principais com índices primários (Árvore B+)
     private ArvoreBPlus tabelaUsuarios;
@@ -1593,9 +1594,18 @@ public class BancoDados {
      * Salva um índice Árvore B+ em arquivo
      */
     private void salvarIndiceArvoreBPlus(ArvoreBPlus arvore, String arquivo) {
-        try (ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(arquivo))) {
-            List<Registro> registros = arvore.listarRegistros();
-            oos.writeObject(registros);
+        try {
+            // Garante que o diretório existe
+            File file = new File(arquivo);
+            File parentDir = file.getParentFile();
+            if (parentDir != null && !parentDir.exists()) {
+                parentDir.mkdirs();
+            }
+            
+            try (ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(arquivo))) {
+                List<Registro> registros = arvore.listarRegistros();
+                oos.writeObject(registros);
+            }
         } catch (IOException e) {
             System.err.println("Erro ao salvar índice " + arquivo + ": " + e.getMessage());
         }
@@ -1623,14 +1633,23 @@ public class BancoDados {
      * Salva um índice Hash Extensível em arquivo
      */
     private void salvarIndiceHashExtensivel(HashExtensivel hash, String arquivo) {
-        try (ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(arquivo))) {
-            List<EntradaHash> entradas = hash.listarEntradas();
-            if (entradas == null || entradas.isEmpty()) {
-                System.out.println("Aviso: Tentando salvar índice vazio: " + arquivo);
-            } else {
-                System.out.println("Salvando índice " + arquivo + " com " + entradas.size() + " entradas");
+        try {
+            // Garante que o diretório existe
+            File file = new File(arquivo);
+            File parentDir = file.getParentFile();
+            if (parentDir != null && !parentDir.exists()) {
+                parentDir.mkdirs();
             }
-            oos.writeObject(entradas);
+            
+            try (ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(arquivo))) {
+                List<EntradaHash> entradas = hash.listarEntradas();
+                if (entradas == null || entradas.isEmpty()) {
+                    // System.out.println("Aviso: Tentando salvar índice vazio: " + arquivo);
+                } else {
+                    // System.out.println("Salvando índice " + arquivo + " com " + entradas.size() + " entradas");
+                }
+                oos.writeObject(entradas);
+            }
         } catch (IOException e) {
             System.err.println("Erro ao salvar índice " + arquivo + ": " + e.getMessage());
             e.printStackTrace();

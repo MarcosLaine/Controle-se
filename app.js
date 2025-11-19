@@ -345,7 +345,6 @@ class ControleSeApp {
             card.className = 'category-card';
             card.innerHTML = `
                 <h3>${category.nome}</h3>
-                <p>ID: ${category.idCategoria}</p>
                 <div class="card-actions">
                     <button class="btn-secondary" onclick="app.editCategory(${category.idCategoria})">
                         <i class="fas fa-edit"></i> Editar
@@ -518,7 +517,7 @@ class ControleSeApp {
                     <div class="progress-bar">
                         <div class="progress-fill" style="width: ${budget.percentageUsed}%"></div>
                     </div>
-                    <span class="progress-text">${budget.percentageUsed}% usado</span>
+                    <span class="progress-text">${parseFloat(budget.percentageUsed).toFixed(2)}% usado</span>
                 </div>
                 <div class="card-actions">
                     <button class="btn-secondary" onclick="app.editBudget(${budget.idOrcamento})">

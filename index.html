@@ -47,9 +47,9 @@
             
             loadScript(jsPDFSources[index], function(success) {
                 if (success) {
-                    console.log('jsPDF carregado com sucesso de:', jsPDFSources[index]);
+                    //console.log('jsPDF carregado com sucesso de:', jsPDFSources[index]);
                 } else {
-                    console.log('Tentando próximo CDN para jsPDF...');
+                    //console.log('Tentando próximo CDN para jsPDF...');
                     loadJSPDFWithFallbacks(index + 1);
                 }
             });
@@ -58,15 +58,15 @@
         // Carregar html2canvas com múltiplos fallbacks
         function loadHtml2CanvasWithFallbacks(index = 0) {
             if (index >= html2canvasSources.length) {
-                console.error('Falha ao carregar html2canvas de todos os CDNs');
+               // console.error('Falha ao carregar html2canvas de todos os CDNs');
                 return;
             }
             
             loadScript(html2canvasSources[index], function(success) {
                 if (success) {
-                    console.log('html2canvas carregado com sucesso de:', html2canvasSources[index]);
+                    //console.log('html2canvas carregado com sucesso de:', html2canvasSources[index]);
                 } else {
-                    console.log('Tentando próximo CDN para html2canvas...');
+                    //console.log('Tentando próximo CDN para html2canvas...');
                     loadHtml2CanvasWithFallbacks(index + 1);
                 }
             });
@@ -77,7 +77,7 @@
         loadHtml2CanvasWithFallbacks();
 
         // Verificação simples - será feita pelo JavaScript da aplicação
-        console.log('Scripts de carregamento das bibliotecas iniciados');
+        //console.log('Scripts de carregamento das bibliotecas iniciados');
     </script>
 </head>
 <body>
