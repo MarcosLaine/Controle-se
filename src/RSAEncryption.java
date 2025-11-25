@@ -7,12 +7,12 @@ import java.util.Random;
  * Gera chaves pública e privada, criptografa e descriptografa dados
  */
 public class RSAEncryption {
-    private BigInteger modPrim1Prim2;
-    private BigInteger expoPublico;
-    private BigInteger expoPrivado;
-    private BigInteger prim1;
-    private BigInteger prim2;
-    private BigInteger totienteEuler; // Função totiente de Euler (prim1-1)(prim2-1)
+    private BigInteger n;  // Módulo (p * q)
+    private BigInteger e;  // Expoente público
+    private BigInteger d;  // Expoente privado
+    private BigInteger p;  // Primeiro número primo
+    private BigInteger q;  // Segundo número primo
+    private BigInteger phi; // Função totiente de Euler (p-1)(q-1)
     
     private static final int BIT_LENGTH = 256; // Tamanho das chaves (256 bits para performance)
     private static final BigInteger PUBLIC_EXPONENT = new BigInteger("65537"); // Expoente público padrão
@@ -27,10 +27,10 @@ public class RSAEncryption {
     /**
      * Construtor que carrega chaves existentes
      */
-    public RSAEncryption(BigInteger modPrim1Prim2, BigInteger expoPublico, BigInteger expoPrivado) {
-        this.modPrim1Prim2 = modPrim1Prim2;
-        this.expoPublico = expoPublico;
-        this.expoPrivado = expoPrivado;
+    public RSAEncryption(BigInteger n, BigInteger e, BigInteger d) {
+        this.n = n;
+        this.e = e;
+        this.d = d;
     }
     
     /**
@@ -40,32 +40,32 @@ public class RSAEncryption {
         Random random = new Random();
         
         // Gera dois números primos grandes
-        prim1 = gerarNumeroPrimo(BIT_LENGTH / 2, random);
-        prim2 = gerarNumeroPrimo(BIT_LENGTH / 2, random);
+        p = gerarNumeroPrimo(BIT_LENGTH / 2, random);
+        q = gerarNumeroPrimo(BIT_LENGTH / 2, random);
         
         // Garante que p e q são diferentes
-        while (prim1.equals(prim2)) {
-            prim2 = gerarNumeroPrimo(BIT_LENGTH / 2, random);
+        while (p.equals(q)) {
+            q = gerarNumeroPrimo(BIT_LENGTH / 2, random);
         }
         
-        // Calcula modPrim1Prim2 = prim1 * prim2
-        modPrim1Prim2 = prim1.multiply(prim2);
+        // Calcula n = p * q
+        n = p.multiply(q);
         
         // Calcula phi(n) = (p-1) * (q-1)
-        BigInteger prim1MenosUm = prim1.subtract(BigInteger.ONE);
-        BigInteger prim2MenosUm = prim2.subtract(BigInteger.ONE);
-        totienteEuler = prim1MenosUm.multiply(prim2MenosUm);
+        BigInteger pMenosUm = p.subtract(BigInteger.ONE);
+        BigInteger qMenosUm = q.subtract(BigInteger.ONE);
+        phi = pMenosUm.multiply(qMenosUm);
         
         // Define o expoente público (geralmente 65537)
-        expoPublico = PUBLIC_EXPONENT;
+        e = PUBLIC_EXPONENT;
         
         // Garante que e e phi são coprimos
-        while (!expoPublico.gcd(totienteEuler).equals(BigInteger.ONE)) {
-            expoPublico = expoPublico.add(BigInteger.ONE);
+        while (!e.gcd(phi).equals(BigInteger.ONE)) {
+            e = e.add(BigInteger.ONE);
         }
         
         // Calcula o expoente privado d usando o algoritmo estendido de Euclides
-        expoPrivado = calcularInversoModular(expoPublico, totienteEuler);
+        d = calcularInversoModular(e, phi);
     }
     
     /**
@@ -95,11 +95,11 @@ public class RSAEncryption {
             return false;
         }
         
-        // Escreve n-1 como d * 2^r
-        BigInteger d = n.subtract(BigInteger.ONE);
+        // Escreve n-1 como dTemp * 2^r
+        BigInteger dTemp = n.subtract(BigInteger.ONE);
         int r = 0;
-        while (d.mod(BigInteger.valueOf(2)).equals(BigInteger.ZERO)) {
-            d = d.divide(BigInteger.valueOf(2));
+        while (dTemp.mod(BigInteger.valueOf(2)).equals(BigInteger.ZERO)) {
+            dTemp = dTemp.divide(BigInteger.valueOf(2));
             r++;
         }
         
@@ -107,7 +107,7 @@ public class RSAEncryption {
         
         for (int i = 0; i < iteracoes; i++) {
             BigInteger a = new BigInteger(n.bitLength() - 1, random).add(BigInteger.ONE);
-            BigInteger x = modPow(a, d, n);
+            BigInteger x = modPow(a, dTemp, n);
             
             if (x.equals(BigInteger.ONE) || x.equals(n.subtract(BigInteger.ONE))) {
                 continue;
@@ -143,14 +143,14 @@ public class RSAEncryption {
         }
         
         while (a.compareTo(BigInteger.ONE) > 0) {
-            BigInteger q = a.divide(m);
+            BigInteger quociente = a.divide(m);
             BigInteger t = m;
             
             m = a.mod(m);
             a = t;
             t = y;
             
-            y = x.subtract(q.multiply(y));
+            y = x.subtract(quociente.multiply(y));
             x = t;
         }
         
@@ -192,13 +192,13 @@ public class RSAEncryption {
         BigInteger mensagem = new BigInteger(1, bytes);
         
         // Verifica se a mensagem é menor que n
-        if (mensagem.compareTo(modPrim1Prim2) >= 0) {
+        if (mensagem.compareTo(n) >= 0) {
             // Se a mensagem for muito grande, divide em blocos
             return criptografarBlocos(texto);
         }
         
         // Criptografa: c = m^e mod n
-        BigInteger criptografado = modPow(mensagem, expoPublico, modPrim1Prim2);
+        BigInteger criptografado = modPow(mensagem, e, n);
         
         // Converte para string hexadecimal
         return criptografado.toString(16);
@@ -209,7 +209,7 @@ public class RSAEncryption {
      */
     private String criptografarBlocos(String texto) {
         StringBuilder resultado = new StringBuilder();
-        int tamanhoBloco = (modPrim1Prim2.bitLength() - 1) / 8; // Tamanho do bloco em bytes
+        int tamanhoBloco = (n.bitLength() - 1) / 8; // Tamanho do bloco em bytes
         
         byte[] bytes = texto.getBytes();
         int offset = 0;
@@ -220,7 +220,7 @@ public class RSAEncryption {
             System.arraycopy(bytes, offset, bloco, 0, tamanho);
             
             BigInteger mensagem = new BigInteger(1, bloco);
-            BigInteger criptografado = modPow(mensagem, expoPublico, modPrim1Prim2);
+            BigInteger criptografado = modPow(mensagem, e, n);
             
             if (resultado.length() > 0) {
                 resultado.append(":");
@@ -250,7 +250,7 @@ public class RSAEncryption {
         BigInteger criptografado = new BigInteger(textoCriptografado, 16);
         
         // Descriptografa: m = c^d mod n
-        BigInteger descriptografado = modPow(criptografado, expoPrivado, modPrim1Prim2);
+        BigInteger descriptografado = modPow(criptografado, d, n);
         
         // Converte de volta para string
         byte[] bytes = descriptografado.toByteArray();
@@ -274,7 +274,7 @@ public class RSAEncryption {
         
         for (String blocoHex : blocos) {
             BigInteger criptografado = new BigInteger(blocoHex, 16);
-            BigInteger descriptografado = modPow(criptografado, expoPrivado, modPrim1Prim2);
+            BigInteger descriptografado = modPow(criptografado, d, n);
             
             byte[] bytes = descriptografado.toByteArray();
             
@@ -295,15 +295,15 @@ public class RSAEncryption {
      * Getters para as chaves (para persistência)
      */
     public BigInteger getN() {
-        return modPrim1Prim2;
+        return n;
     }
     
     public BigInteger getE() {
-        return expoPublico;
+        return e;
     }
     
     public BigInteger getD() {
-        return expoPrivado;
+        return d;
     }
     
     /**
@@ -316,9 +316,9 @@ public class RSAEncryption {
         }
         
         try (ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(arquivoChaves))) {
-            oos.writeObject(modPrim1Prim2);
-            oos.writeObject(expoPublico);
-            oos.writeObject(expoPrivado);
+            oos.writeObject(n);
+            oos.writeObject(e);
+            oos.writeObject(d);
         }
     }
     
@@ -327,10 +327,10 @@ public class RSAEncryption {
      */
     public static RSAEncryption carregarChaves(String arquivoChaves) throws IOException, ClassNotFoundException {
         try (ObjectInputStream ois = new ObjectInputStream(new FileInputStream(arquivoChaves))) {
-            BigInteger modPrim1Prim2 = (BigInteger) ois.readObject();
-            BigInteger expoPublico = (BigInteger) ois.readObject();
-            BigInteger expoPrivado = (BigInteger) ois.readObject();
-            return new RSAEncryption(modPrim1Prim2, expoPublico, expoPrivado);
+            BigInteger n = (BigInteger) ois.readObject();
+            BigInteger e = (BigInteger) ois.readObject();
+            BigInteger d = (BigInteger) ois.readObject();
+            return new RSAEncryption(n, e, d);
         }
     }
 }
