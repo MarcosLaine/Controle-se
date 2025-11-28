@@ -1,7 +1,9 @@
 import java.io.*;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Sistema de Gerenciamento de Banco de Dados para Controle-se
@@ -139,7 +141,7 @@ public class BancoDados {
         indiceTagReceitas = new HashExtensivel(3);
         indiceGastoTags = new HashExtensivel(3);
         indiceReceitaTags = new HashExtensivel(3);
-        indiceUsuarioInvestimentos = new HashExtensivel(3);
+        indiceUsuarioInvestimentos = new HashExtensivel(10); // Aumentado para evitar problemas com divisão de bucket
         
         // Tenta carregar índices primeiro
         boolean indicesExistem = verificarIndicesExistem();
@@ -1846,14 +1848,44 @@ public class BancoDados {
     public List<Investimento> buscarInvestimentosPorUsuario(int idUsuario) {
         List<Object> objetos = indiceUsuarioInvestimentos.buscar(idUsuario);
         List<Investimento> investimentos = new ArrayList<>();
+        Set<Integer> idsEncontrados = new HashSet<>(); // Para evitar duplicatas
+        
         for (Object obj : objetos) {
-            Investimento invIndex = (Investimento) obj;
-            // Busca a versão atualizada na tabela principal
-            Investimento invReal = buscarInvestimento(invIndex.getIdInvestimento());
-            if (invReal != null && invReal.isAtivo()) {
-                investimentos.add(invReal);
+            if (obj instanceof Investimento) {
+                Investimento invIndex = (Investimento) obj;
+                int idInv = invIndex.getIdInvestimento();
+                
+                // Evita processar o mesmo ID duas vezes
+                if (idsEncontrados.contains(idInv)) {
+                    continue;
+                }
+                idsEncontrados.add(idInv);
+                
+                // Busca a versão atualizada na tabela principal
+                Investimento invReal = buscarInvestimento(idInv);
+                if (invReal != null && invReal.isAtivo()) {
+                    investimentos.add(invReal);
+                }
             }
         }
+        
+        // Verificação adicional: busca todos os investimentos na tabela principal
+        // e verifica se algum está faltando no índice (fallback de segurança)
+        List<Investimento> todosInvestimentos = new ArrayList<>();
+        for (int i = 1; i < proximoIdInvestimento; i++) {
+            Investimento inv = buscarInvestimento(i);
+            if (inv != null && inv.isAtivo() && inv.getIdUsuario() == idUsuario) {
+                if (!idsEncontrados.contains(i)) {
+                    // Investimento encontrado na tabela mas não no índice - adiciona ao índice
+                    indiceUsuarioInvestimentos.inserir(idUsuario, inv);
+                    todosInvestimentos.add(inv);
+                }
+            }
+        }
+        
+        // Adiciona os investimentos encontrados no fallback
+        investimentos.addAll(todosInvestimentos);
+        
         return investimentos;
     }
     
