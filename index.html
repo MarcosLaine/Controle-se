@@ -191,6 +191,10 @@
                         <i class="fas fa-file-alt"></i>
                         <span>Relatórios</span>
                     </a>
+                    <a href="#" class="nav-item" data-section="investments">
+                        <i class="fas fa-chart-line"></i>
+                        <span>Investimentos</span>
+                    </a>
                 </nav>
             </aside>
 
@@ -437,6 +441,67 @@
                             <div id="top-expenses-list" class="top-expenses">
                                 <!-- Top expenses will be loaded here -->
                             </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Investments Section -->
+                <section id="investments-section" class="content-section">
+                    <div class="section-header">
+                        <h2>Investimentos</h2>
+                        <button class="btn-primary" id="add-investment-btn">
+                            <i class="fas fa-plus"></i>
+                            Novo Investimento
+                        </button>
+                    </div>
+                    
+                    <!-- Summary Cards -->
+                    <div class="summary-cards">
+                        <div class="summary-card income">
+                            <div class="card-icon">
+                                <i class="fas fa-wallet"></i>
+                            </div>
+                            <div class="card-content">
+                                <h3>Total Investido</h3>
+                                <p class="amount" id="total-invested">R$ 0,00</p>
+                            </div>
+                        </div>
+                        <div class="summary-card balance">
+                            <div class="card-icon">
+                                <i class="fas fa-chart-line"></i>
+                            </div>
+                            <div class="card-content">
+                                <h3>Valor Atual</h3>
+                                <p class="amount" id="total-current">R$ 0,00</p>
+                            </div>
+                        </div>
+                        <div class="summary-card" id="return-card">
+                            <div class="card-icon">
+                                <i class="fas fa-arrow-up"></i>
+                            </div>
+                            <div class="card-content">
+                                <h3>Retorno Total</h3>
+                                <p class="amount" id="total-return">R$ 0,00</p>
+                                <p class="subtitle" id="total-return-percent">0,00%</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Investments List and Charts -->
+                    <div class="dashboard-grid">
+                        <div class="chart-container">
+                            <h3>Evolução dos Investimentos</h3>
+                            <canvas id="investments-chart"></canvas>
+                        </div>
+                        <div class="chart-container">
+                            <h3>Divisão por Classes de Ativos</h3>
+                            <canvas id="assets-allocation-chart"></canvas>
+                        </div>
+                    </div>
+                    <div class="investments-list-container">
+                        <h3>Meus Investimentos</h3>
+                        <div id="investments-list" class="investments-list">
+                            <!-- Investments will be loaded here -->
                         </div>
                     </div>
                 </section>

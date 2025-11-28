@@ -22,6 +22,7 @@ public class BancoDados {
     private static final String CATEGORIA_GASTO_DB = DATA_DIR + "/categoria_gasto.db";
     private static final String TAGS_DB = DATA_DIR + "/tags.db";
     private static final String TRANSACAO_TAG_DB = DATA_DIR + "/transacao_tag.db";
+    private static final String INVESTIMENTOS_DB = DATA_DIR + "/investimentos.db";
     
     // Arquivos de índices
     private static final String IDX_USUARIOS = IDX_DIR + "/idx_usuarios.db";
@@ -31,6 +32,7 @@ public class BancoDados {
     private static final String IDX_CONTAS = IDX_DIR + "/idx_contas.db";
     private static final String IDX_ORCAMENTOS = IDX_DIR + "/idx_orcamentos.db";
     private static final String IDX_TAGS = IDX_DIR + "/idx_tags.db";
+    private static final String IDX_INVESTIMENTOS = IDX_DIR + "/idx_investimentos.db";
     
     // Arquivos de índices Hash Extensível
     private static final String IDX_USUARIO_CATEGORIAS = IDX_DIR + "/idx_usuario_categorias.db";
@@ -50,6 +52,7 @@ public class BancoDados {
     private static final String IDX_TAG_RECEITAS = IDX_DIR + "/idx_tag_receitas.db";
     private static final String IDX_GASTO_TAGS = IDX_DIR + "/idx_gasto_tags.db";
     private static final String IDX_RECEITA_TAGS = IDX_DIR + "/idx_receita_tags.db";
+    private static final String IDX_USUARIO_INVESTIMENTOS = IDX_DIR + "/idx_usuario_investimentos.db";
     
     // Tabelas principais com índices primários (Árvore B+)
     private ArvoreBPlus tabelaUsuarios;
@@ -59,6 +62,7 @@ public class BancoDados {
     private ArvoreBPlus tabelaContas;
     private ArvoreBPlus tabelaOrcamentos;
     private ArvoreBPlus tabelaTags;
+    private ArvoreBPlus tabelaInvestimentos;
     // Relacionamentos N:N não precisam de ArvoreBPlus, apenas dos índices Hash
     private List<CategoriaGasto> relacionamentosCategoriaGasto;
     private List<TransacaoTag> relacionamentosTransacaoTag;
@@ -85,6 +89,7 @@ public class BancoDados {
     private HashExtensivel indiceTagReceitas;         // Tag -> Receitas (relacionamento N:N)
     private HashExtensivel indiceGastoTags;           // Gasto -> Tags (relacionamento N:N reverso)
     private HashExtensivel indiceReceitaTags;         // Receita -> Tags (relacionamento N:N reverso)
+    private HashExtensivel indiceUsuarioInvestimentos; // Usuario -> Investimentos
     
     // Contadores para IDs únicos
     private int proximoIdUsuario = 1;
@@ -96,6 +101,7 @@ public class BancoDados {
     private int proximoIdCategoriaGasto = 1;
     private int proximoIdTag = 1;
     private int proximoIdTransacaoTag = 1;
+    private int proximoIdInvestimento = 1;
     
     public BancoDados() {
         // Inicializa tabelas principais com Árvore B+ de ordem 4
@@ -107,6 +113,7 @@ public class BancoDados {
         tabelaContas = new ArvoreBPlus(4);
         tabelaOrcamentos = new ArvoreBPlus(4);
         tabelaTags = new ArvoreBPlus(4);
+        tabelaInvestimentos = new ArvoreBPlus(4);
         relacionamentosCategoriaGasto = new ArrayList<>();
         relacionamentosTransacaoTag = new ArrayList<>();
         
@@ -132,6 +139,7 @@ public class BancoDados {
         indiceTagReceitas = new HashExtensivel(3);
         indiceGastoTags = new HashExtensivel(3);
         indiceReceitaTags = new HashExtensivel(3);
+        indiceUsuarioInvestimentos = new HashExtensivel(3);
         
         // Tenta carregar índices primeiro
         boolean indicesExistem = verificarIndicesExistem();
@@ -177,7 +185,8 @@ public class BancoDados {
             new File(IDX_RECEITAS),
             new File(IDX_CONTAS),
             new File(IDX_ORCAMENTOS),
-            new File(IDX_TAGS)
+            new File(IDX_TAGS),
+            new File(IDX_INVESTIMENTOS)
         };
         
         // Verifica índices secundários essenciais (Hash Extensível)
@@ -1236,6 +1245,7 @@ public class BancoDados {
             carregarOrcamentos();
             carregarTags();
             carregarTransacaoTag(); // Carrega relacionamentos N:N Tags
+            carregarInvestimentos();
             System.out.println("✓ Dados carregados do disco");
         } catch (Exception e) {
             // System.out.println("⚠ Primeira execução ou erro ao carregar dados: " + e.getMessage());
@@ -1253,6 +1263,7 @@ public class BancoDados {
             oos.writeInt(proximoIdCategoriaGasto);
             oos.writeInt(proximoIdTag);
             oos.writeInt(proximoIdTransacaoTag);
+            oos.writeInt(proximoIdInvestimento);
         } catch (IOException e) {
             System.err.println("Erro ao salvar contadores: " + e.getMessage());
         }
@@ -1273,11 +1284,17 @@ public class BancoDados {
                 proximoIdCategoriaGasto = ois.readInt();
                 proximoIdTag = ois.readInt();
                 proximoIdTransacaoTag = ois.readInt();
+                try {
+                    proximoIdInvestimento = ois.readInt();
+                } catch (EOFException e) {
+                    proximoIdInvestimento = 1;
+                }
             } catch (EOFException e) {
                 // Arquivo antigo sem estes contadores
                 proximoIdCategoriaGasto = 1;
                 proximoIdTag = 1;
                 proximoIdTransacaoTag = 1;
+                proximoIdInvestimento = 1;
             }
         }
     }
@@ -1685,6 +1702,7 @@ public class BancoDados {
         salvarIndiceArvoreBPlus(tabelaContas, IDX_CONTAS);
         salvarIndiceArvoreBPlus(tabelaOrcamentos, IDX_ORCAMENTOS);
         salvarIndiceArvoreBPlus(tabelaTags, IDX_TAGS);
+        salvarIndiceArvoreBPlus(tabelaInvestimentos, IDX_INVESTIMENTOS);
     }
     
     /**
@@ -1698,6 +1716,7 @@ public class BancoDados {
         carregarIndiceArvoreBPlus(tabelaContas, IDX_CONTAS);
         carregarIndiceArvoreBPlus(tabelaOrcamentos, IDX_ORCAMENTOS);
         carregarIndiceArvoreBPlus(tabelaTags, IDX_TAGS);
+        carregarIndiceArvoreBPlus(tabelaInvestimentos, IDX_INVESTIMENTOS);
     }
     
     /**
@@ -1721,6 +1740,7 @@ public class BancoDados {
         salvarIndiceHashExtensivel(indiceTagReceitas, IDX_TAG_RECEITAS);
         salvarIndiceHashExtensivel(indiceGastoTags, IDX_GASTO_TAGS);
         salvarIndiceHashExtensivel(indiceReceitaTags, IDX_RECEITA_TAGS);
+        salvarIndiceHashExtensivel(indiceUsuarioInvestimentos, IDX_USUARIO_INVESTIMENTOS);
     }
     
     /**
@@ -1744,6 +1764,129 @@ public class BancoDados {
         carregarIndiceHashExtensivel(indiceTagReceitas, IDX_TAG_RECEITAS);
         carregarIndiceHashExtensivel(indiceGastoTags, IDX_GASTO_TAGS);
         carregarIndiceHashExtensivel(indiceReceitaTags, IDX_RECEITA_TAGS);
+        carregarIndiceHashExtensivel(indiceUsuarioInvestimentos, IDX_USUARIO_INVESTIMENTOS);
+    }
+    
+    // ========== OPERAÇÕES DE INVESTIMENTO ==========
+    
+    public int cadastrarInvestimento(String nome, String categoria, double quantidade, 
+                                    double precoAporte, double corretagem, String corretora,
+                                    LocalDate dataAporte, int idUsuario, int idConta, String moeda) {
+        return cadastrarInvestimento(nome, null, categoria, quantidade, precoAporte, corretagem, corretora, dataAporte, idUsuario, idConta, moeda);
+    }
+    
+    public int cadastrarInvestimento(String nome, String nomeAtivo, String categoria, double quantidade, 
+                                    double precoAporte, double corretagem, String corretora,
+                                    LocalDate dataAporte, int idUsuario, int idConta, String moeda) {
+        int idInvestimento = proximoIdInvestimento++;
+        Investimento investimento = new Investimento(idInvestimento, nome, nomeAtivo, categoria, quantidade,
+                                                   precoAporte, corretagem, corretora, dataAporte,
+                                                   idUsuario, idConta, moeda);
+        
+        // Insere na tabela principal
+        tabelaInvestimentos.inserir(idInvestimento, investimento);
+        
+        // Atualiza índice de relacionamento
+        indiceUsuarioInvestimentos.inserir(idUsuario, investimento);
+        
+        // Persiste os dados e índices
+        salvarInvestimentos();
+        salvarContadores();
+        salvarIndiceArvoreBPlus(tabelaInvestimentos, IDX_INVESTIMENTOS);
+        salvarIndiceHashExtensivel(indiceUsuarioInvestimentos, IDX_USUARIO_INVESTIMENTOS);
+        
+        return idInvestimento;
+    }
+    
+    public Investimento buscarInvestimento(int idInvestimento) {
+        return (Investimento) tabelaInvestimentos.buscar(idInvestimento);
+    }
+    
+    public List<Investimento> buscarInvestimentosPorUsuario(int idUsuario) {
+        List<Object> objetos = indiceUsuarioInvestimentos.buscar(idUsuario);
+        List<Investimento> investimentos = new ArrayList<>();
+        for (Object obj : objetos) {
+            Investimento inv = (Investimento) obj;
+            if (inv.isAtivo()) {
+                investimentos.add(inv);
+            }
+        }
+        return investimentos;
+    }
+    
+    public void atualizarInvestimento(int idInvestimento, String nome, String categoria, 
+                                     double quantidade, double precoAporte, double corretagem, 
+                                     String corretora, LocalDate dataAporte, String moeda) {
+        Investimento investimento = buscarInvestimento(idInvestimento);
+        if (investimento == null) {
+            throw new RuntimeException("Investimento não encontrado!");
+        }
+        
+        investimento.setNome(nome);
+        investimento.setCategoria(categoria);
+        investimento.setQuantidade(quantidade);
+        investimento.setPrecoAporte(precoAporte);
+        investimento.setCorretagem(corretagem);
+        investimento.setCorretora(corretora);
+        investimento.setDataAporte(dataAporte);
+        investimento.setMoeda(moeda);
+        
+        // Atualiza na tabela
+        tabelaInvestimentos.inserir(idInvestimento, investimento);
+        
+        // Persiste
+        salvarInvestimentos();
+        salvarIndiceArvoreBPlus(tabelaInvestimentos, IDX_INVESTIMENTOS);
+    }
+    
+    public void excluirInvestimento(int idInvestimento) {
+        Investimento investimento = buscarInvestimento(idInvestimento);
+        if (investimento == null) {
+            throw new RuntimeException("Investimento não encontrado!");
+        }
+        
+        // Exclusão lógica
+        investimento.setAtivo(false);
+        
+        // Atualiza na tabela
+        tabelaInvestimentos.inserir(idInvestimento, investimento);
+        
+        // Atualiza o índice secundário também (importante para que a busca filtre corretamente)
+        indiceUsuarioInvestimentos.inserir(investimento.getIdUsuario(), investimento);
+        
+        // Persiste
+        salvarInvestimentos();
+        salvarIndiceArvoreBPlus(tabelaInvestimentos, IDX_INVESTIMENTOS);
+        salvarIndiceHashExtensivel(indiceUsuarioInvestimentos, IDX_USUARIO_INVESTIMENTOS);
+    }
+    
+    private void salvarInvestimentos() {
+        try (ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(INVESTIMENTOS_DB))) {
+            List<Investimento> investimentos = new ArrayList<>();
+            for (int i = 1; i < proximoIdInvestimento; i++) {
+                Investimento investimento = buscarInvestimento(i);
+                if (investimento != null) {
+                    investimentos.add(investimento);
+                }
+            }
+            oos.writeObject(investimentos);
+        } catch (IOException e) {
+            System.err.println("Erro ao salvar investimentos: " + e.getMessage());
+        }
+    }
+    
+    @SuppressWarnings("unchecked")
+    private void carregarInvestimentos() throws IOException, ClassNotFoundException {
+        File file = new File(INVESTIMENTOS_DB);
+        if (!file.exists()) return;
+        
+        try (ObjectInputStream ois = new ObjectInputStream(new FileInputStream(INVESTIMENTOS_DB))) {
+            List<Investimento> investimentos = (List<Investimento>) ois.readObject();
+            for (Investimento investimento : investimentos) {
+                tabelaInvestimentos.inserir(investimento.getIdInvestimento(), investimento);
+                indiceUsuarioInvestimentos.inserir(investimento.getIdUsuario(), investimento);
+            }
+        }
     }
     
     // ========== OPERAÇÕES DE ESTATÍSTICAS ==========
@@ -1756,6 +1899,7 @@ public class BancoDados {
         System.out.println("Receitas registradas: " + tabelaReceitas.tamanho());
         System.out.println("Contas cadastradas: " + tabelaContas.tamanho());
         System.out.println("Orçamentos definidos: " + tabelaOrcamentos.tamanho());
+        System.out.println("Investimentos cadastrados: " + tabelaInvestimentos.tamanho());
     }
     
     public void imprimirEstruturasIndices() {

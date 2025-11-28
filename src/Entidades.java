@@ -535,3 +535,110 @@ class TransacaoTag implements Serializable {
                ", tipo='" + tipoTransacao + "', tag=" + idTag + "}";
     }
 }
+
+/**
+ * Entidade Investimento - Representa um investimento do usuário
+ */
+class Investimento implements Serializable {
+    private static final long serialVersionUID = 13L;
+    private int idInvestimento;
+    private String nome; // Ex: ITUB4, AAPL, BTC
+    private String nomeAtivo; // Nome completo do ativo (ex: "Itaú Unibanco", "Apple Inc.", "Bitcoin")
+    private String categoria; // RENDA_FIXA, ACAO, STOCK, CRYPTO, FII
+    private double quantidade; // Número de ações/cotas/tokens (permite frações)
+    private double precoAporte; // Preço unitário no momento do aporte
+    private double valorAporte; // Valor total investido (quantidade * precoAporte + corretagem)
+    private double corretagem; // Taxa de corretagem
+    private String corretora; // Nome da corretora
+    private LocalDate dataAporte; // Data do aporte
+    private int idUsuario; // FK para Usuario
+    private int idConta; // FK para Conta (conta de origem do investimento)
+    private boolean ativo;
+    private String moeda; // BRL, USD, EUR, etc.
+    
+    public Investimento(int idInvestimento, String nome, String categoria, double quantidade, 
+                       double precoAporte, double corretagem, String corretora, 
+                       LocalDate dataAporte, int idUsuario, int idConta, String moeda) {
+        this(idInvestimento, nome, null, categoria, quantidade, precoAporte, corretagem, corretora, dataAporte, idUsuario, idConta, moeda);
+    }
+    
+    public Investimento(int idInvestimento, String nome, String nomeAtivo, String categoria, double quantidade, 
+                       double precoAporte, double corretagem, String corretora, 
+                       LocalDate dataAporte, int idUsuario, int idConta, String moeda) {
+        this.idInvestimento = idInvestimento;
+        this.nome = nome;
+        this.nomeAtivo = nomeAtivo;
+        this.categoria = categoria;
+        this.quantidade = quantidade;
+        this.precoAporte = precoAporte;
+        this.corretagem = corretagem;
+        this.corretora = corretora;
+        this.dataAporte = dataAporte;
+        this.idUsuario = idUsuario;
+        this.idConta = idConta;
+        this.ativo = true;
+        this.moeda = moeda != null ? moeda : "BRL";
+        this.valorAporte = (quantidade * precoAporte) + corretagem;
+    }
+    
+    // Getters e Setters
+    public int getIdInvestimento() { return idInvestimento; }
+    public void setIdInvestimento(int idInvestimento) { this.idInvestimento = idInvestimento; }
+    
+    public String getNome() { return nome; }
+    public void setNome(String nome) { this.nome = nome; }
+    
+    public String getNomeAtivo() { return nomeAtivo; }
+    public void setNomeAtivo(String nomeAtivo) { this.nomeAtivo = nomeAtivo; }
+    
+    public String getCategoria() { return categoria; }
+    public void setCategoria(String categoria) { this.categoria = categoria; }
+    
+    public double getQuantidade() { return quantidade; }
+    public void setQuantidade(double quantidade) { 
+        this.quantidade = quantidade;
+        this.valorAporte = (quantidade * precoAporte) + corretagem;
+    }
+    
+    public double getPrecoAporte() { return precoAporte; }
+    public void setPrecoAporte(double precoAporte) { 
+        this.precoAporte = precoAporte;
+        this.valorAporte = (quantidade * precoAporte) + corretagem;
+    }
+    
+    public double getValorAporte() { return valorAporte; }
+    public void setValorAporte(double valorAporte) { this.valorAporte = valorAporte; }
+    
+    public double getCorretagem() { return corretagem; }
+    public void setCorretagem(double corretagem) { 
+        this.corretagem = corretagem;
+        this.valorAporte = (quantidade * precoAporte) + corretagem;
+    }
+    
+    public String getCorretora() { return corretora; }
+    public void setCorretora(String corretora) { this.corretora = corretora; }
+    
+    public LocalDate getDataAporte() { return dataAporte; }
+    public void setDataAporte(LocalDate dataAporte) { this.dataAporte = dataAporte; }
+    
+    public int getIdUsuario() { return idUsuario; }
+    public void setIdUsuario(int idUsuario) { this.idUsuario = idUsuario; }
+    
+    public int getIdConta() { return idConta; }
+    public void setIdConta(int idConta) { this.idConta = idConta; }
+    
+    public boolean isAtivo() { return ativo; }
+    public void setAtivo(boolean ativo) { this.ativo = ativo; }
+    
+    public String getMoeda() { return moeda; }
+    public void setMoeda(String moeda) { this.moeda = moeda; }
+    
+    @Override
+    public String toString() {
+        return "Investimento{id=" + idInvestimento + ", nome='" + nome + "', categoria='" + categoria + 
+               "', quantidade=" + quantidade + ", precoAporte=" + precoAporte + 
+               ", valorAporte=" + valorAporte + ", corretagem=" + corretagem + 
+               ", corretora='" + corretora + "', dataAporte=" + dataAporte + 
+               ", usuario=" + idUsuario + ", conta=" + idConta + ", moeda='" + moeda + "'}";
+    }
+}

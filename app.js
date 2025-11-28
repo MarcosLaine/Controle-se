@@ -10,6 +10,7 @@ class ControleSeApp {
         this.accountsCache = []; // Cache de contas
         this.tagsCache = []; // Cache de tags
         this.transactionsCache = []; // Cache de transações
+        this._loadingAccounts = false; // Flag para evitar loops infinitos ao carregar contas
         this.init();
     }
 
@@ -62,6 +63,7 @@ class ControleSeApp {
         document.getElementById('add-income-btn').addEventListener('click', () => this.showAddIncomeModal());
         document.getElementById('add-budget-btn').addEventListener('click', () => this.showAddBudgetModal());
         document.getElementById('add-tag-btn').addEventListener('click', () => this.showAddTagModal());
+        document.getElementById('add-investment-btn').addEventListener('click', () => this.showAddInvestmentModal());
 
         // Filters
         document.getElementById('category-filter').addEventListener('change', () => this.filterTransactions());
@@ -242,6 +244,9 @@ class ControleSeApp {
             case 'reports':
                 await this.loadReports();
                 break;
+            case 'investments':
+                await this.loadInvestments();
+                break;
         }
     }
 
@@ -363,11 +368,16 @@ class ControleSeApp {
             const userId = this.currentUser ? this.currentUser.id : 1;
             const response = await this.apiCall(`/accounts?userId=${userId}`, 'GET');
             if (response.success) {
-                this.accountsCache = response.data; // Atualiza o cache
-                this.renderAccounts(response.data);
+                this.accountsCache = response.data || []; // Atualiza o cache, garantindo que seja um array
+                this.renderAccounts(this.accountsCache);
+            } else {
+                // Se a resposta não foi bem-sucedida, inicializa como array vazio
+                this.accountsCache = [];
             }
         } catch (error) {
             console.error('Error loading accounts:', error);
+            // Em caso de erro, inicializa como array vazio para evitar loops
+            this.accountsCache = [];
         }
     }
 
@@ -592,9 +602,28 @@ class ControleSeApp {
 
     // ===== MODAL MANAGEMENT =====
     showModal(title, content) {
-        document.getElementById('modal-title').textContent = title;
-        document.getElementById('modal-body').innerHTML = content;
-        document.getElementById('modal-overlay').classList.add('active');
+        const modalTitle = document.getElementById('modal-title');
+        const modalBody = document.getElementById('modal-body');
+        const modalOverlay = document.getElementById('modal-overlay');
+        
+        if (!modalTitle || !modalBody || !modalOverlay) {
+            console.error('Elementos do modal não encontrados');
+            return;
+        }
+        
+        if (title) {
+            modalTitle.textContent = title;
+        } else {
+            modalTitle.textContent = '';
+        }
+        
+        if (content) {
+            modalBody.innerHTML = content;
+        } else {
+            modalBody.innerHTML = '';
+        }
+        
+        modalOverlay.classList.add('active');
     }
 
     closeModal() {
@@ -666,6 +695,14 @@ class ControleSeApp {
     }
 
     showAddAccountModal() {
+        this.showAddAccountModalInternal();
+    }
+    
+    showAddAccountModalFromInvestment() {
+        this.showAddAccountModalInternal('Investimento', true);
+    }
+    
+    showAddAccountModalInternal(preselectedType = null, returnToInvestment = false) {
         const content = `
             <form id="add-account-form">
                 <div class="form-group">
@@ -679,8 +716,11 @@ class ControleSeApp {
                         <option value="Corrente">Conta Corrente</option>
                         <option value="Poupança">Poupança</option>
                         <option value="Cartão">Cartão de Crédito</option>
-                        <option value="Investimento">Investimento</option>
+                        <option value="Investimento" ${preselectedType === 'Investimento' ? 'selected' : ''}>Investimento (Corretora)</option>
                     </select>
+                    <small id="account-type-help" style="color: var(--neutral-600); margin-top: 4px; display: ${preselectedType === 'Investimento' ? 'block' : 'none'};">
+                        <i class="fas fa-info-circle"></i> Esta conta será usada como corretora ao criar investimentos
+                    </small>
                 </div>
                 <div class="form-group">
                     <label for="account-balance">Saldo Atual</label>
@@ -694,9 +734,72 @@ class ControleSeApp {
         `;
         this.showModal('Nova Conta', content);
         
-        document.getElementById('add-account-form').addEventListener('submit', (e) => {
+        // Adiciona listener para mostrar/ocultar texto de ajuda quando tipo for selecionado
+        const accountTypeSelect = document.getElementById('account-type');
+        const accountTypeHelp = document.getElementById('account-type-help');
+        
+        if (accountTypeSelect && accountTypeHelp) {
+            accountTypeSelect.addEventListener('change', () => {
+                if (accountTypeSelect.value === 'Investimento') {
+                    accountTypeHelp.style.display = 'block';
+                } else {
+                    accountTypeHelp.style.display = 'none';
+                }
+            });
+        }
+        
+        document.getElementById('add-account-form').addEventListener('submit', async (e) => {
             e.preventDefault();
-            this.addAccount();
+            const newAccountId = await this.addAccount(returnToInvestment);
+            if (returnToInvestment && newAccountId) {
+                // Atualiza o select de contas no modal de investimento (que ainda está aberto)
+                setTimeout(() => {
+                    const accountSelect = document.getElementById('investment-account');
+                    if (accountSelect) {
+                        // Limpa o select
+                        accountSelect.innerHTML = '<option value="">Selecione uma conta de investimento...</option>';
+                        
+                        // Recarrega as contas do cache atualizado
+                        const investmentAccounts = this.accountsCache.filter(acc => 
+                            acc.tipo && acc.tipo.toLowerCase() === 'investimento'
+                        );
+                        
+                        investmentAccounts.forEach(account => {
+                            const option = document.createElement('option');
+                            option.value = account.idConta;
+                            option.textContent = `${account.nome} (${account.tipo})`;
+                            accountSelect.appendChild(option);
+                        });
+                        
+                        // Adiciona opção para criar nova conta novamente
+                        const newAccountOption = document.createElement('option');
+                        newAccountOption.value = '__new__';
+                        newAccountOption.textContent = '➕ Criar nova conta de investimento...';
+                        newAccountOption.style.fontWeight = 'bold';
+                        newAccountOption.style.color = 'var(--primary-color)';
+                        accountSelect.appendChild(newAccountOption);
+                        
+                        // Seleciona a nova conta
+                        accountSelect.value = newAccountId;
+                        
+                        // Re-adiciona o event listener para criar nova conta
+                        accountSelect.addEventListener('change', () => {
+                            if (accountSelect.value === '__new__') {
+                                const investmentFormData = {
+                                    category: document.getElementById('investment-category')?.value || '',
+                                    name: document.getElementById('investment-name')?.value || '',
+                                    quantity: document.getElementById('investment-quantity')?.value || '',
+                                    date: document.getElementById('investment-date')?.value || '',
+                                    brokerage: document.getElementById('investment-brokerage')?.value || '0',
+                                    currency: document.getElementById('investment-currency')?.value || 'BRL'
+                                };
+                                this._pendingInvestmentData = investmentFormData;
+                                this.showAddAccountModalFromInvestment();
+                            }
+                        });
+                    }
+                }, 200);
+            }
         });
     }
 
@@ -1018,7 +1121,7 @@ class ControleSeApp {
         }
     }
 
-    async addAccount() {
+    async addAccount(returnToInvestment = false) {
         const name = document.getElementById('account-name').value;
         const type = document.getElementById('account-type').value;
         const balance = parseFloat(document.getElementById('account-balance').value);
@@ -1029,13 +1132,20 @@ class ControleSeApp {
             if (response.success) {
                 this.showToast('Conta adicionada com sucesso!', 'success');
                 this.closeModal();
-                this.loadAccounts();
+                await this.loadAccounts();
+                
+                // Retorna o ID da conta criada se solicitado
+                if (returnToInvestment) {
+                    return response.accountId;
+                }
             } else {
                 this.showToast(response.message || 'Erro ao adicionar conta', 'error');
+                return null;
             }
         } catch (error) {
             this.showToast('Erro de conexão', 'error');
             console.error('Add account error:', error);
+            return null;
         }
     }
 
@@ -2507,7 +2617,13 @@ class ControleSeApp {
     
     editAccount(accountId) {
         this.loadAccounts().then(() => {
-            // Busca a conta atual (seria melhor ter um cache)
+            // Busca a conta atual do cache
+            const account = this.accountsCache.find(acc => acc.idConta === accountId);
+            if (!account) {
+                this.showToast('Conta não encontrada', 'error');
+                return;
+            }
+            
             const content = `
                 <form id="edit-account-form">
                     <div class="form-group">
@@ -2520,8 +2636,11 @@ class ControleSeApp {
                             <option value="Corrente">Conta Corrente</option>
                             <option value="Poupança">Poupança</option>
                             <option value="Cartão">Cartão de Crédito</option>
-                            <option value="Investimento">Investimento</option>
+                            <option value="Investimento">Investimento (Corretora)</option>
                         </select>
+                        <small id="edit-account-type-help" style="color: var(--neutral-600); margin-top: 4px; display: none;">
+                            <i class="fas fa-info-circle"></i> Esta conta será usada como corretora ao criar investimentos
+                        </small>
                     </div>
                     <div class="form-group">
                         <label for="edit-account-balance">Saldo Atual</label>
@@ -2534,6 +2653,30 @@ class ControleSeApp {
                 </form>
             `;
             this.showModal('Editar Conta', content);
+            
+            // Adiciona listener para mostrar/ocultar texto de ajuda quando tipo for selecionado
+            const editAccountTypeSelect = document.getElementById('edit-account-type');
+            const editAccountTypeHelp = document.getElementById('edit-account-type-help');
+            
+            // Preenche os campos com os dados da conta
+            document.getElementById('edit-account-name').value = account.nome || '';
+            document.getElementById('edit-account-type').value = account.tipo || '';
+            document.getElementById('edit-account-balance').value = account.saldo || 0;
+            
+            if (editAccountTypeSelect && editAccountTypeHelp) {
+                // Verifica o valor inicial e mostra ajuda se necessário
+                if (editAccountTypeSelect.value === 'Investimento') {
+                    editAccountTypeHelp.style.display = 'block';
+                }
+                
+                editAccountTypeSelect.addEventListener('change', () => {
+                    if (editAccountTypeSelect.value === 'Investimento') {
+                        editAccountTypeHelp.style.display = 'block';
+                    } else {
+                        editAccountTypeHelp.style.display = 'none';
+                    }
+                });
+            }
             
             document.getElementById('edit-account-form').addEventListener('submit', async (e) => {
                 e.preventDefault();
@@ -2598,6 +2741,926 @@ class ControleSeApp {
                 this.showToast('Erro de conexão', 'error');
                 console.error('Edit budget error:', error);
             }
+        });
+    }
+    
+    // ===== INVESTMENTS SECTION =====
+    
+    async loadInvestments() {
+        try {
+            const userId = this.currentUser ? this.currentUser.id : 1;
+            const response = await this.apiCall(`/investments?userId=${userId}`, 'GET');
+            if (response.success) {
+                this.renderInvestments(response.data, response.summary);
+                this.updateInvestmentsChart(response.data);
+                this.updateAssetsAllocationChart(response.data);
+            }
+        } catch (error) {
+            console.error('Error loading investments:', error);
+        }
+    }
+    
+    renderInvestments(investments, summary) {
+        const container = document.getElementById('investments-list');
+        container.innerHTML = '';
+        
+        // Atualiza cards de resumo
+        if (summary) {
+            document.getElementById('total-invested').textContent = this.formatCurrency(summary.totalInvested);
+            document.getElementById('total-current').textContent = this.formatCurrency(summary.totalCurrent);
+            document.getElementById('total-return').textContent = this.formatCurrency(summary.totalReturn);
+            document.getElementById('total-return-percent').textContent = 
+                `${summary.totalReturnPercent >= 0 ? '+' : ''}${summary.totalReturnPercent.toFixed(2)}%`;
+            
+            // Atualiza cor do card de retorno
+            const returnCard = document.getElementById('return-card');
+            if (summary.totalReturn >= 0) {
+                returnCard.className = 'summary-card income';
+            } else {
+                returnCard.className = 'summary-card expense';
+            }
+        }
+        
+        if (!investments || investments.length === 0) {
+            container.innerHTML = '<p class="text-center">Nenhum investimento cadastrado</p>';
+            return;
+        }
+        
+        // Agrupa investimentos por categoria
+        const investmentsByCategory = {};
+        investments.forEach(inv => {
+            const categoria = inv.categoria || 'OUTROS';
+            if (!investmentsByCategory[categoria]) {
+                investmentsByCategory[categoria] = [];
+            }
+            investmentsByCategory[categoria].push(inv);
+        });
+        
+        // Nomes amigáveis para as categorias
+        const categoryNames = {
+            'ACAO': 'Ações (B3)',
+            'STOCK': 'Stocks (NYSE/NASDAQ)',
+            'CRYPTO': 'Criptomoedas',
+            'FII': 'Fundos Imobiliários',
+            'RENDA_FIXA': 'Renda Fixa',
+            'OUTROS': 'Outros'
+        };
+        
+        // Ícones para cada categoria
+        const categoryIcons = {
+            'ACAO': 'fa-chart-line',
+            'STOCK': 'fa-globe',
+            'CRYPTO': 'fa-coins',
+            'FII': 'fa-building',
+            'RENDA_FIXA': 'fa-piggy-bank',
+            'OUTROS': 'fa-wallet'
+        };
+        
+        // Ordena categorias por valor total (maior para menor)
+        const sortedCategories = Object.keys(investmentsByCategory).sort((a, b) => {
+            const totalA = investmentsByCategory[a].reduce((sum, inv) => sum + (parseFloat(inv.valorAtual) || 0), 0);
+            const totalB = investmentsByCategory[b].reduce((sum, inv) => sum + (parseFloat(inv.valorAtual) || 0), 0);
+            return totalB - totalA;
+        });
+        
+        // Cria dropdown para cada categoria
+        sortedCategories.forEach(categoria => {
+            const categoryInvestments = investmentsByCategory[categoria];
+            const categoryTotal = categoryInvestments.reduce((sum, inv) => sum + (parseFloat(inv.valorAtual) || 0), 0);
+            const categoryName = categoryNames[categoria] || categoria;
+            const categoryIcon = categoryIcons[categoria] || 'fa-wallet';
+            
+            const categorySection = document.createElement('div');
+            categorySection.className = 'investment-category-section';
+            categorySection.dataset.category = categoria;
+            
+            categorySection.innerHTML = `
+                <div class="category-header" data-category-toggle="${categoria}">
+                    <div class="category-header-left">
+                        <i class="fas ${categoryIcon}"></i>
+                        <div>
+                            <h4>${categoryName}</h4>
+                            <span class="category-count">${categoryInvestments.length} investimento${categoryInvestments.length !== 1 ? 's' : ''}</span>
+                        </div>
+                    </div>
+                    <div class="category-header-right">
+                        <span class="category-total">${this.formatCurrency(categoryTotal)}</span>
+                        <i class="fas fa-chevron-down category-chevron"></i>
+                    </div>
+                </div>
+                <div class="category-content" id="category-content-${categoria}" style="display: none;">
+                    <div class="investments-grid" id="investments-grid-${categoria}">
+                        <!-- Investimentos serão inseridos aqui -->
+                    </div>
+                    ${categoryInvestments.length > 5 ? `
+                        <div class="show-more-container">
+                            <button class="btn-show-more" data-category="${categoria}" data-shown="5" data-total="${categoryInvestments.length}">
+                                Mostrar mais (${categoryInvestments.length - 5} restantes)
+                            </button>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+            
+            container.appendChild(categorySection);
+            
+            // Renderiza os primeiros 5 investimentos
+            const gridContainer = document.getElementById(`investments-grid-${categoria}`);
+            this.renderCategoryInvestments(gridContainer, categoryInvestments.slice(0, 5), categoria);
+        });
+        
+        // Adiciona event listeners para dropdowns
+        container.querySelectorAll('[data-category-toggle]').forEach(header => {
+            header.addEventListener('click', () => {
+                const categoria = header.dataset.categoryToggle;
+                const content = document.getElementById(`category-content-${categoria}`);
+                const chevron = header.querySelector('.category-chevron');
+                
+                if (content.style.display === 'none') {
+                    content.style.display = 'block';
+                    chevron.classList.add('rotated');
+                } else {
+                    content.style.display = 'none';
+                    chevron.classList.remove('rotated');
+                }
+            });
+        });
+        
+        // Adiciona event listeners para botões "mostrar mais"
+        container.querySelectorAll('.btn-show-more').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const categoria = btn.dataset.category;
+                const shown = parseInt(btn.dataset.shown);
+                const total = parseInt(btn.dataset.total);
+                const gridContainer = document.getElementById(`investments-grid-${categoria}`);
+                const categoryInvestments = investmentsByCategory[categoria];
+                
+                // Mostra mais 5 itens
+                const nextBatch = categoryInvestments.slice(shown, shown + 5);
+                this.renderCategoryInvestments(gridContainer, nextBatch, categoria, true);
+                
+                const newShown = shown + nextBatch.length;
+                btn.dataset.shown = newShown;
+                
+                if (newShown >= total) {
+                    btn.remove();
+                } else {
+                    btn.textContent = `Mostrar mais (${total - newShown} restantes)`;
+                }
+            });
+        });
+    }
+    
+    renderCategoryInvestments(container, investments, categoria, append = false) {
+        if (!append) {
+            container.innerHTML = '';
+        }
+        
+        investments.forEach(inv => {
+            const card = document.createElement('div');
+            card.className = 'investment-card';
+            const returnClass = inv.retorno >= 0 ? 'positive' : 'negative';
+            const displayName = inv.nomeAtivo 
+                ? `${inv.nome} - ${inv.nomeAtivo}` 
+                : inv.nome;
+            
+            card.innerHTML = `
+                <div class="investment-header">
+                    <h3>${displayName}</h3>
+                    <span class="investment-badge ${returnClass}">${inv.retornoPercent >= 0 ? '+' : ''}${inv.retornoPercent.toFixed(2)}%</span>
+                </div>
+                <div class="investment-details">
+                    <div class="investment-row">
+                        <span>Quantidade:</span>
+                        <strong>${parseFloat(inv.quantidade).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 6 })}</strong>
+                    </div>
+                    <div class="investment-row">
+                        <span>Preço Aporte:</span>
+                        <strong>${this.formatCurrency(inv.precoAporte)}</strong>
+                    </div>
+                    <div class="investment-row">
+                        <span>Preço Atual:</span>
+                        <strong>${this.formatCurrency(inv.precoAtual)}</strong>
+                    </div>
+                    <div class="investment-row">
+                        <span>Valor Investido:</span>
+                        <strong>${this.formatCurrency(inv.valorAporte)}</strong>
+                    </div>
+                    <div class="investment-row">
+                        <span>Valor Atual:</span>
+                        <strong>${this.formatCurrency(inv.valorAtual)}</strong>
+                    </div>
+                    <div class="investment-row return ${returnClass}">
+                        <span>Retorno:</span>
+                        <strong>${inv.retorno >= 0 ? '+' : ''}${this.formatCurrency(inv.retorno)}</strong>
+                    </div>
+                    <div class="investment-row">
+                        <span>Conta/Corretora:</span>
+                        <strong>${inv.corretora || 'N/A'}</strong>
+                    </div>
+                    <div class="investment-row">
+                        <span>Data Aporte:</span>
+                        <strong>${this.formatDate(inv.dataAporte)}</strong>
+                    </div>
+                </div>
+                <div class="card-actions">
+                    <button class="btn-secondary btn-edit-investment" data-investment-id="${inv.idInvestimento}">
+                        <i class="fas fa-edit"></i> Editar
+                    </button>
+                    <button class="btn-secondary btn-delete-investment" data-investment-id="${inv.idInvestimento}">
+                        <i class="fas fa-trash"></i> Excluir
+                    </button>
+                </div>
+            `;
+            container.appendChild(card);
+        });
+        
+        // Adiciona event listeners para os botões de editar e excluir
+        container.querySelectorAll('.btn-edit-investment').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const investmentId = parseInt(e.target.closest('.btn-edit-investment').dataset.investmentId);
+                this.editInvestment(investmentId);
+            });
+        });
+        
+        container.querySelectorAll('.btn-delete-investment').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const investmentId = parseInt(e.target.closest('.btn-delete-investment').dataset.investmentId);
+                this.deleteInvestment(investmentId);
+            });
+        });
+    }
+    
+    updateInvestmentsChart(investments) {
+        const ctx = document.getElementById('investments-chart');
+        if (!ctx) return;
+        
+        // Se não houver investimentos, não renderiza o gráfico
+        if (!investments || investments.length === 0) {
+            if (window.investmentsChart) {
+                window.investmentsChart.destroy();
+                window.investmentsChart = null;
+            }
+            return;
+        }
+        
+        // Agrupa por data de aporte para mostrar evolução
+        const sortedInvestments = [...investments].sort((a, b) => 
+            new Date(a.dataAporte) - new Date(b.dataAporte)
+        );
+        
+        const labels = sortedInvestments.map(inv => this.formatDate(inv.dataAporte));
+        const investedData = [];
+        const currentData = [];
+        let cumulativeInvested = 0;
+        let cumulativeCurrent = 0;
+        
+        sortedInvestments.forEach(inv => {
+            const valorAporte = parseFloat(inv.valorAporte) || 0;
+            const valorAtual = parseFloat(inv.valorAtual) || 0;
+            
+            cumulativeInvested += valorAporte;
+            cumulativeCurrent += valorAtual;
+            
+            // Garante que os valores são números válidos
+            investedData.push(isNaN(cumulativeInvested) || !isFinite(cumulativeInvested) ? 0 : cumulativeInvested);
+            currentData.push(isNaN(cumulativeCurrent) || !isFinite(cumulativeCurrent) ? 0 : cumulativeCurrent);
+        });
+        
+        // Calcula valores mínimo e máximo para a escala
+        const allValues = [...investedData, ...currentData].filter(v => 
+            !isNaN(v) && isFinite(v) && v !== null && v !== undefined
+        );
+        
+        if (allValues.length === 0) {
+            if (window.investmentsChart) {
+                window.investmentsChart.destroy();
+                window.investmentsChart = null;
+            }
+            return;
+        }
+        
+        const minValue = Math.min(...allValues);
+        const maxValue = Math.max(...allValues);
+        
+        // Calcula padding baseado no range, mas garante valores válidos
+        const range = maxValue - minValue;
+        const padding = range > 0 ? range * 0.1 : maxValue * 0.1;
+        
+        // Define limites da escala Y
+        const yMin = minValue >= 0 ? 0 : Math.max(0, minValue - padding);
+        const yMax = maxValue > 0 ? maxValue + padding : 100; // Se tudo for zero, mostra até 100
+        
+        if (window.investmentsChart) {
+            window.investmentsChart.destroy();
+        }
+        
+        window.investmentsChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Valor Investido',
+                    data: investedData,
+                    borderColor: 'rgb(75, 192, 192)',
+                    backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                    tension: 0.1,
+                    fill: false
+                }, {
+                    label: 'Valor Atual',
+                    data: currentData,
+                    borderColor: 'rgb(255, 99, 132)',
+                    backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                    tension: 0.1,
+                    fill: false
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                interaction: {
+                    intersect: false,
+                    mode: 'index'
+                },
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top'
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const value = context.parsed.y;
+                                if (isNaN(value) || !isFinite(value)) return context.dataset.label + ': R$ 0,00';
+                                return context.dataset.label + ': R$ ' + 
+                                    value.toLocaleString('pt-BR', {
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 2
+                                    });
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: minValue >= 0,
+                        min: yMin,
+                        max: yMax,
+                        ticks: {
+                            callback: function(value) {
+                                if (isNaN(value) || !isFinite(value) || value < 0) return '';
+                                return 'R$ ' + value.toLocaleString('pt-BR', {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2
+                                });
+                            }
+                        },
+                        grid: {
+                            display: true
+                        }
+                    },
+                    x: {
+                        display: true,
+                        grid: {
+                            display: false
+                        }
+                    }
+                }
+            }
+        });
+    }
+    
+    updateAssetsAllocationChart(investments) {
+        const ctx = document.getElementById('assets-allocation-chart');
+        if (!ctx) return;
+        
+        // Se não houver investimentos, não renderiza o gráfico
+        if (!investments || investments.length === 0) {
+            if (window.assetsAllocationChart) {
+                window.assetsAllocationChart.destroy();
+                window.assetsAllocationChart = null;
+            }
+            return;
+        }
+        
+        // Agrupa investimentos por categoria e calcula valores totais
+        const allocationByCategory = {};
+        
+        investments.forEach(inv => {
+            const categoria = inv.categoria || 'OUTROS';
+            const valorAtual = parseFloat(inv.valorAtual) || 0;
+            
+            if (!allocationByCategory[categoria]) {
+                allocationByCategory[categoria] = {
+                    categoria: categoria,
+                    valorTotal: 0,
+                    quantidade: 0
+                };
+            }
+            
+            allocationByCategory[categoria].valorTotal += valorAtual;
+            allocationByCategory[categoria].quantidade += 1;
+        });
+        
+        // Converte para arrays para o gráfico
+        const labels = [];
+        const data = [];
+        const backgroundColors = [];
+        const borderColors = [];
+        
+        // Cores para cada categoria
+        const categoryColors = {
+            'ACAO': { bg: 'rgba(54, 162, 235, 0.8)', border: 'rgb(54, 162, 235)' },
+            'STOCK': { bg: 'rgba(255, 99, 132, 0.8)', border: 'rgb(255, 99, 132)' },
+            'CRYPTO': { bg: 'rgba(255, 206, 86, 0.8)', border: 'rgb(255, 206, 86)' },
+            'FII': { bg: 'rgba(75, 192, 192, 0.8)', border: 'rgb(75, 192, 192)' },
+            'RENDA_FIXA': { bg: 'rgba(153, 102, 255, 0.8)', border: 'rgb(153, 102, 255)' },
+            'OUTROS': { bg: 'rgba(201, 203, 207, 0.8)', border: 'rgb(201, 203, 207)' }
+        };
+        
+        // Nomes amigáveis para as categorias
+        const categoryNames = {
+            'ACAO': 'Ações (B3)',
+            'STOCK': 'Stocks (NYSE/NASDAQ)',
+            'CRYPTO': 'Criptomoedas',
+            'FII': 'Fundos Imobiliários',
+            'RENDA_FIXA': 'Renda Fixa',
+            'OUTROS': 'Outros'
+        };
+        
+        // Ordena por valor total (maior para menor)
+        const sortedCategories = Object.values(allocationByCategory)
+            .filter(item => item.valorTotal > 0)
+            .sort((a, b) => b.valorTotal - a.valorTotal);
+        
+        sortedCategories.forEach(item => {
+            const categoria = item.categoria;
+            labels.push(categoryNames[categoria] || categoria);
+            data.push(item.valorTotal);
+            
+            const colors = categoryColors[categoria] || categoryColors['OUTROS'];
+            backgroundColors.push(colors.bg);
+            borderColors.push(colors.border);
+        });
+        
+        if (data.length === 0) {
+            if (window.assetsAllocationChart) {
+                window.assetsAllocationChart.destroy();
+                window.assetsAllocationChart = null;
+            }
+            return;
+        }
+        
+        // Calcula total para porcentagens
+        const total = data.reduce((sum, val) => sum + val, 0);
+        
+        if (window.assetsAllocationChart) {
+            window.assetsAllocationChart.destroy();
+        }
+        
+        window.assetsAllocationChart = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Valor Investido por Categoria',
+                    data: data,
+                    backgroundColor: backgroundColors,
+                    borderColor: borderColors,
+                    borderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'right'
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const label = context.label || '';
+                                const value = context.parsed || 0;
+                                const percentage = total > 0 ? ((value / total) * 100).toFixed(2) : 0;
+                                return `${label}: R$ ${value.toLocaleString('pt-BR', {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2
+                                })} (${percentage}%)`;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+    
+    showAddInvestmentModal() {
+        // Garante que as contas estão carregadas
+        if (!this.accountsCache || this.accountsCache.length === 0) {
+            // Evita loop infinito: verifica se já está carregando
+            if (this._loadingAccounts) {
+                return;
+            }
+            
+            this._loadingAccounts = true;
+            this.loadAccounts().then(() => {
+                this._loadingAccounts = false;
+                // Verifica se há contas do tipo "Investimento"
+                const investmentAccounts = this.accountsCache.filter(acc => 
+                    acc.tipo && acc.tipo.toLowerCase() === 'investimento'
+                );
+                
+                if (investmentAccounts.length === 0) {
+                    this.showToast('Você precisa criar pelo menos uma conta do tipo "Investimento" antes de registrar um investimento!', 'warning');
+                    setTimeout(() => {
+                        document.querySelector('[data-section="accounts"]')?.click();
+                    }, 2000);
+                    return;
+                }
+                // Se houver contas de investimento, abre o modal
+                this.showAddInvestmentModal();
+            }).catch(() => {
+                this._loadingAccounts = false;
+                this.showToast('Erro ao carregar contas', 'error');
+            });
+            return;
+        }
+        
+        // Filtra apenas contas do tipo "Investimento"
+        const investmentAccounts = this.accountsCache.filter(acc => 
+            acc.tipo && acc.tipo.toLowerCase() === 'investimento'
+        );
+        
+        if (investmentAccounts.length === 0) {
+            this.showToast('Você precisa criar pelo menos uma conta do tipo "Investimento" antes de registrar um investimento!', 'warning');
+            setTimeout(() => {
+                document.querySelector('[data-section="accounts"]')?.click();
+            }, 2000);
+            return;
+        }
+        
+        const content = `
+            <form id="investment-form">
+                <div class="form-group">
+                    <label for="investment-category">Categoria</label>
+                    <select id="investment-category" required>
+                        <option value="">Selecione...</option>
+                        <option value="ACAO">Ação (B3)</option>
+                        <option value="STOCK">Stock (NYSE/NASDAQ)</option>
+                        <option value="CRYPTO">Criptomoeda</option>
+                        <option value="FII">FII</option>
+                        <option value="RENDA_FIXA">Renda Fixa</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="investment-name">Nome/Símbolo</label>
+                    <input type="text" id="investment-name" placeholder="Ex: ITUB4, AAPL, BTC" required>
+                    <small style="color: var(--neutral-600); margin-top: 4px; display: block;">
+                        Digite o símbolo do investimento. O preço será obtido automaticamente com base no fechamento do dia através de nossa base de dados.
+                    </small>
+                </div>
+                <div class="form-group">
+                    <label for="investment-quantity">Quantidade</label>
+                    <input type="number" id="investment-quantity" min="0.000001" step="0.000001" required>
+                    <small style="color: var(--neutral-600); margin-top: 4px; display: block;">
+                       <!-- Você pode inserir quantidades fracionadas (ex: 0.003 BTC, 1.4 ações) -->
+                    </small>
+                </div>
+                <div class="form-group">
+                    <label for="investment-date">Data do Aporte</label>
+                    <input type="date" id="investment-date" required>
+                    <small style="color: var(--neutral-600); margin-top: 4px; display: block;">
+                        <i class="fas fa-info-circle"></i> O preço será calculado com base no <strong>fechamento da ação no dia selecionado</strong>
+                    </small>
+                </div>
+                <div class="form-group">
+                    <label for="investment-brokerage">Corretagem</label>
+                    <input type="number" id="investment-brokerage" min="0" step="0.01" value="0">
+                </div>
+                <div class="form-group">
+                    <label for="investment-account">Conta de Investimento (Corretora)</label>
+                    <select id="investment-account" required>
+                        <option value="">Selecione uma conta de investimento...</option>
+                    </select>
+                    <small style="color: var(--neutral-600); margin-top: 4px; display: block;">
+                        <i class="fas fa-info-circle"></i> A conta selecionada será usada como corretora. Apenas contas do tipo "Investimento" podem ser utilizadas.
+                    </small>
+                </div>
+                <div class="form-group">
+                    <label for="investment-currency">Moeda</label>
+                    <select id="investment-currency">
+                        <option value="BRL">BRL (Real)</option>
+                        <option value="USD">USD (Dólar)</option>
+                        <option value="EUR">EUR (Euro)</option>
+                    </select>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn-secondary" onclick="app.closeModal()">Cancelar</button>
+                    <button type="submit" class="btn-primary">Salvar</button>
+                </div>
+            </form>
+        `;
+        
+        this.showModal('Novo Investimento', content);
+        
+        // Aguarda um pouco para garantir que o DOM foi atualizado
+        setTimeout(() => {
+            // Preenche select de contas - apenas contas do tipo "Investimento"
+            const accountSelect = document.getElementById('investment-account');
+            if (accountSelect && this.accountsCache) {
+                // Filtra apenas contas do tipo "Investimento"
+                const investmentAccounts = this.accountsCache.filter(acc => 
+                    acc.tipo && acc.tipo.toLowerCase() === 'investimento'
+                );
+                
+                if (investmentAccounts.length === 0) {
+                    const option = document.createElement('option');
+                    option.value = '';
+                    option.textContent = 'Nenhuma conta de investimento disponível';
+                    option.disabled = true;
+                    accountSelect.appendChild(option);
+                } else {
+                    investmentAccounts.forEach(account => {
+                        const option = document.createElement('option');
+                        option.value = account.idConta;
+                        option.textContent = `${account.nome} (${account.tipo})`;
+                        accountSelect.appendChild(option);
+                    });
+                }
+                
+                // Adiciona opção para criar nova conta
+                const newAccountOption = document.createElement('option');
+                newAccountOption.value = '__new__';
+                newAccountOption.textContent = '➕ Criar nova conta de investimento...';
+                newAccountOption.style.fontWeight = 'bold';
+                newAccountOption.style.color = 'var(--primary-color)';
+                accountSelect.appendChild(newAccountOption);
+                
+                // Event listener para quando selecionar "Criar nova conta"
+                accountSelect.addEventListener('change', () => {
+                    if (accountSelect.value === '__new__') {
+                        // Salva os dados do formulário antes de abrir o modal de criação de conta
+                        const investmentFormData = {
+                            category: document.getElementById('investment-category')?.value || '',
+                            name: document.getElementById('investment-name')?.value || '',
+                            quantity: document.getElementById('investment-quantity')?.value || '',
+                            date: document.getElementById('investment-date')?.value || '',
+                            brokerage: document.getElementById('investment-brokerage')?.value || '0',
+                            currency: document.getElementById('investment-currency')?.value || 'BRL'
+                        };
+                        
+                        // Armazena temporariamente os dados
+                        this._pendingInvestmentData = investmentFormData;
+                        
+                        this.showAddAccountModalFromInvestment();
+                    }
+                });
+            }
+            
+            // Define data padrão como hoje
+            const dateInput = document.getElementById('investment-date');
+            if (dateInput) {
+                const today = new Date();
+                const year = today.getFullYear();
+                const month = String(today.getMonth() + 1).padStart(2, '0');
+                const day = String(today.getDate()).padStart(2, '0');
+                dateInput.value = `${year}-${month}-${day}`;
+            }
+            
+            // Event listener para o formulário
+            const form = document.getElementById('investment-form');
+            if (form) {
+                // Remove listener anterior se existir
+                const newForm = form.cloneNode(true);
+                form.parentNode.replaceChild(newForm, form);
+                newForm.addEventListener('submit', (e) => {
+                    this.handleCreateInvestment(e);
+                });
+            }
+        }, 100);
+    }
+    
+    async handleCreateInvestment(e) {
+        e.preventDefault();
+        
+        const category = document.getElementById('investment-category').value;
+        const name = document.getElementById('investment-name').value.toUpperCase();
+        const quantity = parseFloat(document.getElementById('investment-quantity').value);
+        const date = document.getElementById('investment-date').value;
+        
+        // Valida quantidade mínima
+        if (isNaN(quantity) || quantity <= 0) {
+            this.showToast('A quantidade deve ser maior que zero', 'error');
+            return;
+        }
+        const brokerage = parseFloat(document.getElementById('investment-brokerage').value) || 0;
+        const accountIdValue = document.getElementById('investment-account').value;
+        const currency = document.getElementById('investment-currency').value;
+        
+        // Valida se não está tentando criar uma nova conta
+        if (accountIdValue === '__new__') {
+            this.showToast('Por favor, selecione uma conta de investimento ou crie uma nova conta primeiro', 'warning');
+            return;
+        }
+        
+        const accountId = parseInt(accountIdValue);
+        
+        // Valida se a conta selecionada é do tipo "Investimento"
+        let selectedAccount = null;
+        if (accountId) {
+            selectedAccount = this.accountsCache.find(acc => acc.idConta === accountId);
+            if (!selectedAccount || !selectedAccount.tipo || selectedAccount.tipo.toLowerCase() !== 'investimento') {
+                this.showToast('Apenas contas do tipo "Investimento" podem ser utilizadas para criar investimentos!', 'error');
+                return;
+            }
+        }
+        
+        // A corretora é o nome da conta de investimento selecionada
+        const broker = selectedAccount ? selectedAccount.nome : '';
+        
+        try {
+            // Primeiro verifica se o símbolo existe buscando a cotação
+            const quoteResponse = await this.apiCall(
+                `/investments/quote?symbol=${name}&category=${category}&date=${date}`, 
+                'GET'
+            );
+            
+            if (!quoteResponse.success) {
+                // Se a API não encontrou o investimento, abre modal para inserção manual
+                this.showManualPriceModal(name, category, quantity, date, brokerage, accountId, currency, broker, quoteResponse.message);
+                return;
+            }
+            
+            const userId = this.currentUser ? this.currentUser.id : 1;
+            const response = await this.apiCall('/investments', 'POST', {
+                nome: name,
+                categoria: category,
+                quantidade: quantity,
+                corretagem: brokerage,
+                corretora: broker,
+                dataAporte: date,
+                userId: userId,
+                accountId: accountId,
+                moeda: currency
+            });
+            
+            if (response.success) {
+                this.showToast('Investimento cadastrado com sucesso!', 'success');
+                this.closeModal();
+                this.loadInvestments();
+            } else {
+                this.showToast(response.message || 'Erro ao cadastrar investimento', 'error');
+            }
+        } catch (error) {
+            this.showToast('Erro de conexão', 'error');
+            console.error('Create investment error:', error);
+        }
+    }
+    
+    showManualPriceModal(name, category, quantity, date, brokerage, accountId, currency, broker, errorMessage) {
+        const content = `
+            <div style="margin-bottom: var(--spacing-4); padding: var(--spacing-4); background: var(--warning-light); border-radius: var(--radius-md); border-left: 4px solid var(--warning-color);">
+                <p style="margin: 0; color: var(--warning-color); font-weight: 600;">
+                    <i class="fas fa-exclamation-triangle"></i> Investimento não encontrado nas bases de dados
+                </p>
+                <p style="margin: var(--spacing-2) 0 0 0; color: var(--neutral-700); font-size: var(--font-size-sm);">
+                    ${errorMessage || 'Não foi possível encontrar este investimento automaticamente. Por favor, preencha as informações manualmente.'}
+                </p>
+            </div>
+            <form id="manual-investment-form">
+                <div class="form-group">
+                    <label for="manual-investment-name">Nome/Símbolo do Investimento</label>
+                    <input type="text" id="manual-investment-name" value="${name}" readonly style="background: var(--neutral-200);">
+                </div>
+                <div class="form-group">
+                    <label for="manual-investment-asset-name">Nome Completo do Ativo (opcional)</label>
+                    <input type="text" id="manual-investment-asset-name" placeholder="Ex: Itaú Unibanco, Apple Inc., Bitcoin">
+                    <small style="color: var(--neutral-600); margin-top: 4px; display: block;">
+                        Nome completo do ativo para melhor identificação
+                    </small>
+                </div>
+                <div class="form-group">
+                    <label for="manual-investment-price">Preço Unitário no Dia do Aporte</label>
+                    <input type="number" id="manual-investment-price" min="0.01" step="0.01" required>
+                    <small style="color: var(--neutral-600); margin-top: 4px; display: block;">
+                        <i class="fas fa-info-circle"></i> Informe o preço de fechamento do ativo no dia ${date ? this.formatDate(date) : 'selecionado'}
+                    </small>
+                </div>
+                <div class="form-group">
+                    <label for="manual-investment-quantity">Quantidade</label>
+                    <input type="number" id="manual-investment-quantity" value="${quantity}" min="0.000001" step="0.000001" required readonly style="background: var(--neutral-200);">
+                </div>
+                <div class="form-group">
+                    <label for="manual-investment-date">Data do Aporte</label>
+                    <input type="date" id="manual-investment-date" value="${date}" required readonly style="background: var(--neutral-200);">
+                </div>
+                <div class="form-group">
+                    <label for="manual-investment-brokerage">Corretagem</label>
+                    <input type="number" id="manual-investment-brokerage" value="${brokerage}" min="0" step="0.01" readonly style="background: var(--neutral-200);">
+                </div>
+                <div class="form-group">
+                    <label for="manual-investment-currency">Moeda</label>
+                    <select id="manual-investment-currency" required>
+                        <option value="BRL" ${currency === 'BRL' ? 'selected' : ''}>BRL (Real)</option>
+                        <option value="USD" ${currency === 'USD' ? 'selected' : ''}>USD (Dólar)</option>
+                        <option value="EUR" ${currency === 'EUR' ? 'selected' : ''}>EUR (Euro)</option>
+                    </select>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn-secondary" onclick="app.closeModal()">Cancelar</button>
+                    <button type="submit" class="btn-primary">Salvar Investimento</button>
+                </div>
+            </form>
+        `;
+        
+        this.showModal('Inserir Investimento Manualmente', content);
+        
+        // Event listener para o formulário
+        setTimeout(() => {
+            const form = document.getElementById('manual-investment-form');
+            if (form) {
+                const newForm = form.cloneNode(true);
+                form.parentNode.replaceChild(newForm, form);
+                newForm.addEventListener('submit', (e) => {
+                    this.handleManualInvestment(e, accountId, broker, category);
+                });
+            }
+        }, 100);
+    }
+    
+    async handleManualInvestment(e, accountId, broker, category) {
+        e.preventDefault();
+        
+        const name = document.getElementById('manual-investment-name').value.toUpperCase();
+        const assetName = document.getElementById('manual-investment-asset-name').value.trim() || null;
+        const price = parseFloat(document.getElementById('manual-investment-price').value);
+        const quantity = parseFloat(document.getElementById('manual-investment-quantity').value);
+        const date = document.getElementById('manual-investment-date').value;
+        const brokerage = parseFloat(document.getElementById('manual-investment-brokerage').value) || 0;
+        const currency = document.getElementById('manual-investment-currency').value;
+        
+        // Validações
+        if (isNaN(price) || price <= 0) {
+            this.showToast('O preço deve ser maior que zero', 'error');
+            return;
+        }
+        
+        if (isNaN(quantity) || quantity <= 0) {
+            this.showToast('A quantidade deve ser maior que zero', 'error');
+            return;
+        }
+        
+        try {
+            const userId = this.currentUser ? this.currentUser.id : 1;
+            const response = await this.apiCall('/investments', 'POST', {
+                nome: name,
+                nomeAtivo: assetName,
+                categoria: category,
+                quantidade: quantity,
+                precoAporte: price,
+                corretagem: brokerage,
+                corretora: broker,
+                dataAporte: date,
+                userId: userId,
+                accountId: accountId,
+                moeda: currency
+            });
+            
+            if (response.success) {
+                this.showToast('Investimento cadastrado com sucesso!', 'success');
+                this.closeModal();
+                this.loadInvestments();
+            } else {
+                this.showToast(response.message || 'Erro ao cadastrar investimento', 'error');
+            }
+        } catch (error) {
+            this.showToast('Erro de conexão', 'error');
+            console.error('Create manual investment error:', error);
+        }
+    }
+    
+    editInvestment(investmentId) {
+        // Implementar edição de investimento
+        this.showToast('Funcionalidade de edição em desenvolvimento', 'info');
+    }
+    
+    deleteInvestment(investmentId) {
+        if (!confirm('Tem certeza que deseja excluir este investimento? Esta ação não pode ser desfeita.')) {
+            return;
+        }
+        
+        this.apiCall(`/investments?id=${investmentId}`, 'DELETE').then(response => {
+            if (response.success) {
+                this.showToast('Investimento excluído com sucesso!', 'success');
+                this.loadInvestments();
+            } else {
+                this.showToast(response.message || 'Erro ao excluir investimento', 'error');
+            }
+        }).catch(error => {
+            this.showToast('Erro de conexão', 'error');
+            console.error('Delete investment error:', error);
         });
     }
     

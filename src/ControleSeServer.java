@@ -31,6 +31,9 @@ public class ControleSeServer {
             // Inicia o scheduler de recorrências (executa diariamente)
             iniciarSchedulerRecorrencias();
             
+            // Inicia o scheduler de atualização de cotações (executa a cada 30 minutos)
+            iniciarSchedulerCotacoes();
+            
             // Exibe informações do servidor e inicia loop do menu
             exibirInformacoesServidor();
             iniciarLoopMenu();
@@ -259,6 +262,35 @@ public class ControleSeServer {
         System.out.println();
     }
     
+    /**
+     * Inicia o scheduler que atualiza cotações de investimentos
+     * Executa a cada 30 minutos
+     */
+    private static void iniciarSchedulerCotacoes() {
+        Timer timer = new Timer("CotacoesScheduler", true); // daemon=true para não bloquear shutdown
+        
+        // Executa imediatamente e depois a cada 30 minutos
+        long periodo = 30 * 60 * 1000; // 30 minutos em milissegundos
+        
+        timer.scheduleAtFixedRate(new TimerTask() {
+            @Override
+            public void run() {
+                try {
+                    System.out.println("\n=== ATUALIZAÇÃO DE COTAÇÕES ===");
+                    QuoteService quoteService = QuoteService.getInstance();
+                    quoteService.cleanExpiredCache();
+                    System.out.println("Cache de cotações limpo e atualizado");
+                    System.out.println("=====================================\n");
+                } catch (Exception e) {
+                    System.err.println("Erro ao atualizar cotações: " + e.getMessage());
+                    e.printStackTrace();
+                }
+            }
+        }, 0, periodo);
+        
+        System.out.println("[INICIALIZAÇÃO] Scheduler de cotações iniciado (atualiza a cada 30 minutos)");
+    }
+    
     private static void setupRoutes() {
         // API Routes básicas (devem vir antes do StaticFileHandler)
         server.createContext("/api/auth/login", new LoginHandler());
@@ -273,6 +305,8 @@ public class ControleSeServer {
         server.createContext("/api/budgets", new BudgetsHandler());
         server.createContext("/api/tags", new TagsHandler());
         server.createContext("/api/reports", new ReportsHandler());
+        server.createContext("/api/investments", new InvestmentsHandler());
+        server.createContext("/api/investments/quote", new InvestmentQuoteHandler());
         
         // Servir arquivos estáticos (HTML, CSS, JS) - deve vir por último
         server.createContext("/", new StaticFileHandler());
@@ -1735,6 +1769,321 @@ public class ControleSeServer {
                 return "\"" + value.replace("\"", "\"\"") + "\"";
             }
             return value;
+        }
+    }
+    
+    static class InvestmentsHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            String method = exchange.getRequestMethod();
+            
+            if ("GET".equals(method)) {
+                handleGetInvestments(exchange);
+            } else if ("POST".equals(method)) {
+                handleCreateInvestment(exchange);
+            } else if ("PUT".equals(method)) {
+                handleUpdateInvestment(exchange);
+            } else if ("DELETE".equals(method)) {
+                handleDeleteInvestment(exchange);
+            } else {
+                sendErrorResponse(exchange, 405, "Método não permitido");
+            }
+        }
+        
+        private void handleGetInvestments(HttpExchange exchange) throws IOException {
+            try {
+                String userIdParam = getQueryParam(exchange, "userId");
+                int userId = userIdParam != null ? Integer.parseInt(userIdParam) : 1;
+                
+                List<Investimento> investments = bancoDados.buscarInvestimentosPorUsuario(userId);
+                QuoteService quoteService = QuoteService.getInstance();
+                
+                List<Map<String, Object>> investmentList = new ArrayList<>();
+                double totalInvested = 0;
+                double totalCurrent = 0;
+                
+                for (Investimento inv : investments) {
+                    // Busca cotação atual
+                    QuoteService.QuoteResult quote = quoteService.getQuote(inv.getNome(), inv.getCategoria(), null);
+                    double currentPrice = quote != null && quote.success ? quote.price : inv.getPrecoAporte();
+                    
+                    // Converte para BRL se necessário
+                    if (quote != null && !"BRL".equals(inv.getMoeda()) && !"BRL".equals(quote.currency)) {
+                        double exchangeRate = quoteService.getExchangeRate(quote.currency, "BRL");
+                        currentPrice *= exchangeRate;
+                    }
+                    
+                    double currentValue = inv.getQuantidade() * currentPrice;
+                    double returnValue = currentValue - inv.getValorAporte();
+                    double returnPercent = inv.getValorAporte() > 0 ? (returnValue / inv.getValorAporte()) * 100 : 0;
+                    
+                    totalInvested += inv.getValorAporte();
+                    totalCurrent += currentValue;
+                    
+                    Map<String, Object> invData = new HashMap<>();
+                    invData.put("idInvestimento", inv.getIdInvestimento());
+                    invData.put("nome", inv.getNome());
+                    invData.put("nomeAtivo", inv.getNomeAtivo());
+                    invData.put("categoria", inv.getCategoria());
+                    invData.put("quantidade", inv.getQuantidade());
+                    invData.put("precoAporte", inv.getPrecoAporte());
+                    invData.put("valorAporte", inv.getValorAporte());
+                    invData.put("corretagem", inv.getCorretagem());
+                    invData.put("corretora", inv.getCorretora());
+                    invData.put("dataAporte", inv.getDataAporte().toString());
+                    invData.put("moeda", inv.getMoeda());
+                    invData.put("precoAtual", currentPrice);
+                    invData.put("valorAtual", currentValue);
+                    invData.put("retorno", returnValue);
+                    invData.put("retornoPercent", returnPercent);
+                    investmentList.add(invData);
+                }
+                
+                Map<String, Object> summary = new HashMap<>();
+                summary.put("totalInvested", totalInvested);
+                summary.put("totalCurrent", totalCurrent);
+                summary.put("totalReturn", totalCurrent - totalInvested);
+                summary.put("totalReturnPercent", totalInvested > 0 ? ((totalCurrent - totalInvested) / totalInvested) * 100 : 0);
+                
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", true);
+                response.put("data", investmentList);
+                response.put("summary", summary);
+                
+                sendJsonResponse(exchange, 200, response);
+            } catch (Exception e) {
+                e.printStackTrace();
+                sendErrorResponse(exchange, 500, "Erro interno do servidor: " + e.getMessage());
+            }
+        }
+        
+        private void handleCreateInvestment(HttpExchange exchange) throws IOException {
+            try {
+                String requestBody = readRequestBody(exchange);
+                Map<String, Object> data = parseJsonWithNested(requestBody);
+                
+                String nome = (String) data.get("nome");
+                String categoria = (String) data.get("categoria");
+                double quantidade = ((Number) data.get("quantidade")).doubleValue();
+                double corretagem = data.containsKey("corretagem") ? 
+                    ((Number) data.get("corretagem")).doubleValue() : 0.0;
+                
+                // Valida quantidade mínima
+                if (quantidade <= 0) {
+                    Map<String, Object> response = new HashMap<>();
+                    response.put("success", false);
+                    response.put("message", "A quantidade deve ser maior que zero");
+                    sendJsonResponse(exchange, 400, response);
+                    return;
+                }
+                String dataAporteStr = (String) data.get("dataAporte");
+                LocalDate dataAporte = dataAporteStr != null ? LocalDate.parse(dataAporteStr) : LocalDate.now();
+                
+                Object userIdObj = data.get("userId");
+                int userId = 1;
+                if (userIdObj instanceof Number) {
+                    userId = ((Number) userIdObj).intValue();
+                } else if (userIdObj instanceof String) {
+                    userId = Integer.parseInt((String) userIdObj);
+                }
+                
+                int accountId = ((Number) data.get("accountId")).intValue();
+                String moeda = (String) data.getOrDefault("moeda", "BRL");
+                
+                // Valida se a conta é do tipo "Investimento"
+                Conta conta = bancoDados.buscarConta(accountId);
+                if (conta == null) {
+                    Map<String, Object> response = new HashMap<>();
+                    response.put("success", false);
+                    response.put("message", "Conta não encontrada");
+                    sendJsonResponse(exchange, 400, response);
+                    return;
+                }
+                
+                if (!conta.getTipo().equalsIgnoreCase("Investimento")) {
+                    Map<String, Object> response = new HashMap<>();
+                    response.put("success", false);
+                    response.put("message", "Apenas contas do tipo 'Investimento' podem ser utilizadas para criar investimentos");
+                    sendJsonResponse(exchange, 400, response);
+                    return;
+                }
+                
+                // A corretora é o nome da conta de investimento
+                String corretoraFinal = conta.getNome();
+                
+                // Verifica se o preço foi fornecido manualmente
+                double precoAporte = 0.0;
+                String nomeAtivo = null;
+                
+                if (data.containsKey("precoAporte")) {
+                    // Preço fornecido manualmente
+                    precoAporte = ((Number) data.get("precoAporte")).doubleValue();
+                    if (data.containsKey("nomeAtivo")) {
+                        nomeAtivo = (String) data.get("nomeAtivo");
+                    }
+                } else {
+                    // Busca cotação do dia do aporte ou atual
+                    QuoteService quoteService = QuoteService.getInstance();
+                    QuoteService.QuoteResult quote = quoteService.getQuote(nome, categoria, dataAporte);
+                    
+                    if (!quote.success) {
+                        Map<String, Object> response = new HashMap<>();
+                        response.put("success", false);
+                        response.put("message", "Erro ao buscar cotação: " + quote.message);
+                        sendJsonResponse(exchange, 400, response);
+                        return;
+                    }
+                    
+                    precoAporte = quote.price;
+                    nomeAtivo = quote.assetName;
+                    
+                    // Converte para moeda do investimento se necessário
+                    if (!moeda.equals(quote.currency)) {
+                        double exchangeRate = quoteService.getExchangeRate(quote.currency, moeda);
+                        precoAporte *= exchangeRate;
+                    }
+                }
+                
+                // Valida preço
+                if (precoAporte <= 0) {
+                    Map<String, Object> response = new HashMap<>();
+                    response.put("success", false);
+                    response.put("message", "O preço de aporte deve ser maior que zero");
+                    sendJsonResponse(exchange, 400, response);
+                    return;
+                }
+                
+                int investmentId = bancoDados.cadastrarInvestimento(nome, nomeAtivo, categoria, quantidade, 
+                                                                  precoAporte, corretagem, corretoraFinal,
+                                                                  dataAporte, userId, accountId, moeda);
+                
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", true);
+                response.put("message", "Investimento cadastrado com sucesso");
+                response.put("investmentId", investmentId);
+                response.put("precoAporte", precoAporte);
+                
+                sendJsonResponse(exchange, 201, response);
+            } catch (Exception e) {
+                e.printStackTrace();
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Erro: " + e.getMessage());
+                sendJsonResponse(exchange, 400, response);
+            }
+        }
+        
+        private void handleUpdateInvestment(HttpExchange exchange) throws IOException {
+            try {
+                String requestBody = readRequestBody(exchange);
+                Map<String, Object> data = parseJsonWithNested(requestBody);
+                
+                int idInvestimento = ((Number) data.get("id")).intValue();
+                String nome = (String) data.get("nome");
+                String categoria = (String) data.get("categoria");
+                double quantidade = ((Number) data.get("quantidade")).doubleValue();
+                double corretagem = ((Number) data.get("corretagem")).doubleValue();
+                
+                // Valida quantidade mínima
+                if (quantidade <= 0) {
+                    Map<String, Object> response = new HashMap<>();
+                    response.put("success", false);
+                    response.put("message", "A quantidade deve ser maior que zero");
+                    sendJsonResponse(exchange, 400, response);
+                    return;
+                }
+                String corretora = (String) data.get("corretora");
+                String dataAporteStr = (String) data.get("dataAporte");
+                LocalDate dataAporte = LocalDate.parse(dataAporteStr);
+                String moeda = (String) data.getOrDefault("moeda", "BRL");
+                
+                // Busca cotação se necessário
+                double precoAporte = data.containsKey("precoAporte") ? 
+                    ((Number) data.get("precoAporte")).doubleValue() : 0.0;
+                
+                if (precoAporte == 0.0) {
+                    QuoteService quoteService = QuoteService.getInstance();
+                    QuoteService.QuoteResult quote = quoteService.getQuote(nome, categoria, dataAporte);
+                    if (quote.success) {
+                        precoAporte = quote.price;
+                    }
+                }
+                
+                bancoDados.atualizarInvestimento(idInvestimento, nome, categoria, quantidade,
+                                                precoAporte, corretagem, corretora, dataAporte, moeda);
+                
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", true);
+                response.put("message", "Investimento atualizado com sucesso");
+                
+                sendJsonResponse(exchange, 200, response);
+            } catch (Exception e) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", e.getMessage());
+                sendJsonResponse(exchange, 400, response);
+            }
+        }
+        
+        private void handleDeleteInvestment(HttpExchange exchange) throws IOException {
+            try {
+                String idParam = getQueryParam(exchange, "id");
+                if (idParam == null) {
+                    sendErrorResponse(exchange, 400, "ID do investimento não fornecido");
+                    return;
+                }
+                
+                int idInvestimento = Integer.parseInt(idParam);
+                bancoDados.excluirInvestimento(idInvestimento);
+                
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", true);
+                response.put("message", "Investimento excluído com sucesso");
+                
+                sendJsonResponse(exchange, 200, response);
+            } catch (Exception e) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", e.getMessage());
+                sendJsonResponse(exchange, 400, response);
+            }
+        }
+    }
+    
+    static class InvestmentQuoteHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            if (!"GET".equals(exchange.getRequestMethod())) {
+                sendErrorResponse(exchange, 405, "Método não permitido");
+                return;
+            }
+            
+            try {
+                String symbol = getQueryParam(exchange, "symbol");
+                String category = getQueryParam(exchange, "category");
+                String dateStr = getQueryParam(exchange, "date");
+                
+                if (symbol == null || category == null) {
+                    sendErrorResponse(exchange, 400, "Parâmetros 'symbol' e 'category' são obrigatórios");
+                    return;
+                }
+                
+                LocalDate date = dateStr != null ? LocalDate.parse(dateStr) : null;
+                
+                QuoteService quoteService = QuoteService.getInstance();
+                QuoteService.QuoteResult quote = quoteService.getQuote(symbol, category, date);
+                
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", quote.success);
+                response.put("message", quote.message);
+                response.put("price", quote.price);
+                response.put("currency", quote.currency);
+                
+                sendJsonResponse(exchange, quote.success ? 200 : 400, response);
+            } catch (Exception e) {
+                e.printStackTrace();
+                sendErrorResponse(exchange, 500, "Erro interno do servidor: " + e.getMessage());
+            }
         }
     }
     
