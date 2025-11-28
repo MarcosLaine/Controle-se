@@ -3571,11 +3571,268 @@ class ControleSeApp {
                 // Remove listener anterior se existir
                 const newForm = form.cloneNode(true);
                 form.parentNode.replaceChild(newForm, form);
+                
+                // Listener para mudança de categoria
+                const categorySelect = document.getElementById('investment-category');
+                if (categorySelect) {
+                    categorySelect.addEventListener('change', (e) => {
+                        if (e.target.value === 'RENDA_FIXA') {
+                            // Fecha o modal atual e abre o modal de renda fixa
+                            this.closeModal();
+                            setTimeout(() => {
+                                this.showFixedIncomeModal();
+                            }, 300);
+                        }
+                    });
+                }
+                
                 newForm.addEventListener('submit', (e) => {
                     this.handleCreateInvestment(e);
                 });
             }
         }, 100);
+    }
+    
+    showFixedIncomeModal() {
+        // Garante que as contas estão carregadas
+        if (!this.accountsCache || this.accountsCache.length === 0) {
+            this.loadAccounts().then(() => {
+                this.showFixedIncomeModal();
+            });
+            return;
+        }
+        
+        // Filtra apenas contas do tipo "Investimento"
+        const investmentAccounts = this.accountsCache.filter(acc => 
+            acc.tipo && acc.tipo.toLowerCase() === 'investimento'
+        );
+        
+        if (investmentAccounts.length === 0) {
+            this.showToast('Você precisa criar pelo menos uma conta do tipo "Investimento" antes de registrar um investimento!', 'warning');
+            setTimeout(() => {
+                document.querySelector('[data-section="accounts"]')?.click();
+            }, 2000);
+            return;
+        }
+        
+        const content = `
+            <form id="fixed-income-form">
+                <div class="form-group">
+                    <label for="fixed-income-name">Nome do Ativo</label>
+                    <input type="text" id="fixed-income-name" placeholder="Ex: CDB Banco XYZ, LCI, LCA, Tesouro SELIC" required>
+                    <small style="color: var(--neutral-600); margin-top: 4px; display: block;">
+                        Nome identificador do investimento de renda fixa
+                    </small>
+                </div>
+                <div class="form-group">
+                    <label for="fixed-income-issuer">Emissor (opcional)</label>
+                    <input type="text" id="fixed-income-issuer" placeholder="Ex: Banco XYZ, Itaú, Bradesco">
+                    <small style="color: var(--neutral-600); margin-top: 4px; display: block;">
+                        Instituição financeira que emitiu o título
+                    </small>
+                </div>
+                <div class="form-group">
+                    <label for="fixed-income-type">Tipo de Rentabilidade</label>
+                    <select id="fixed-income-type" required>
+                        <option value="">Selecione...</option>
+                        <option value="PRE_FIXADO">Pré-fixado</option>
+                        <option value="POS_FIXADO">Pós-fixado</option>
+                        <option value="POS_FIXADO_TAXA">Pós-fixado + Taxa Fixa</option>
+                    </select>
+                </div>
+                <div class="form-group" id="fixed-income-index-group" style="display: none;">
+                    <label for="fixed-income-index">Índice de Referência</label>
+                    <select id="fixed-income-index">
+                        <option value="">Selecione...</option>
+                        <option value="SELIC">SELIC</option>
+                        <option value="CDI">CDI</option>
+                        <option value="IPCA">IPCA</option>
+                        <option value="PRE">PRÉ (Taxa Pré-fixada)</option>
+                    </select>
+                </div>
+                <div class="form-group" id="fixed-income-fixed-rate-group" style="display: none;">
+                    <label for="fixed-income-fixed-rate">Taxa Fixa Adicional (% ao ano)</label>
+                    <input type="number" id="fixed-income-fixed-rate" min="0" max="100" step="0.01" placeholder="Ex: 0.5">
+                    <small style="color: var(--neutral-600); margin-top: 4px; display: block;">
+                        Taxa fixa adicional que será somada ao índice (apenas para "Pós-fixado + Taxa Fixa")
+                    </small>
+                </div>
+                <div class="form-group" id="fixed-income-pre-rate-group" style="display: none;">
+                    <label for="fixed-income-pre-rate">Taxa Pré-fixada (% ao ano)</label>
+                    <input type="number" id="fixed-income-pre-rate" min="0" max="100" step="0.01" placeholder="Ex: 12.5">
+                    <small style="color: var(--neutral-600); margin-top: 4px; display: block;">
+                        Taxa de juros anual pré-fixada
+                    </small>
+                </div>
+                <div class="form-group">
+                    <label for="fixed-income-amount">Valor Aportado (R$)</label>
+                    <input type="number" id="fixed-income-amount" min="0.01" step="0.01" required>
+                    <small style="color: var(--neutral-600); margin-top: 4px; display: block;">
+                        Valor total investido no título
+                    </small>
+                </div>
+                <div class="form-group">
+                    <label for="fixed-income-date">Data do Aporte</label>
+                    <input type="date" id="fixed-income-date" required>
+                </div>
+                <div class="form-group">
+                    <label for="fixed-income-maturity">Data de Vencimento</label>
+                    <input type="date" id="fixed-income-maturity" required>
+                    <small style="color: var(--neutral-600); margin-top: 4px; display: block;">
+                        Data em que o título vence e o valor será resgatado
+                    </small>
+                </div>
+                <div class="form-group">
+                    <label for="fixed-income-account">Conta de Investimento (Corretora)</label>
+                    <select id="fixed-income-account" required>
+                        <option value="">Selecione uma conta de investimento...</option>
+                    </select>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn-secondary" onclick="app.closeModal()">Cancelar</button>
+                    <button type="submit" class="btn-primary">Salvar Investimento</button>
+                </div>
+            </form>
+        `;
+        
+        this.showModal('Novo Investimento - Renda Fixa', content);
+        
+        setTimeout(() => {
+            // Preenche select de contas
+            const accountSelect = document.getElementById('fixed-income-account');
+            if (accountSelect) {
+                investmentAccounts.forEach(account => {
+                    const option = document.createElement('option');
+                    option.value = account.idConta;
+                    option.textContent = `${account.nome} (${account.tipo})`;
+                    accountSelect.appendChild(option);
+                });
+            }
+            
+            // Define data padrão como hoje
+            const dateInput = document.getElementById('fixed-income-date');
+            if (dateInput) {
+                const today = new Date();
+                const year = today.getFullYear();
+                const month = String(today.getMonth() + 1).padStart(2, '0');
+                const day = String(today.getDate()).padStart(2, '0');
+                dateInput.value = `${year}-${month}-${day}`;
+            }
+            
+            // Listener para mudança de tipo de rentabilidade
+            const typeSelect = document.getElementById('fixed-income-type');
+            const indexGroup = document.getElementById('fixed-income-index-group');
+            const fixedRateGroup = document.getElementById('fixed-income-fixed-rate-group');
+            const preRateGroup = document.getElementById('fixed-income-pre-rate-group');
+            
+            if (typeSelect) {
+                typeSelect.addEventListener('change', (e) => {
+                    const type = e.target.value;
+                    if (type === 'PRE_FIXADO') {
+                        indexGroup.style.display = 'none';
+                        fixedRateGroup.style.display = 'none';
+                        preRateGroup.style.display = 'block';
+                    } else if (type === 'POS_FIXADO') {
+                        indexGroup.style.display = 'block';
+                        fixedRateGroup.style.display = 'none';
+                        preRateGroup.style.display = 'none';
+                    } else if (type === 'POS_FIXADO_TAXA') {
+                        indexGroup.style.display = 'block';
+                        fixedRateGroup.style.display = 'block';
+                        preRateGroup.style.display = 'none';
+                    } else {
+                        indexGroup.style.display = 'none';
+                        fixedRateGroup.style.display = 'none';
+                        preRateGroup.style.display = 'none';
+                    }
+                });
+            }
+            
+            // Event listener para o formulário
+            const form = document.getElementById('fixed-income-form');
+            if (form) {
+                const newForm = form.cloneNode(true);
+                form.parentNode.replaceChild(newForm, form);
+                newForm.addEventListener('submit', (e) => {
+                    this.handleCreateFixedIncome(e);
+                });
+            }
+        }, 100);
+    }
+    
+    async handleCreateFixedIncome(e) {
+        e.preventDefault();
+        
+        const name = document.getElementById('fixed-income-name').value;
+        const issuer = document.getElementById('fixed-income-issuer').value.trim() || null;
+        const type = document.getElementById('fixed-income-type').value;
+        const index = document.getElementById('fixed-income-index').value;
+        const fixedRate = parseFloat(document.getElementById('fixed-income-fixed-rate').value) || 0;
+        const preRate = parseFloat(document.getElementById('fixed-income-pre-rate').value) || 0;
+        const amount = parseFloat(document.getElementById('fixed-income-amount').value);
+        const date = document.getElementById('fixed-income-date').value;
+        const maturity = document.getElementById('fixed-income-maturity').value;
+        const accountIdValue = document.getElementById('fixed-income-account').value;
+        
+        // Validações
+        if (isNaN(amount) || amount <= 0) {
+            this.showToast('O valor aportado deve ser maior que zero', 'error');
+            return;
+        }
+        
+        if (new Date(maturity) <= new Date(date)) {
+            this.showToast('A data de vencimento deve ser posterior à data do aporte', 'error');
+            return;
+        }
+        
+        if (type === 'POS_FIXADO' || type === 'POS_FIXADO_TAXA') {
+            if (!index) {
+                this.showToast('Selecione um índice de referência', 'error');
+                return;
+            }
+        }
+        
+        if (type === 'PRE_FIXADO') {
+            if (isNaN(preRate) || preRate <= 0) {
+                this.showToast('Informe a taxa pré-fixada', 'error');
+                return;
+            }
+        }
+        
+        const accountId = parseInt(accountIdValue);
+        const selectedAccount = this.accountsCache.find(acc => acc.idConta === accountId);
+        const broker = selectedAccount ? selectedAccount.nome : '';
+        
+        try {
+            const userId = this.currentUser ? this.currentUser.id : 1;
+            const response = await this.apiCall('/investments', 'POST', {
+                nome: name,
+                nomeAtivo: issuer ? `${name} - ${issuer}` : name,
+                categoria: 'RENDA_FIXA',
+                quantidade: 1, // Renda fixa usa quantidade = 1
+                valorAporte: amount,
+                tipoRentabilidade: type,
+                indice: index || null,
+                taxaFixa: type === 'POS_FIXADO_TAXA' ? fixedRate : (type === 'PRE_FIXADO' ? preRate : null),
+                dataAporte: date,
+                dataVencimento: maturity,
+                corretora: broker,
+                userId: userId,
+                accountId: accountId,
+                moeda: 'BRL'
+            });
+            
+            if (response.success) {
+                this.showToast('Investimento de renda fixa cadastrado com sucesso!', 'success');
+                this.closeModal();
+                this.loadInvestments();
+            } else {
+                this.showToast(response.message || 'Erro ao cadastrar investimento', 'error');
+            }
+        } catch (error) {
+            this.showToast('Erro de conexão', 'error');
+            console.error('Create fixed income error:', error);
+        }
     }
     
     async handleCreateInvestment(e) {

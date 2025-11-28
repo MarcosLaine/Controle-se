@@ -1828,15 +1828,8 @@ public class ControleSeServer {
                 double totalCurrent = 0;
                 
                 for (Investimento inv : investments) {
-                    // Busca cotação atual
-                    QuoteService.QuoteResult quote = quoteService.getQuote(inv.getNome(), inv.getCategoria(), null);
-                    double currentPrice = quote != null && quote.success ? quote.price : inv.getPrecoAporte();
-                    
-                    // Converte preço atual para BRL se a cotação vier em outra moeda (ex: USD para Crypto/Stocks)
-                    if (quote != null && quote.success && !"BRL".equals(quote.currency)) {
-                        double exchangeRate = quoteService.getExchangeRate(quote.currency, "BRL");
-                        currentPrice *= exchangeRate;
-                    }
+                    double currentPrice = 0.0;
+                    double currentValue = 0.0;
                     
                     // Converte valor do aporte para BRL se o investimento foi registrado em outra moeda
                     double valorAporteBRL = inv.getValorAporte();
@@ -1848,7 +1841,31 @@ public class ControleSeServer {
                         precoAporteBRL *= exchangeRate;
                     }
                     
-                    double currentValue = inv.getQuantidade() * currentPrice;
+                    // Para renda fixa, calcula valor atual baseado nos índices
+                    if ("RENDA_FIXA".equals(inv.getCategoria())) {
+                        currentValue = quoteService.calculateFixedIncomeValue(
+                            valorAporteBRL,
+                            inv.getTipoRentabilidade(),
+                            inv.getIndice(),
+                            inv.getTaxaFixa(),
+                            inv.getDataAporte(),
+                            inv.getDataVencimento()
+                        );
+                        currentPrice = currentValue; // Para renda fixa, preço = valor atual
+                    } else {
+                        // Para outros tipos, busca cotação atual
+                        QuoteService.QuoteResult quote = quoteService.getQuote(inv.getNome(), inv.getCategoria(), null);
+                        currentPrice = quote != null && quote.success ? quote.price : inv.getPrecoAporte();
+                        
+                        // Converte preço atual para BRL se a cotação vier em outra moeda
+                        if (quote != null && quote.success && !"BRL".equals(quote.currency)) {
+                            double exchangeRate = quoteService.getExchangeRate(quote.currency, "BRL");
+                            currentPrice *= exchangeRate;
+                        }
+                        
+                        currentValue = inv.getQuantidade() * currentPrice;
+                    }
+                    
                     double returnValue = currentValue - valorAporteBRL;
                     double returnPercent = valorAporteBRL > 0 ? (returnValue / valorAporteBRL) * 100 : 0;
                     
@@ -1871,6 +1888,17 @@ public class ControleSeServer {
                     invData.put("valorAtual", currentValue);
                     invData.put("retorno", returnValue);
                     invData.put("retornoPercent", returnPercent);
+                    
+                    // Campos específicos de renda fixa
+                    if ("RENDA_FIXA".equals(inv.getCategoria())) {
+                        invData.put("tipoRentabilidade", inv.getTipoRentabilidade());
+                        invData.put("indice", inv.getIndice());
+                        invData.put("taxaFixa", inv.getTaxaFixa());
+                        if (inv.getDataVencimento() != null) {
+                            invData.put("dataVencimento", inv.getDataVencimento().toString());
+                        }
+                    }
+                    
                     investmentList.add(invData);
                 }
                 
@@ -1979,18 +2007,51 @@ public class ControleSeServer {
                     }
                 }
                 
-                // Valida preço
-                if (precoAporte <= 0) {
-                    Map<String, Object> response = new HashMap<>();
-                    response.put("success", false);
-                    response.put("message", "O preço de aporte deve ser maior que zero");
-                    sendJsonResponse(exchange, 400, response);
-                    return;
+                // Processa campos específicos de renda fixa
+                String tipoRentabilidade = null;
+                String indice = null;
+                Double taxaFixa = null;
+                LocalDate dataVencimento = null;
+                
+                if ("RENDA_FIXA".equals(categoria)) {
+                    // Para renda fixa, o valorAporte vem diretamente
+                    if (data.containsKey("valorAporte")) {
+                        double valorAporte = ((Number) data.get("valorAporte")).doubleValue();
+                        precoAporte = valorAporte; // Para renda fixa, precoAporte = valorAporte
+                        quantidade = 1.0; // Quantidade sempre 1 para renda fixa
+                    }
+                    
+                    tipoRentabilidade = (String) data.get("tipoRentabilidade");
+                    indice = data.containsKey("indice") ? (String) data.get("indice") : null;
+                    
+                    if (data.containsKey("taxaFixa")) {
+                        Object taxaObj = data.get("taxaFixa");
+                        if (taxaObj != null) {
+                            taxaFixa = ((Number) taxaObj).doubleValue();
+                        }
+                    }
+                    
+                    if (data.containsKey("dataVencimento")) {
+                        String dataVencimentoStr = (String) data.get("dataVencimento");
+                        if (dataVencimentoStr != null) {
+                            dataVencimento = LocalDate.parse(dataVencimentoStr);
+                        }
+                    }
+                } else {
+                    // Valida preço para outros tipos
+                    if (precoAporte <= 0) {
+                        Map<String, Object> response = new HashMap<>();
+                        response.put("success", false);
+                        response.put("message", "O preço de aporte deve ser maior que zero");
+                        sendJsonResponse(exchange, 400, response);
+                        return;
+                    }
                 }
                 
                 int investmentId = bancoDados.cadastrarInvestimento(nome, nomeAtivo, categoria, quantidade, 
                                                                   precoAporte, corretagem, corretoraFinal,
-                                                                  dataAporte, userId, accountId, moeda);
+                                                                  dataAporte, userId, accountId, moeda,
+                                                                  tipoRentabilidade, indice, taxaFixa, dataVencimento);
                 
                 Map<String, Object> response = new HashMap<>();
                 response.put("success", true);

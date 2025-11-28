@@ -540,7 +540,7 @@ class TransacaoTag implements Serializable {
  * Entidade Investimento - Representa um investimento do usuário
  */
 class Investimento implements Serializable {
-    private static final long serialVersionUID = 13L;
+    private static final long serialVersionUID = 14L;
     private int idInvestimento;
     private String nome; // Ex: ITUB4, AAPL, BTC
     private String nomeAtivo; // Nome completo do ativo (ex: "Itaú Unibanco", "Apple Inc.", "Bitcoin")
@@ -555,6 +555,11 @@ class Investimento implements Serializable {
     private int idConta; // FK para Conta (conta de origem do investimento)
     private boolean ativo;
     private String moeda; // BRL, USD, EUR, etc.
+    // Campos específicos para Renda Fixa
+    private String tipoRentabilidade; // PRE_FIXADO, POS_FIXADO, POS_FIXADO_TAXA
+    private String indice; // SELIC, CDI, IPCA, PRE
+    private Double taxaFixa; // Taxa fixa adicional (para POS_FIXADO_TAXA) ou taxa pré-fixada (para PRE_FIXADO)
+    private LocalDate dataVencimento; // Data de vencimento do título
     
     public Investimento(int idInvestimento, String nome, String categoria, double quantidade, 
                        double precoAporte, double corretagem, String corretora, 
@@ -632,6 +637,18 @@ class Investimento implements Serializable {
     
     public String getMoeda() { return moeda; }
     public void setMoeda(String moeda) { this.moeda = moeda; }
+    
+    public String getTipoRentabilidade() { return tipoRentabilidade; }
+    public void setTipoRentabilidade(String tipoRentabilidade) { this.tipoRentabilidade = tipoRentabilidade; }
+    
+    public String getIndice() { return indice; }
+    public void setIndice(String indice) { this.indice = indice; }
+    
+    public Double getTaxaFixa() { return taxaFixa; }
+    public void setTaxaFixa(Double taxaFixa) { this.taxaFixa = taxaFixa; }
+    
+    public LocalDate getDataVencimento() { return dataVencimento; }
+    public void setDataVencimento(LocalDate dataVencimento) { this.dataVencimento = dataVencimento; }
     
     @Override
     public String toString() {

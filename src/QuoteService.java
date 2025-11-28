@@ -801,6 +801,77 @@ public class QuoteService {
     }
     
     /**
+     * Calcula o valor atual de um investimento de renda fixa
+     * baseado no tipo de rentabilidade e índice escolhido
+     */
+    public double calculateFixedIncomeValue(double valorAporte, String tipoRentabilidade, 
+                                           String indice, Double taxaFixa, 
+                                           LocalDate dataAporte, LocalDate dataVencimento) {
+        if (dataVencimento == null || dataAporte == null) {
+            return valorAporte; // Se não tem vencimento, retorna o valor original
+        }
+        
+        LocalDate hoje = LocalDate.now();
+        LocalDate dataFinal = hoje.isBefore(dataVencimento) ? hoje : dataVencimento;
+        
+        long diasTotais = java.time.temporal.ChronoUnit.DAYS.between(dataAporte, dataVencimento);
+        long diasDecorridos = java.time.temporal.ChronoUnit.DAYS.between(dataAporte, dataFinal);
+        
+        if (diasTotais <= 0 || diasDecorridos < 0) {
+            return valorAporte;
+        }
+        
+        double taxaAnual = 0.0;
+        
+        if ("PRE_FIXADO".equals(tipoRentabilidade)) {
+            // Pré-fixado: usa a taxa fixa fornecida
+            taxaAnual = taxaFixa != null ? taxaFixa : 0.0;
+        } else if ("POS_FIXADO".equals(tipoRentabilidade) || "POS_FIXADO_TAXA".equals(tipoRentabilidade)) {
+            // Pós-fixado: busca taxa do índice
+            taxaAnual = getIndexRate(indice);
+            
+            // Se for pós-fixado + taxa fixa, soma a taxa fixa
+            if ("POS_FIXADO_TAXA".equals(tipoRentabilidade) && taxaFixa != null) {
+                taxaAnual += taxaFixa;
+            }
+        }
+        
+        // Calcula taxa diária (considerando ano comercial de 252 dias úteis)
+        double taxaDiaria = taxaAnual / 100.0 / 252.0;
+        
+        // Calcula valor com juros compostos dia a dia
+        double valorAtual = valorAporte;
+        for (long i = 0; i < diasDecorridos; i++) {
+            valorAtual *= (1 + taxaDiaria);
+        }
+        
+        return valorAtual;
+    }
+    
+    /**
+     * Retorna a taxa anual atual de um índice
+     * Valores aproximados baseados em dados históricos recentes
+     */
+    private double getIndexRate(String indice) {
+        if (indice == null) {
+            return 0.0;
+        }
+        
+        switch (indice.toUpperCase()) {
+            case "SELIC":
+                return 10.50; // Taxa SELIC atual (aproximada - deveria buscar de API do BCB)
+            case "CDI":
+                return 10.25; // CDI geralmente é um pouco menor que SELIC
+            case "IPCA":
+                return 4.62; // IPCA acumulado em 12 meses (aproximado)
+            case "PRE":
+                return 12.0; // Taxa pré-fixada padrão (deveria vir do investimento)
+            default:
+                return 10.0; // Taxa padrão
+        }
+    }
+    
+    /**
      * Classe para armazenar cotação em cache
      */
     private static class CachedQuote {
