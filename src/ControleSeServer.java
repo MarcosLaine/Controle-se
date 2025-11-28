@@ -452,7 +452,32 @@ public class ControleSeServer {
                 double totalIncome = bancoDados.calcularTotalReceitasUsuario(userId);
                 double totalExpense = bancoDados.calcularTotalGastosUsuario(userId);
                 double balance = bancoDados.calcularSaldoContasUsuarioSemInvestimento(userId); // Saldo sem investimentos
-                double netWorth = bancoDados.calcularTotalSaldoContasUsuario(userId); // Patrimônio total
+                
+                // Calcula valor total dos investimentos
+                List<Investimento> investments = bancoDados.buscarInvestimentosPorUsuario(userId);
+                double totalInvestmentsValue = 0;
+                QuoteService quoteService = QuoteService.getInstance();
+                
+                for (Investimento inv : investments) {
+                    // Busca cotação atual
+                    QuoteService.QuoteResult quote = quoteService.getQuote(inv.getNome(), inv.getCategoria(), null);
+                    double currentPrice = quote != null && quote.success ? quote.price : inv.getPrecoAporte();
+                    
+                    // Converte para BRL se necessário
+                    if (quote != null && quote.success && !"BRL".equals(quote.currency)) {
+                        double exchangeRate = quoteService.getExchangeRate(quote.currency, "BRL");
+                        currentPrice *= exchangeRate;
+                    } else if (!"BRL".equals(inv.getMoeda())) {
+                        // Se não houve cotação ou é fallback, e o ativo original não é BRL
+                        double exchangeRate = quoteService.getExchangeRate(inv.getMoeda(), "BRL");
+                        currentPrice *= exchangeRate;
+                    }
+                    
+                    totalInvestmentsValue += inv.getQuantidade() * currentPrice;
+                }
+                
+                double totalAccounts = bancoDados.calcularTotalSaldoContasUsuario(userId); // Inclui saldo em conta de corretora
+                double netWorth = totalAccounts + totalInvestmentsValue; // Patrimônio = Contas + Ativos
                 
                 // Get category breakdown
                 List<Categoria> categories = bancoDados.buscarCategoriasPorUsuario(userId);
