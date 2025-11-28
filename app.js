@@ -3719,82 +3719,103 @@ class ControleSeApp {
         this.showModal('Novo Investimento - Renda Fixa', content);
         
         setTimeout(() => {
-            // Preenche select de contas
-            const accountSelect = document.getElementById('fixed-income-account');
-            if (accountSelect) {
-                investmentAccounts.forEach(account => {
-                    const option = document.createElement('option');
-                    option.value = account.idConta;
-                    option.textContent = `${account.nome} (${account.tipo})`;
-                    accountSelect.appendChild(option);
-                });
-            }
-            
-            // Define data padrão como hoje
-            const dateInput = document.getElementById('fixed-income-date');
-            if (dateInput) {
-                const today = new Date();
-                const year = today.getFullYear();
-                const month = String(today.getMonth() + 1).padStart(2, '0');
-                const day = String(today.getDate()).padStart(2, '0');
-                dateInput.value = `${year}-${month}-${day}`;
-            }
-            
             // Event listener para o formulário (clona primeiro para evitar listeners duplicados)
             const form = document.getElementById('fixed-income-form');
             if (form) {
                 const newForm = form.cloneNode(true);
                 form.parentNode.replaceChild(newForm, form);
+                
+                // Preenche select de contas (após o clone)
+                const accountSelect = newForm.querySelector('#fixed-income-account');
+                if (accountSelect) {
+                    investmentAccounts.forEach(account => {
+                        const option = document.createElement('option');
+                        option.value = account.idConta;
+                        option.textContent = `${account.nome} (${account.tipo})`;
+                        accountSelect.appendChild(option);
+                    });
+                }
+                
+                // Define data padrão como hoje (após o clone)
+                const dateInput = newForm.querySelector('#fixed-income-date');
+                if (dateInput) {
+                    const today = new Date();
+                    const year = today.getFullYear();
+                    const month = String(today.getMonth() + 1).padStart(2, '0');
+                    const day = String(today.getDate()).padStart(2, '0');
+                    dateInput.value = `${year}-${month}-${day}`;
+                }
+                
+                // Adiciona listener de submit ao novo formulário
                 newForm.addEventListener('submit', (e) => {
-                    this.handleCreateFixedIncome(e);
-                });
-            }
-            
-            // Listener para mudança de tipo de rentabilidade (adiciona após o clone)
-            const typeSelect = document.getElementById('fixed-income-type');
-            const indexGroup = document.getElementById('fixed-income-index-group');
-            const indexPercentGroup = document.getElementById('fixed-income-index-percent-group');
-            const fixedRateGroup = document.getElementById('fixed-income-fixed-rate-group');
-            const preRateGroup = document.getElementById('fixed-income-pre-rate-group');
-            
-            // Função para atualizar visibilidade dos campos
-            const updateFieldsVisibility = (type) => {
-                if (!indexGroup || !indexPercentGroup || !fixedRateGroup || !preRateGroup) {
-                    return; // Elementos não encontrados ainda
-                }
-                
-                if (type === 'PRE_FIXADO') {
-                    indexGroup.style.display = 'none';
-                    indexPercentGroup.style.display = 'none';
-                    fixedRateGroup.style.display = 'none';
-                    preRateGroup.style.display = 'block';
-                } else if (type === 'POS_FIXADO') {
-                    indexGroup.style.display = 'block';
-                    indexPercentGroup.style.display = 'block';
-                    fixedRateGroup.style.display = 'none';
-                    preRateGroup.style.display = 'none';
-                } else if (type === 'POS_FIXADO_TAXA') {
-                    indexGroup.style.display = 'block';
-                    indexPercentGroup.style.display = 'block';
-                    fixedRateGroup.style.display = 'block';
-                    preRateGroup.style.display = 'none';
-                } else {
-                    indexGroup.style.display = 'none';
-                    indexPercentGroup.style.display = 'none';
-                    fixedRateGroup.style.display = 'none';
-                    preRateGroup.style.display = 'none';
-                }
-            };
-            
-            if (typeSelect) {
-                // Atualiza visibilidade quando o tipo muda
-                typeSelect.addEventListener('change', (e) => {
-                    updateFieldsVisibility(e.target.value);
+                    e.preventDefault();
+                    e.stopPropagation();
+                    try {
+                        this.handleCreateFixedIncome(e);
+                    } catch (error) {
+                        console.error('Erro ao processar formulário:', error);
+                        this.showToast('Erro ao processar formulário: ' + error.message, 'error');
+                    }
                 });
                 
-                // Atualiza visibilidade inicial se já houver um valor selecionado
-                if (typeSelect.value) {
-                    updateFieldsVisibility(typeSelect.value);
+                // Adiciona listener alternativo no botão de submit (caso o evento submit não seja disparado)
+                const submitButton = newForm.querySelector('button[type="submit"]');
+                if (submitButton) {
+                    submitButton.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        // Dispara o evento submit manualmente
+                        const submitEvent = new Event('submit', { bubbles: true, cancelable: true });
+                        newForm.dispatchEvent(submitEvent);
+                    });
+                }
+                
+                // Listener para mudança de tipo de rentabilidade (busca elementos do novo formulário)
+                const typeSelect = newForm.querySelector('#fixed-income-type');
+                const indexGroup = newForm.querySelector('#fixed-income-index-group');
+                const indexPercentGroup = newForm.querySelector('#fixed-income-index-percent-group');
+                const fixedRateGroup = newForm.querySelector('#fixed-income-fixed-rate-group');
+                const preRateGroup = newForm.querySelector('#fixed-income-pre-rate-group');
+                
+                // Função para atualizar visibilidade dos campos
+                const updateFieldsVisibility = (type) => {
+                    if (!indexGroup || !indexPercentGroup || !fixedRateGroup || !preRateGroup) {
+                        return; // Elementos não encontrados ainda
+                    }
+                    
+                    if (type === 'PRE_FIXADO') {
+                        indexGroup.style.display = 'none';
+                        indexPercentGroup.style.display = 'none';
+                        fixedRateGroup.style.display = 'none';
+                        preRateGroup.style.display = 'block';
+                    } else if (type === 'POS_FIXADO') {
+                        indexGroup.style.display = 'block';
+                        indexPercentGroup.style.display = 'block';
+                        fixedRateGroup.style.display = 'none';
+                        preRateGroup.style.display = 'none';
+                    } else if (type === 'POS_FIXADO_TAXA') {
+                        indexGroup.style.display = 'block';
+                        indexPercentGroup.style.display = 'block';
+                        fixedRateGroup.style.display = 'block';
+                        preRateGroup.style.display = 'none';
+                    } else {
+                        indexGroup.style.display = 'none';
+                        indexPercentGroup.style.display = 'none';
+                        fixedRateGroup.style.display = 'none';
+                        preRateGroup.style.display = 'none';
+                    }
+                };
+                
+                if (typeSelect) {
+                    // Atualiza visibilidade quando o tipo muda
+                    typeSelect.addEventListener('change', (e) => {
+                        updateFieldsVisibility(e.target.value);
+                    });
+                    
+                    // Atualiza visibilidade inicial se já houver um valor selecionado
+                    if (typeSelect.value) {
+                        updateFieldsVisibility(typeSelect.value);
+                    }
                 }
             }
         }, 100);
@@ -3803,18 +3824,25 @@ class ControleSeApp {
     async handleCreateFixedIncome(e) {
         e.preventDefault();
         
-        const name = document.getElementById('fixed-income-name').value;
-        const investmentType = document.getElementById('fixed-income-investment-type').value;
-        const issuer = document.getElementById('fixed-income-issuer').value.trim() || null;
-        const type = document.getElementById('fixed-income-type').value;
-        const index = document.getElementById('fixed-income-index').value;
-        const indexPercent = parseFloat(document.getElementById('fixed-income-index-percent').value) || 100;
-        const fixedRate = parseFloat(document.getElementById('fixed-income-fixed-rate').value) || 0;
-        const preRate = parseFloat(document.getElementById('fixed-income-pre-rate').value) || 0;
-        const amount = parseFloat(document.getElementById('fixed-income-amount').value);
-        const date = document.getElementById('fixed-income-date').value;
-        const maturity = document.getElementById('fixed-income-maturity').value;
-        const accountIdValue = document.getElementById('fixed-income-account').value;
+        // Busca o formulário que disparou o evento
+        const form = e.target.closest('form') || document.getElementById('fixed-income-form');
+        if (!form) {
+            this.showToast('Formulário não encontrado', 'error');
+            return;
+        }
+        
+        const name = form.querySelector('#fixed-income-name')?.value || '';
+        const investmentType = form.querySelector('#fixed-income-investment-type')?.value || '';
+        const issuer = form.querySelector('#fixed-income-issuer')?.value?.trim() || null;
+        const type = form.querySelector('#fixed-income-type')?.value || '';
+        const index = form.querySelector('#fixed-income-index')?.value || '';
+        const indexPercent = parseFloat(form.querySelector('#fixed-income-index-percent')?.value) || 100;
+        const fixedRate = parseFloat(form.querySelector('#fixed-income-fixed-rate')?.value) || 0;
+        const preRate = parseFloat(form.querySelector('#fixed-income-pre-rate')?.value) || 0;
+        const amount = parseFloat(form.querySelector('#fixed-income-amount')?.value) || 0;
+        const date = form.querySelector('#fixed-income-date')?.value || '';
+        const maturity = form.querySelector('#fixed-income-maturity')?.value || '';
+        const accountIdValue = form.querySelector('#fixed-income-account')?.value || '';
         
         // Valida tipo de investimento
         if (!investmentType) {
