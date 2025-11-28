@@ -1829,7 +1829,7 @@ public class BancoDados {
         return investimentos;
     }
     
-    public void atualizarInvestimento(int idInvestimento, String nome, String categoria, 
+    public void atualizarInvestimento(int idInvestimento, String nome, String nomeAtivo, String categoria, 
                                      double quantidade, double precoAporte, double corretagem, 
                                      String corretora, LocalDate dataAporte, String moeda) {
         Investimento investimento = buscarInvestimento(idInvestimento);
@@ -1838,6 +1838,9 @@ public class BancoDados {
         }
         
         investimento.setNome(nome);
+        if (nomeAtivo != null) {
+            investimento.setNomeAtivo(nomeAtivo);
+        }
         investimento.setCategoria(categoria);
         investimento.setQuantidade(quantidade);
         investimento.setPrecoAporte(precoAporte);

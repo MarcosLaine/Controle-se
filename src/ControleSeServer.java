@@ -2015,6 +2015,7 @@ public class ControleSeServer {
                 
                 int idInvestimento = ((Number) data.get("id")).intValue();
                 String nome = (String) data.get("nome");
+                String nomeAtivo = data.containsKey("nomeAtivo") ? (String) data.get("nomeAtivo") : null;
                 String categoria = (String) data.get("categoria");
                 double quantidade = ((Number) data.get("quantidade")).doubleValue();
                 double corretagem = ((Number) data.get("corretagem")).doubleValue();
@@ -2041,10 +2042,14 @@ public class ControleSeServer {
                     QuoteService.QuoteResult quote = quoteService.getQuote(nome, categoria, dataAporte);
                     if (quote.success) {
                         precoAporte = quote.price;
+                        // Se não havia nomeAtivo e a cotação retornou um, usa ele
+                        if (nomeAtivo == null && quote.assetName != null) {
+                            nomeAtivo = quote.assetName;
+                        }
                     }
                 }
                 
-                bancoDados.atualizarInvestimento(idInvestimento, nome, categoria, quantidade,
+                bancoDados.atualizarInvestimento(idInvestimento, nome, nomeAtivo, categoria, quantidade,
                                                 precoAporte, corretagem, corretora, dataAporte, moeda);
                 
                 Map<String, Object> response = new HashMap<>();
