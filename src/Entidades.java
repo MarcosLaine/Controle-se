@@ -540,7 +540,7 @@ class TransacaoTag implements Serializable {
  * Entidade Investimento - Representa um investimento do usuário
  */
 class Investimento implements Serializable {
-    private static final long serialVersionUID = 15L;
+    private static final long serialVersionUID = 16L;
     private int idInvestimento;
     private String nome; // Ex: ITUB4, AAPL, BTC
     private String nomeAtivo; // Nome completo do ativo (ex: "Itaú Unibanco", "Apple Inc.", "Bitcoin")
@@ -559,6 +559,7 @@ class Investimento implements Serializable {
     private String tipoInvestimento; // CDB, LCI, LCA, TESOURO, DEBENTURE, OUTROS
     private String tipoRentabilidade; // PRE_FIXADO, POS_FIXADO, POS_FIXADO_TAXA
     private String indice; // SELIC, CDI, IPCA, PRE
+    private Double percentualIndice; // Percentual do índice (ex: 100% = 100.0, 115% = 115.0)
     private Double taxaFixa; // Taxa fixa adicional (para POS_FIXADO_TAXA) ou taxa pré-fixada (para PRE_FIXADO)
     private LocalDate dataVencimento; // Data de vencimento do título
     
@@ -647,6 +648,9 @@ class Investimento implements Serializable {
     
     public String getIndice() { return indice; }
     public void setIndice(String indice) { this.indice = indice; }
+    
+    public Double getPercentualIndice() { return percentualIndice; }
+    public void setPercentualIndice(Double percentualIndice) { this.percentualIndice = percentualIndice; }
     
     public Double getTaxaFixa() { return taxaFixa; }
     public void setTaxaFixa(Double taxaFixa) { this.taxaFixa = taxaFixa; }

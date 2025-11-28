@@ -3662,21 +3662,27 @@ class ControleSeApp {
                         <option value="SELIC">SELIC</option>
                         <option value="CDI">CDI</option>
                         <option value="IPCA">IPCA</option>
-                        <option value="PRE">PRÉ (Taxa Pré-fixada)</option>
                     </select>
+                </div>
+                <div class="form-group" id="fixed-income-index-percent-group" style="display: none;">
+                    <label for="fixed-income-index-percent">Percentual do Índice (%)</label>
+                    <input type="number" id="fixed-income-index-percent" min="0" max="200" step="0.01" placeholder="Ex: 100, 115, 95" value="100">
+                    <small style="color: var(--neutral-600); margin-top: 4px; display: block;">
+                        Percentual do índice que o investimento rende. Ex: 100% = 100% do CDI, 115% = 115% do CDI
+                    </small>
                 </div>
                 <div class="form-group" id="fixed-income-fixed-rate-group" style="display: none;">
                     <label for="fixed-income-fixed-rate">Taxa Fixa Adicional (% ao ano)</label>
-                    <input type="number" id="fixed-income-fixed-rate" min="0" max="100" step="0.01" placeholder="Ex: 0.5">
+                    <input type="number" id="fixed-income-fixed-rate" min="0" max="100" step="0.01" placeholder="Ex: 1.5">
                     <small style="color: var(--neutral-600); margin-top: 4px; display: block;">
-                        Taxa fixa adicional que será somada ao índice (apenas para "Pós-fixado + Taxa Fixa")
+                        Taxa fixa adicional que será somada ao rendimento do índice. Ex: 95% do CDI + 1,5% a.a.
                     </small>
                 </div>
                 <div class="form-group" id="fixed-income-pre-rate-group" style="display: none;">
                     <label for="fixed-income-pre-rate">Taxa Pré-fixada (% ao ano)</label>
-                    <input type="number" id="fixed-income-pre-rate" min="0" max="100" step="0.01" placeholder="Ex: 12.5">
+                    <input type="number" id="fixed-income-pre-rate" min="0" max="100" step="0.01" placeholder="Ex: 15.5">
                     <small style="color: var(--neutral-600); margin-top: 4px; display: block;">
-                        Taxa de juros anual pré-fixada
+                        Taxa de juros anual pré-fixada. Ex: 15,5% a.a.
                     </small>
                 </div>
                 <div class="form-group">
@@ -3737,6 +3743,7 @@ class ControleSeApp {
             // Listener para mudança de tipo de rentabilidade
             const typeSelect = document.getElementById('fixed-income-type');
             const indexGroup = document.getElementById('fixed-income-index-group');
+            const indexPercentGroup = document.getElementById('fixed-income-index-percent-group');
             const fixedRateGroup = document.getElementById('fixed-income-fixed-rate-group');
             const preRateGroup = document.getElementById('fixed-income-pre-rate-group');
             
@@ -3745,18 +3752,22 @@ class ControleSeApp {
                     const type = e.target.value;
                     if (type === 'PRE_FIXADO') {
                         indexGroup.style.display = 'none';
+                        indexPercentGroup.style.display = 'none';
                         fixedRateGroup.style.display = 'none';
                         preRateGroup.style.display = 'block';
                     } else if (type === 'POS_FIXADO') {
                         indexGroup.style.display = 'block';
+                        indexPercentGroup.style.display = 'block';
                         fixedRateGroup.style.display = 'none';
                         preRateGroup.style.display = 'none';
                     } else if (type === 'POS_FIXADO_TAXA') {
                         indexGroup.style.display = 'block';
+                        indexPercentGroup.style.display = 'block';
                         fixedRateGroup.style.display = 'block';
                         preRateGroup.style.display = 'none';
                     } else {
                         indexGroup.style.display = 'none';
+                        indexPercentGroup.style.display = 'none';
                         fixedRateGroup.style.display = 'none';
                         preRateGroup.style.display = 'none';
                     }
@@ -3783,6 +3794,7 @@ class ControleSeApp {
         const issuer = document.getElementById('fixed-income-issuer').value.trim() || null;
         const type = document.getElementById('fixed-income-type').value;
         const index = document.getElementById('fixed-income-index').value;
+        const indexPercent = parseFloat(document.getElementById('fixed-income-index-percent').value) || 100;
         const fixedRate = parseFloat(document.getElementById('fixed-income-fixed-rate').value) || 0;
         const preRate = parseFloat(document.getElementById('fixed-income-pre-rate').value) || 0;
         const amount = parseFloat(document.getElementById('fixed-income-amount').value);
@@ -3836,6 +3848,7 @@ class ControleSeApp {
                 tipoInvestimento: investmentType,
                 tipoRentabilidade: type,
                 indice: index || null,
+                percentualIndice: (type === 'POS_FIXADO' || type === 'POS_FIXADO_TAXA') ? indexPercent : null,
                 taxaFixa: type === 'POS_FIXADO_TAXA' ? fixedRate : (type === 'PRE_FIXADO' ? preRate : null),
                 dataAporte: date,
                 dataVencimento: maturity,

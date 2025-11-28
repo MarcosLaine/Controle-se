@@ -826,7 +826,7 @@ public class QuoteService {
      * baseado no tipo de rentabilidade e índice escolhido, considerando impostos
      */
     public double calculateFixedIncomeValue(double valorAporte, String tipoInvestimento,
-                                           String tipoRentabilidade, String indice, Double taxaFixa, 
+                                           String tipoRentabilidade, String indice, Double percentualIndice, Double taxaFixa, 
                                            LocalDate dataAporte, LocalDate dataVencimento) {
         if (dataVencimento == null || dataAporte == null) {
             return valorAporte; // Se não tem vencimento, retorna o valor original
@@ -845,13 +845,15 @@ public class QuoteService {
         double taxaAnual = 0.0;
         
         if ("PRE_FIXADO".equals(tipoRentabilidade)) {
-            // Pré-fixado: usa a taxa fixa fornecida
+            // Pré-fixado: usa a taxa fixa fornecida (ex: 15,5% a.a.)
             taxaAnual = taxaFixa != null ? taxaFixa : 0.0;
         } else if ("POS_FIXADO".equals(tipoRentabilidade) || "POS_FIXADO_TAXA".equals(tipoRentabilidade)) {
-            // Pós-fixado: busca taxa do índice (real)
-            taxaAnual = getIndexRate(indice);
+            // Pós-fixado: busca taxa do índice (real) e aplica percentual (ex: 115% do CDI)
+            double taxaIndice = getIndexRate(indice);
+            double percentual = percentualIndice != null ? percentualIndice : 100.0;
+            taxaAnual = taxaIndice * (percentual / 100.0);
             
-            // Se for pós-fixado + taxa fixa, soma a taxa fixa
+            // Se for pós-fixado + taxa fixa, soma a taxa fixa (ex: 95% do CDI + 1,5% a.a.)
             if ("POS_FIXADO_TAXA".equals(tipoRentabilidade) && taxaFixa != null) {
                 taxaAnual += taxaFixa;
             }

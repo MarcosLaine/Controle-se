@@ -1848,6 +1848,7 @@ public class ControleSeServer {
                             inv.getTipoInvestimento(),
                             inv.getTipoRentabilidade(),
                             inv.getIndice(),
+                            inv.getPercentualIndice(),
                             inv.getTaxaFixa(),
                             inv.getDataAporte(),
                             inv.getDataVencimento()
@@ -1895,6 +1896,7 @@ public class ControleSeServer {
                         invData.put("tipoInvestimento", inv.getTipoInvestimento());
                         invData.put("tipoRentabilidade", inv.getTipoRentabilidade());
                         invData.put("indice", inv.getIndice());
+                        invData.put("percentualIndice", inv.getPercentualIndice());
                         invData.put("taxaFixa", inv.getTaxaFixa());
                         if (inv.getDataVencimento() != null) {
                             invData.put("dataVencimento", inv.getDataVencimento().toString());
@@ -2013,6 +2015,7 @@ public class ControleSeServer {
                 String tipoInvestimento = null;
                 String tipoRentabilidade = null;
                 String indice = null;
+                Double percentualIndice = null;
                 Double taxaFixa = null;
                 LocalDate dataVencimento = null;
                 
@@ -2027,6 +2030,13 @@ public class ControleSeServer {
                     
                     tipoRentabilidade = (String) data.get("tipoRentabilidade");
                     indice = data.containsKey("indice") ? (String) data.get("indice") : null;
+                    
+                    if (data.containsKey("percentualIndice")) {
+                        Object percentObj = data.get("percentualIndice");
+                        if (percentObj != null) {
+                            percentualIndice = ((Number) percentObj).doubleValue();
+                        }
+                    }
                     
                     if (data.containsKey("taxaFixa")) {
                         Object taxaObj = data.get("taxaFixa");
@@ -2055,7 +2065,7 @@ public class ControleSeServer {
                 int investmentId = bancoDados.cadastrarInvestimento(nome, nomeAtivo, categoria, quantidade, 
                                                                   precoAporte, corretagem, corretoraFinal,
                                                                   dataAporte, userId, accountId, moeda,
-                                                                  tipoInvestimento, tipoRentabilidade, indice, taxaFixa, dataVencimento);
+                                                                  tipoInvestimento, tipoRentabilidade, indice, percentualIndice, taxaFixa, dataVencimento);
                 
                 Map<String, Object> response = new HashMap<>();
                 response.put("success", true);
