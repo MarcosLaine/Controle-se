@@ -56,7 +56,7 @@ public class QuoteService {
     private QuoteResult fetchQuote(String symbol, String category, LocalDate date) {
         try {
             // Para ações brasileiras (B3)
-            if ("ACAO".equals(category) && symbol.matches("^[A-Z]{4}\\d$")) {
+            if ("ACAO".equals(category) && symbol.matches("^[A-Z]{4}\\d{1,2}$")) {
                 return fetchB3Quote(symbol, date);
             }
             // Para stocks (NYSE, NASDAQ)
