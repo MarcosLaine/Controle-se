@@ -2038,8 +2038,12 @@ public class ControleSeServer {
                                 percentualIndice = ((Number) percentObj).doubleValue();
                             } else if (percentObj instanceof String) {
                                 String percentStr = ((String) percentObj).trim();
-                                if (!percentStr.isEmpty()) {
-                                    percentualIndice = Double.parseDouble(percentStr);
+                                if (!percentStr.isEmpty() && !percentStr.equalsIgnoreCase("null")) {
+                                    try {
+                                        percentualIndice = Double.parseDouble(percentStr);
+                                    } catch (NumberFormatException e) {
+                                        // Ignora valores inválidos
+                                    }
                                 }
                             }
                         }
@@ -2052,8 +2056,12 @@ public class ControleSeServer {
                                 taxaFixa = ((Number) taxaObj).doubleValue();
                             } else if (taxaObj instanceof String) {
                                 String taxaStr = ((String) taxaObj).trim();
-                                if (!taxaStr.isEmpty()) {
-                                    taxaFixa = Double.parseDouble(taxaStr);
+                                if (!taxaStr.isEmpty() && !taxaStr.equalsIgnoreCase("null")) {
+                                    try {
+                                        taxaFixa = Double.parseDouble(taxaStr);
+                                    } catch (NumberFormatException e) {
+                                        // Ignora valores inválidos
+                                    }
                                 }
                             }
                         }
