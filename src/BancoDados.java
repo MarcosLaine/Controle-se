@@ -311,9 +311,10 @@ public class BancoDados {
         List<Object> objetos = indiceUsuarioCategorias.buscar(idUsuario);
         List<Categoria> categorias = new ArrayList<>();
         for (Object obj : objetos) {
-            Categoria categoria = (Categoria) obj;
-            if (categoria.isAtivo()) { // Filtra apenas categorias ativas
-                categorias.add(categoria);
+            Categoria catIndex = (Categoria) obj;
+            Categoria catReal = buscarCategoria(catIndex.getIdCategoria());
+            if (catReal != null && catReal.isAtivo()) { // Filtra apenas categorias ativas
+                categorias.add(catReal);
             }
         }
         return categorias;
@@ -391,9 +392,10 @@ public class BancoDados {
         List<Object> objetos = indiceUsuarioGastos.buscar(idUsuario);
         List<Gasto> gastos = new ArrayList<>();
         for (Object obj : objetos) {
-            Gasto gasto = (Gasto) obj;
-            if (gasto.isAtivo()) { // Filtra apenas gastos ativos
-                gastos.add(gasto);
+            Gasto gastoIndex = (Gasto) obj;
+            Gasto gastoReal = buscarGasto(gastoIndex.getIdGasto());
+            if (gastoReal != null && gastoReal.isAtivo()) { // Filtra apenas gastos ativos
+                gastos.add(gastoReal);
             }
         }
         return gastos;
@@ -580,9 +582,10 @@ public class BancoDados {
         List<Object> objetos = indiceUsuarioReceitas.buscar(idUsuario);
         List<Receita> receitas = new ArrayList<>();
         for (Object obj : objetos) {
-            Receita receita = (Receita) obj;
-            if (receita.isAtivo()) { // Filtra apenas receitas ativas
-                receitas.add(receita);
+            Receita receitaIndex = (Receita) obj;
+            Receita receitaReal = buscarReceita(receitaIndex.getIdReceita());
+            if (receitaReal != null && receitaReal.isAtivo()) { // Filtra apenas receitas ativas
+                receitas.add(receitaReal);
             }
         }
         return receitas;
@@ -652,9 +655,10 @@ public class BancoDados {
         List<Object> objetos = indiceUsuarioContas.buscar(idUsuario);
         List<Conta> contas = new ArrayList<>();
         for (Object obj : objetos) {
-            Conta conta = (Conta) obj;
-            if (conta.isAtivo()) { // Filtra apenas contas ativas
-                contas.add(conta);
+            Conta contaIndex = (Conta) obj;
+            Conta contaReal = buscarConta(contaIndex.getIdConta());
+            if (contaReal != null && contaReal.isAtivo()) { // Filtra apenas contas ativas
+                contas.add(contaReal);
             }
         }
         return contas;
@@ -703,9 +707,10 @@ public class BancoDados {
         List<Object> objetos = indiceUsuarioOrcamentos.buscar(idUsuario);
         List<Orcamento> orcamentos = new ArrayList<>();
         for (Object obj : objetos) {
-            Orcamento orcamento = (Orcamento) obj;
-            if (orcamento.isAtivo()) { // Filtra apenas orçamentos ativos
-                orcamentos.add(orcamento);
+            Orcamento orcIndex = (Orcamento) obj;
+            Orcamento orcReal = buscarOrcamento(orcIndex.getIdOrcamento());
+            if (orcReal != null && orcReal.isAtivo()) { // Filtra apenas orçamentos ativos
+                orcamentos.add(orcReal);
             }
         }
         return orcamentos;
@@ -1814,9 +1819,11 @@ public class BancoDados {
         List<Object> objetos = indiceUsuarioInvestimentos.buscar(idUsuario);
         List<Investimento> investimentos = new ArrayList<>();
         for (Object obj : objetos) {
-            Investimento inv = (Investimento) obj;
-            if (inv.isAtivo()) {
-                investimentos.add(inv);
+            Investimento invIndex = (Investimento) obj;
+            // Busca a versão atualizada na tabela principal
+            Investimento invReal = buscarInvestimento(invIndex.getIdInvestimento());
+            if (invReal != null && invReal.isAtivo()) {
+                investimentos.add(invReal);
             }
         }
         return investimentos;
@@ -1859,13 +1866,9 @@ public class BancoDados {
         // Atualiza na tabela
         tabelaInvestimentos.inserir(idInvestimento, investimento);
         
-        // Atualiza o índice secundário também (importante para que a busca filtre corretamente)
-        indiceUsuarioInvestimentos.inserir(investimento.getIdUsuario(), investimento);
-        
         // Persiste
         salvarInvestimentos();
         salvarIndiceArvoreBPlus(tabelaInvestimentos, IDX_INVESTIMENTOS);
-        salvarIndiceHashExtensivel(indiceUsuarioInvestimentos, IDX_USUARIO_INVESTIMENTOS);
     }
     
     private void salvarInvestimentos() {
