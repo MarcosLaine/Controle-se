@@ -3329,6 +3329,13 @@ class ControleSeApp {
         const content = `
             <form id="investment-form">
                 <div class="form-group">
+                    <label for="investment-name">Nome/Símbolo</label>
+                    <input type="text" id="investment-name" placeholder="Ex: ITUB4, AAPL, BTC" required>
+                    <small style="color: var(--neutral-600); margin-top: 4px; display: block;">
+                        Digite o símbolo do investimento. O preço será obtido automaticamente com base no fechamento do dia através de nossa base de dados.
+                    </small>
+                </div>
+                <div class="form-group">
                     <label for="investment-category">Categoria</label>
                     <select id="investment-category" required>
                         <option value="">Selecione...</option>
@@ -3338,13 +3345,6 @@ class ControleSeApp {
                         <option value="FII">FII</option>
                         <option value="RENDA_FIXA">Renda Fixa</option>
                     </select>
-                </div>
-                <div class="form-group">
-                    <label for="investment-name">Nome/Símbolo</label>
-                    <input type="text" id="investment-name" placeholder="Ex: ITUB4, AAPL, BTC" required>
-                    <small style="color: var(--neutral-600); margin-top: 4px; display: block;">
-                        Digite o símbolo do investimento. O preço será obtido automaticamente com base no fechamento do dia através de nossa base de dados.
-                    </small>
                 </div>
                 <div class="form-group">
                     <label for="investment-quantity">Quantidade</label>
