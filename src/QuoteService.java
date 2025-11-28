@@ -291,8 +291,9 @@ public class QuoteService {
     private QuoteResult fetchCryptoQuote(String symbol, LocalDate date) {
         try {
             // CoinGecko API (gratuita)
-            // Mapeamento de símbolos para IDs do CoinGecko
+            // Mapeamento de símbolos e nomes para IDs do CoinGecko
             Map<String, String> coinGeckoIds = new HashMap<>();
+            // Símbolos
             coinGeckoIds.put("BTC", "bitcoin");
             coinGeckoIds.put("ETH", "ethereum");
             coinGeckoIds.put("BNB", "binancecoin");
@@ -303,8 +304,28 @@ public class QuoteService {
             coinGeckoIds.put("DOT", "polkadot");
             coinGeckoIds.put("MATIC", "matic-network");
             coinGeckoIds.put("LTC", "litecoin");
+            // Nomes completos (normalizados para maiúsculas)
+            coinGeckoIds.put("BITCOIN", "bitcoin");
+            coinGeckoIds.put("ETHEREUM", "ethereum");
+            coinGeckoIds.put("BINANCECOIN", "binancecoin");
+            coinGeckoIds.put("BINANCE COIN", "binancecoin");
+            coinGeckoIds.put("CARDANO", "cardano");
+            coinGeckoIds.put("SOLANA", "solana");
+            coinGeckoIds.put("RIPPLE", "ripple");
+            coinGeckoIds.put("DOGECOIN", "dogecoin");
+            coinGeckoIds.put("POLKADOT", "polkadot");
+            coinGeckoIds.put("POLYGON", "matic-network");
+            coinGeckoIds.put("LITECOIN", "litecoin");
             
-            String coinId = coinGeckoIds.getOrDefault(symbol.toUpperCase(), symbol.toLowerCase());
+            // Normaliza o símbolo para busca (remove espaços extras, converte para maiúsculas)
+            String normalizedSymbol = symbol.trim().replaceAll("\\s+", " ").toUpperCase();
+            String coinId = coinGeckoIds.get(normalizedSymbol);
+            
+            // Se não encontrou no mapeamento, usa o símbolo em minúsculas diretamente
+            // CoinGecko aceita tanto IDs quanto nomes em minúsculas (ex: "bitcoin", "ethereum")
+            if (coinId == null) {
+                coinId = symbol.trim().toLowerCase().replaceAll("\\s+", "-");
+            }
             String urlStr;
             
             if (date != null && !date.equals(LocalDate.now())) {
