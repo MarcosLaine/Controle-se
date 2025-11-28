@@ -2950,49 +2950,49 @@ class ControleSeApp {
                 : inv.nome;
             
             card.innerHTML = `
-                <div class="investment-header">
+                <div class="investment-header" style="margin-bottom: var(--spacing-2); padding-bottom: 0; border-bottom: none;">
                     <h3>${displayName}</h3>
                     <span class="investment-badge ${returnClass}">${inv.retornoPercent >= 0 ? '+' : ''}${inv.retornoPercent.toFixed(2)}%</span>
                 </div>
-                <div class="investment-details">
-                    <div class="investment-row">
-                        <span>Quantidade:</span>
+                <div class="investment-details" style="display: flex; flex-direction: row; flex-wrap: wrap; gap: 20px; margin-bottom: var(--spacing-2);">
+                    <div class="investment-row" style="flex: 1; min-width: 120px; flex-direction: column; align-items: flex-start;">
+                        <span>Quantidade</span>
                         <strong>${parseFloat(inv.quantidade).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 6 })}</strong>
                     </div>
-                    <div class="investment-row">
-                        <span>Preço Aporte:</span>
+                    <div class="investment-row" style="flex: 1; min-width: 120px; flex-direction: column; align-items: flex-start;">
+                        <span>Preço Aporte</span>
                         <strong>${this.formatCurrency(inv.precoAporte)}</strong>
                     </div>
-                    <div class="investment-row">
-                        <span>Preço Atual:</span>
+                    <div class="investment-row" style="flex: 1; min-width: 120px; flex-direction: column; align-items: flex-start;">
+                        <span>Preço Atual</span>
                         <strong>${this.formatCurrency(inv.precoAtual)}</strong>
                     </div>
-                    <div class="investment-row">
-                        <span>Valor Investido:</span>
+                    <div class="investment-row" style="flex: 1; min-width: 120px; flex-direction: column; align-items: flex-start;">
+                        <span>Valor Investido</span>
                         <strong>${this.formatCurrency(inv.valorAporte)}</strong>
                     </div>
-                    <div class="investment-row">
-                        <span>Valor Atual:</span>
+                    <div class="investment-row" style="flex: 1; min-width: 120px; flex-direction: column; align-items: flex-start;">
+                        <span>Valor Atual</span>
                         <strong>${this.formatCurrency(inv.valorAtual)}</strong>
                     </div>
-                    <div class="investment-row return ${returnClass}">
-                        <span>Retorno:</span>
+                    <div class="investment-row return ${returnClass}" style="flex: 1; min-width: 120px; flex-direction: column; align-items: flex-start;">
+                        <span>Retorno</span>
                         <strong>${inv.retorno >= 0 ? '+' : ''}${this.formatCurrency(inv.retorno)}</strong>
                     </div>
-                    <div class="investment-row">
-                        <span>Conta/Corretora:</span>
+                    <div class="investment-row" style="flex: 1; min-width: 120px; flex-direction: column; align-items: flex-start;">
+                        <span>Conta</span>
                         <strong>${inv.corretora || 'N/A'}</strong>
                     </div>
-                    <div class="investment-row">
-                        <span>Data Aporte:</span>
+                    <div class="investment-row" style="flex: 1; min-width: 120px; flex-direction: column; align-items: flex-start;">
+                        <span>Data Aporte</span>
                         <strong>${this.formatDate(inv.dataAporte)}</strong>
                     </div>
                 </div>
-                <div class="card-actions">
-                    <button class="btn-secondary btn-edit-investment" data-investment-id="${inv.idInvestimento}">
+                <div class="card-actions" style="display: flex; justify-content: flex-end; border-top: 1px solid var(--neutral-200); padding-top: 10px; margin-top: 10px;">
+                    <button class="btn-secondary btn-edit-investment" data-investment-id="${inv.idInvestimento}" style="padding: 4px 12px; font-size: 0.85rem;">
                         <i class="fas fa-edit"></i> Editar
                     </button>
-                    <button class="btn-secondary btn-delete-investment" data-investment-id="${inv.idInvestimento}">
+                    <button class="btn-secondary btn-delete-investment" data-investment-id="${inv.idInvestimento}" style="padding: 4px 12px; font-size: 0.85rem;">
                         <i class="fas fa-trash"></i> Excluir
                     </button>
                 </div>
