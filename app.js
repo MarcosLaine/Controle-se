@@ -2941,76 +2941,135 @@ class ControleSeApp {
             container.innerHTML = '';
         }
         
+        // Agrupa investimentos por ticker (nome)
+        const groupedInvestments = {};
+        
         investments.forEach(inv => {
+            if (!groupedInvestments[inv.nome]) {
+                groupedInvestments[inv.nome] = [];
+            }
+            groupedInvestments[inv.nome].push(inv);
+        });
+        
+        // Itera sobre cada grupo (ativo)
+        Object.keys(groupedInvestments).forEach(ticker => {
+            const group = groupedInvestments[ticker];
+            const firstInv = group[0]; // Usa o primeiro como referência para dados comuns
+            
+            // Calcula totais
+            let totalQty = 0;
+            let totalInvested = 0;
+            let totalCurrent = 0;
+            
+            group.forEach(inv => {
+                totalQty += parseFloat(inv.quantidade);
+                totalInvested += parseFloat(inv.valorAporte);
+                totalCurrent += parseFloat(inv.valorAtual);
+            });
+            
+            const avgPrice = totalQty > 0 ? totalInvested / totalQty : 0;
+            const currentPrice = parseFloat(firstInv.precoAtual); // Assume que o preço atual é o mesmo para todos
+            const totalReturn = totalCurrent - totalInvested;
+            const totalReturnPercent = totalInvested > 0 ? (totalReturn / totalInvested) * 100 : 0;
+            
             const card = document.createElement('div');
             card.className = 'investment-card';
-            const returnClass = inv.retorno >= 0 ? 'positive' : 'negative';
-            const displayName = inv.nomeAtivo 
-                ? `${inv.nome} - ${inv.nomeAtivo}` 
-                : inv.nome;
+            const returnClass = totalReturn >= 0 ? 'positive' : 'negative';
+            const displayName = firstInv.nomeAtivo 
+                ? `${ticker} - ${firstInv.nomeAtivo}` 
+                : ticker;
             
+            // Renderiza o card principal (agrupado)
             card.innerHTML = `
                 <div class="investment-header" style="margin-bottom: var(--spacing-2); padding-bottom: 0; border-bottom: none;">
                     <h3>${displayName}</h3>
-                    <span class="investment-badge ${returnClass}">${inv.retornoPercent >= 0 ? '+' : ''}${inv.retornoPercent.toFixed(2)}%</span>
+                    <span class="investment-badge ${returnClass}">${totalReturnPercent >= 0 ? '+' : ''}${totalReturnPercent.toFixed(2)}%</span>
                 </div>
                 <div class="investment-details" style="display: flex; flex-direction: row; flex-wrap: wrap; gap: 20px; margin-bottom: var(--spacing-2);">
                     <div class="investment-row" style="flex: 1; min-width: 120px; flex-direction: column; align-items: flex-start;">
-                        <span>Quantidade</span>
-                        <strong>${parseFloat(inv.quantidade).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 6 })}</strong>
+                        <span>Quantidade Total</span>
+                        <strong>${totalQty.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 6 })}</strong>
                     </div>
                     <div class="investment-row" style="flex: 1; min-width: 120px; flex-direction: column; align-items: flex-start;">
-                        <span>Preço Aporte</span>
-                        <strong>${this.formatCurrency(inv.precoAporte)}</strong>
+                        <span>Preço Médio</span>
+                        <strong>${this.formatCurrency(avgPrice)}</strong>
                     </div>
                     <div class="investment-row" style="flex: 1; min-width: 120px; flex-direction: column; align-items: flex-start;">
                         <span>Preço Atual</span>
-                        <strong>${this.formatCurrency(inv.precoAtual)}</strong>
+                        <strong>${this.formatCurrency(currentPrice)}</strong>
                     </div>
                     <div class="investment-row" style="flex: 1; min-width: 120px; flex-direction: column; align-items: flex-start;">
-                        <span>Valor Investido</span>
-                        <strong>${this.formatCurrency(inv.valorAporte)}</strong>
+                        <span>Total Investido</span>
+                        <strong>${this.formatCurrency(totalInvested)}</strong>
                     </div>
                     <div class="investment-row" style="flex: 1; min-width: 120px; flex-direction: column; align-items: flex-start;">
                         <span>Valor Atual</span>
-                        <strong>${this.formatCurrency(inv.valorAtual)}</strong>
+                        <strong>${this.formatCurrency(totalCurrent)}</strong>
                     </div>
                     <div class="investment-row return ${returnClass}" style="flex: 1; min-width: 120px; flex-direction: column; align-items: flex-start;">
-                        <span>Retorno</span>
-                        <strong>${inv.retorno >= 0 ? '+' : ''}${this.formatCurrency(inv.retorno)}</strong>
-                    </div>
-                    <div class="investment-row" style="flex: 1; min-width: 120px; flex-direction: column; align-items: flex-start;">
-                        <span>Conta</span>
-                        <strong>${inv.corretora || 'N/A'}</strong>
-                    </div>
-                    <div class="investment-row" style="flex: 1; min-width: 120px; flex-direction: column; align-items: flex-start;">
-                        <span>Data Aporte</span>
-                        <strong>${this.formatDate(inv.dataAporte)}</strong>
+                        <span>Retorno Total</span>
+                        <strong>${totalReturn >= 0 ? '+' : ''}${this.formatCurrency(totalReturn)}</strong>
                     </div>
                 </div>
                 <div class="card-actions" style="display: flex; justify-content: flex-end; border-top: 1px solid var(--neutral-200); padding-top: 10px; margin-top: 10px;">
-                    <button class="btn-secondary btn-edit-investment" data-investment-id="${inv.idInvestimento}" style="padding: 4px 12px; font-size: 0.85rem;">
-                        <i class="fas fa-edit"></i> Editar
-                    </button>
-                    <button class="btn-secondary btn-delete-investment" data-investment-id="${inv.idInvestimento}" style="padding: 4px 12px; font-size: 0.85rem;">
-                        <i class="fas fa-trash"></i> Excluir
+                    <button class="btn-secondary btn-toggle-details" style="padding: 4px 12px; font-size: 0.85rem;">
+                        <i class="fas fa-list"></i> Detalhes (${group.length})
                     </button>
                 </div>
+                
+                <div class="investment-history" style="display: none; margin-top: 15px; background: var(--neutral-100); padding: 10px; border-radius: 8px;">
+                    <h4 style="font-size: 0.9rem; margin-bottom: 10px; color: var(--neutral-600);">Histórico de Aportes</h4>
+                    <div class="history-list" style="display: flex; flex-direction: column; gap: 10px;">
+                        ${group.map(inv => `
+                            <div class="history-item" style="display: flex; justify-content: space-between; align-items: center; padding: 8px; background: white; border-radius: 6px; border: 1px solid var(--neutral-200);">
+                                <div style="display: flex; flex-direction: column; gap: 2px;">
+                                    <span style="font-size: 0.8rem; font-weight: 600;">${this.formatDate(inv.dataAporte)}</span>
+                                    <span style="font-size: 0.75rem; color: var(--neutral-600);">${inv.corretora || 'N/A'}</span>
+                                </div>
+                                <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px;">
+                                    <span style="font-size: 0.8rem;">${parseFloat(inv.quantidade).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 6 })} x ${this.formatCurrency(inv.precoAporte)}</span>
+                                    <span style="font-size: 0.8rem; font-weight: 600;">${this.formatCurrency(inv.valorAporte)}</span>
+                                </div>
+                                <div style="display: flex; gap: 5px; margin-left: 10px;">
+                                    <button class="btn-icon-small btn-edit-investment" data-investment-id="${inv.idInvestimento}" title="Editar" style="padding: 4px; background: none; border: none; cursor: pointer; color: var(--neutral-600);">
+                                        <i class="fas fa-edit"></i>
+                                    </button>
+                                    <button class="btn-icon-small btn-delete-investment" data-investment-id="${inv.idInvestimento}" title="Excluir" style="padding: 4px; background: none; border: none; cursor: pointer; color: var(--danger-color);">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
             `;
+            
             container.appendChild(card);
+            
+            // Adiciona listener para toggle de detalhes
+            const toggleBtn = card.querySelector('.btn-toggle-details');
+            const historyDiv = card.querySelector('.investment-history');
+            
+            toggleBtn.addEventListener('click', () => {
+                const isHidden = historyDiv.style.display === 'none';
+                historyDiv.style.display = isHidden ? 'block' : 'none';
+                toggleBtn.innerHTML = isHidden 
+                    ? `<i class="fas fa-chevron-up"></i> Ocultar (${group.length})`
+                    : `<i class="fas fa-list"></i> Detalhes (${group.length})`;
+            });
         });
         
-        // Adiciona event listeners para os botões de editar e excluir
+        // Adiciona event listeners para os botões de editar e excluir (globais no container atual)
         container.querySelectorAll('.btn-edit-investment').forEach(btn => {
             btn.addEventListener('click', (e) => {
-                const investmentId = parseInt(e.target.closest('.btn-edit-investment').dataset.investmentId);
+                const investmentId = parseInt(e.currentTarget.dataset.investmentId);
                 this.editInvestment(investmentId);
             });
         });
         
         container.querySelectorAll('.btn-delete-investment').forEach(btn => {
             btn.addEventListener('click', (e) => {
-                const investmentId = parseInt(e.target.closest('.btn-delete-investment').dataset.investmentId);
+                const investmentId = parseInt(e.currentTarget.dataset.investmentId);
                 this.deleteInvestment(investmentId);
             });
         });
