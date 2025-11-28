@@ -2901,7 +2901,7 @@ class ControleSeApp {
                     </div>
                     <div class="category-header-right">
                         <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 4px;">
-                            <span class="category-total">${this.formatCurrency(categoryTotal)}</span>
+                        <span class="category-total">${this.formatCurrency(categoryTotal)}</span>
                             <span style="font-size: 0.85rem; color: var(--neutral-600);">
                                 Investido: ${this.formatCurrency(categoryInvested)}
                                 <span style="margin-left: 8px; color: ${categoryReturn >= 0 ? 'var(--success-color)' : 'var(--danger-color)'};">
@@ -3049,12 +3049,12 @@ class ControleSeApp {
                         <span>Retorno Total</span>
                         <strong>${totalReturn >= 0 ? '+' : ''}${this.formatCurrency(totalReturn)}</strong>
                     </div>
-                </div>
+                    </div>
                 <div class="card-actions" style="display: flex; justify-content: flex-end; border-top: 1px solid var(--neutral-200); padding-top: 10px; margin-top: 10px;">
                     <button class="btn-secondary btn-toggle-details" style="padding: 4px 12px; font-size: 0.85rem;">
                         <i class="fas fa-list"></i> Detalhes (${group.length})
                     </button>
-                </div>
+                    </div>
                 
                 <div class="investment-history" style="display: none; margin-top: 15px; background: var(--neutral-100); padding: 10px; border-radius: 8px;">
                     <h4 style="font-size: 0.9rem; margin-bottom: 10px; color: var(--neutral-600);">Histórico de Aportes</h4>
@@ -3064,7 +3064,7 @@ class ControleSeApp {
                                 <div style="display: flex; flex-direction: column; gap: 2px;">
                                     <span style="font-size: 0.8rem; font-weight: 600; color: var(--neutral-900);">${this.formatDate(inv.dataAporte)}</span>
                                     <span style="font-size: 0.75rem; color: var(--neutral-600);">${inv.corretora || 'N/A'}</span>
-                                </div>
+                </div>
                                 <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px;">
                                     <span style="font-size: 0.8rem; color: var(--neutral-700);">${parseFloat(inv.quantidade).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 6 })} x ${this.formatCurrency(inv.precoAporte)}</span>
                                     <span style="font-size: 0.8rem; font-weight: 600; color: var(--neutral-900);">${this.formatCurrency(inv.valorAporte)}</span>
@@ -3072,10 +3072,10 @@ class ControleSeApp {
                                 <div style="display: flex; gap: 5px; margin-left: 10px;">
                                     <button class="btn-icon-small btn-edit-investment" data-investment-id="${inv.idInvestimento}" title="Editar" style="padding: 4px; background: none; border: none; cursor: pointer; color: var(--neutral-600);">
                                         <i class="fas fa-edit"></i>
-                                    </button>
+                    </button>
                                     <button class="btn-icon-small btn-delete-investment" data-investment-id="${inv.idInvestimento}" title="Excluir" style="padding: 4px; background: none; border: none; cursor: pointer; color: var(--danger-color);">
                                         <i class="fas fa-trash"></i>
-                                    </button>
+                    </button>
                                 </div>
                             </div>
                         `).join('')}
@@ -3740,41 +3740,7 @@ class ControleSeApp {
                 dateInput.value = `${year}-${month}-${day}`;
             }
             
-            // Listener para mudança de tipo de rentabilidade
-            const typeSelect = document.getElementById('fixed-income-type');
-            const indexGroup = document.getElementById('fixed-income-index-group');
-            const indexPercentGroup = document.getElementById('fixed-income-index-percent-group');
-            const fixedRateGroup = document.getElementById('fixed-income-fixed-rate-group');
-            const preRateGroup = document.getElementById('fixed-income-pre-rate-group');
-            
-            if (typeSelect) {
-                typeSelect.addEventListener('change', (e) => {
-                    const type = e.target.value;
-                    if (type === 'PRE_FIXADO') {
-                        indexGroup.style.display = 'none';
-                        indexPercentGroup.style.display = 'none';
-                        fixedRateGroup.style.display = 'none';
-                        preRateGroup.style.display = 'block';
-                    } else if (type === 'POS_FIXADO') {
-                        indexGroup.style.display = 'block';
-                        indexPercentGroup.style.display = 'block';
-                        fixedRateGroup.style.display = 'none';
-                        preRateGroup.style.display = 'none';
-                    } else if (type === 'POS_FIXADO_TAXA') {
-                        indexGroup.style.display = 'block';
-                        indexPercentGroup.style.display = 'block';
-                        fixedRateGroup.style.display = 'block';
-                        preRateGroup.style.display = 'none';
-                    } else {
-                        indexGroup.style.display = 'none';
-                        indexPercentGroup.style.display = 'none';
-                        fixedRateGroup.style.display = 'none';
-                        preRateGroup.style.display = 'none';
-                    }
-                });
-            }
-            
-            // Event listener para o formulário
+            // Event listener para o formulário (clona primeiro para evitar listeners duplicados)
             const form = document.getElementById('fixed-income-form');
             if (form) {
                 const newForm = form.cloneNode(true);
@@ -3782,6 +3748,54 @@ class ControleSeApp {
                 newForm.addEventListener('submit', (e) => {
                     this.handleCreateFixedIncome(e);
                 });
+            }
+            
+            // Listener para mudança de tipo de rentabilidade (adiciona após o clone)
+            const typeSelect = document.getElementById('fixed-income-type');
+            const indexGroup = document.getElementById('fixed-income-index-group');
+            const indexPercentGroup = document.getElementById('fixed-income-index-percent-group');
+            const fixedRateGroup = document.getElementById('fixed-income-fixed-rate-group');
+            const preRateGroup = document.getElementById('fixed-income-pre-rate-group');
+            
+            // Função para atualizar visibilidade dos campos
+            const updateFieldsVisibility = (type) => {
+                if (!indexGroup || !indexPercentGroup || !fixedRateGroup || !preRateGroup) {
+                    return; // Elementos não encontrados ainda
+                }
+                
+                if (type === 'PRE_FIXADO') {
+                    indexGroup.style.display = 'none';
+                    indexPercentGroup.style.display = 'none';
+                    fixedRateGroup.style.display = 'none';
+                    preRateGroup.style.display = 'block';
+                } else if (type === 'POS_FIXADO') {
+                    indexGroup.style.display = 'block';
+                    indexPercentGroup.style.display = 'block';
+                    fixedRateGroup.style.display = 'none';
+                    preRateGroup.style.display = 'none';
+                } else if (type === 'POS_FIXADO_TAXA') {
+                    indexGroup.style.display = 'block';
+                    indexPercentGroup.style.display = 'block';
+                    fixedRateGroup.style.display = 'block';
+                    preRateGroup.style.display = 'none';
+                } else {
+                    indexGroup.style.display = 'none';
+                    indexPercentGroup.style.display = 'none';
+                    fixedRateGroup.style.display = 'none';
+                    preRateGroup.style.display = 'none';
+                }
+            };
+            
+            if (typeSelect) {
+                // Atualiza visibilidade quando o tipo muda
+                typeSelect.addEventListener('change', (e) => {
+                    updateFieldsVisibility(e.target.value);
+                });
+                
+                // Atualiza visibilidade inicial se já houver um valor selecionado
+                if (typeSelect.value) {
+                    updateFieldsVisibility(typeSelect.value);
+                }
             }
         }, 100);
     }
@@ -4002,7 +4016,7 @@ class ControleSeApp {
                         <i class="fas fa-arrow-left"></i> Voltar e corrigir nome
                     </button>
                     <div style="display: flex; gap: 10px;">
-                        <button type="button" class="btn-secondary" onclick="app.closeModal()">Cancelar</button>
+                    <button type="button" class="btn-secondary" onclick="app.closeModal()">Cancelar</button>
                         <button type="submit" class="btn-primary">Salvar Manualmente</button>
                     </div>
                 </div>
