@@ -2034,14 +2034,28 @@ public class ControleSeServer {
                     if (data.containsKey("percentualIndice")) {
                         Object percentObj = data.get("percentualIndice");
                         if (percentObj != null) {
-                            percentualIndice = ((Number) percentObj).doubleValue();
+                            if (percentObj instanceof Number) {
+                                percentualIndice = ((Number) percentObj).doubleValue();
+                            } else if (percentObj instanceof String) {
+                                String percentStr = ((String) percentObj).trim();
+                                if (!percentStr.isEmpty()) {
+                                    percentualIndice = Double.parseDouble(percentStr);
+                                }
+                            }
                         }
                     }
                     
                     if (data.containsKey("taxaFixa")) {
                         Object taxaObj = data.get("taxaFixa");
                         if (taxaObj != null) {
-                            taxaFixa = ((Number) taxaObj).doubleValue();
+                            if (taxaObj instanceof Number) {
+                                taxaFixa = ((Number) taxaObj).doubleValue();
+                            } else if (taxaObj instanceof String) {
+                                String taxaStr = ((String) taxaObj).trim();
+                                if (!taxaStr.isEmpty()) {
+                                    taxaFixa = Double.parseDouble(taxaStr);
+                                }
+                            }
                         }
                     }
                     
