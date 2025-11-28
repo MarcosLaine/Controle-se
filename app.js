@@ -181,13 +181,41 @@ class ControleSeApp {
         this.tagsCache = [];
         this.transactionsCache = [];
         
+        // Restaura a seção ativa salva ou usa 'overview' como padrão
+        const savedSection = localStorage.getItem('controle-se-active-section') || 'overview';
+        
+        // Atualiza navegação
+        document.querySelectorAll('.nav-item').forEach(item => {
+            item.classList.remove('active');
+            if (item.dataset.section === savedSection) {
+                item.classList.add('active');
+            }
+        });
+        
+        // Atualiza seções de conteúdo
+        document.querySelectorAll('.content-section').forEach(section => section.classList.remove('active'));
+        const targetSection = document.getElementById(`${savedSection}-section`);
+        if (targetSection) {
+            targetSection.classList.add('active');
+        } else {
+            // Fallback para overview se a seção não existir
+            document.getElementById('overview-section').classList.add('active');
+            document.querySelector('[data-section="overview"]').classList.add('active');
+        }
+        
         // Load dashboard data
         this.loadDashboardData();
+        
+        // Carrega os dados da seção ativa
+        this.loadSectionData(savedSection);
     }
 
     navigateToSection(e) {
         e.preventDefault();
         const section = e.target.closest('.nav-item').dataset.section;
+        
+        // Salva a seção ativa no localStorage
+        localStorage.setItem('controle-se-active-section', section);
         
         // Update navigation
         document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
