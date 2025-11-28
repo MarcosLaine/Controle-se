@@ -1792,19 +1792,22 @@ public class BancoDados {
                                     double precoAporte, double corretagem, String corretora,
                                     LocalDate dataAporte, int idUsuario, int idConta, String moeda) {
         return cadastrarInvestimento(nome, nomeAtivo, categoria, quantidade, precoAporte, corretagem, corretora,
-                                    dataAporte, idUsuario, idConta, moeda, null, null, null, null);
+                                    dataAporte, idUsuario, idConta, moeda, null, null, null, null, null);
     }
     
     public int cadastrarInvestimento(String nome, String nomeAtivo, String categoria, double quantidade, 
                                     double precoAporte, double corretagem, String corretora,
                                     LocalDate dataAporte, int idUsuario, int idConta, String moeda,
-                                    String tipoRentabilidade, String indice, Double taxaFixa, LocalDate dataVencimento) {
+                                    String tipoInvestimento, String tipoRentabilidade, String indice, Double taxaFixa, LocalDate dataVencimento) {
         int idInvestimento = proximoIdInvestimento++;
         Investimento investimento = new Investimento(idInvestimento, nome, nomeAtivo, categoria, quantidade,
                                                    precoAporte, corretagem, corretora, dataAporte,
                                                    idUsuario, idConta, moeda);
         
         // Define campos específicos de renda fixa
+        if (tipoInvestimento != null) {
+            investimento.setTipoInvestimento(tipoInvestimento);
+        }
         if (tipoRentabilidade != null) {
             investimento.setTipoRentabilidade(tipoRentabilidade);
         }

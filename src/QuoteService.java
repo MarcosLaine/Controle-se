@@ -802,10 +802,10 @@ public class QuoteService {
     
     /**
      * Calcula o valor atual de um investimento de renda fixa
-     * baseado no tipo de rentabilidade e índice escolhido
+     * baseado no tipo de rentabilidade e índice escolhido, considerando impostos
      */
-    public double calculateFixedIncomeValue(double valorAporte, String tipoRentabilidade, 
-                                           String indice, Double taxaFixa, 
+    public double calculateFixedIncomeValue(double valorAporte, String tipoInvestimento,
+                                           String tipoRentabilidade, String indice, Double taxaFixa, 
                                            LocalDate dataAporte, LocalDate dataVencimento) {
         if (dataVencimento == null || dataAporte == null) {
             return valorAporte; // Se não tem vencimento, retorna o valor original
@@ -827,7 +827,7 @@ public class QuoteService {
             // Pré-fixado: usa a taxa fixa fornecida
             taxaAnual = taxaFixa != null ? taxaFixa : 0.0;
         } else if ("POS_FIXADO".equals(tipoRentabilidade) || "POS_FIXADO_TAXA".equals(tipoRentabilidade)) {
-            // Pós-fixado: busca taxa do índice
+            // Pós-fixado: busca taxa do índice (real)
             taxaAnual = getIndexRate(indice);
             
             // Se for pós-fixado + taxa fixa, soma a taxa fixa
@@ -839,35 +839,165 @@ public class QuoteService {
         // Calcula taxa diária (considerando ano comercial de 252 dias úteis)
         double taxaDiaria = taxaAnual / 100.0 / 252.0;
         
-        // Calcula valor com juros compostos dia a dia
-        double valorAtual = valorAporte;
+        // Calcula valor bruto com juros compostos dia a dia
+        double valorBruto = valorAporte;
         for (long i = 0; i < diasDecorridos; i++) {
-            valorAtual *= (1 + taxaDiaria);
+            valorBruto *= (1 + taxaDiaria);
         }
         
-        return valorAtual;
+        // Calcula rendimento bruto
+        double rendimentoBruto = valorBruto - valorAporte;
+        
+        // Verifica se há imposto de renda (LCI e LCA são isentos)
+        boolean isentoIR = tipoInvestimento != null && 
+                          ("LCI".equals(tipoInvestimento) || "LCA".equals(tipoInvestimento));
+        
+        double rendimentoLiquido = rendimentoBruto;
+        if (!isentoIR && rendimentoBruto > 0) {
+            // Calcula alíquota de IR baseada na tabela regressiva
+            double aliquotaIR = getIRTax(diasDecorridos);
+            double imposto = rendimentoBruto * (aliquotaIR / 100.0);
+            rendimentoLiquido = rendimentoBruto - imposto;
+        }
+        
+        // Retorna valor líquido (aporte + rendimento líquido)
+        return valorAporte + rendimentoLiquido;
     }
     
     /**
-     * Retorna a taxa anual atual de um índice
-     * Valores aproximados baseados em dados históricos recentes
+     * Retorna a alíquota de Imposto de Renda baseada na tabela regressiva
+     * Tabela regressiva:
+     * - Até 180 dias: 22,5%
+     * - De 181 a 360 dias: 20%
+     * - De 361 a 720 dias: 17,5%
+     * - Acima de 720 dias: 15%
+     */
+    private double getIRTax(long dias) {
+        if (dias <= 180) {
+            return 22.5;
+        } else if (dias <= 360) {
+            return 20.0;
+        } else if (dias <= 720) {
+            return 17.5;
+        } else {
+            return 15.0;
+        }
+    }
+    
+    /**
+     * Retorna a taxa anual atual de um índice buscando de APIs reais
+     * Tenta buscar de APIs públicas, com fallback para valores aproximados
      */
     private double getIndexRate(String indice) {
         if (indice == null) {
             return 0.0;
         }
         
+        try {
+            switch (indice.toUpperCase()) {
+                case "SELIC":
+                    return getSELICRate();
+                case "CDI":
+                    return getCDIRate();
+                case "IPCA":
+                    return getIPCARate();
+                case "PRE":
+                    return 12.0; // Taxa pré-fixada padrão (deveria vir do investimento)
+                default:
+                    return 10.0; // Taxa padrão
+            }
+        } catch (Exception e) {
+            System.err.println("Erro ao buscar taxa do índice " + indice + ": " + e.getMessage());
+            // Fallback para valores aproximados
+            return getFallbackRate(indice);
+        }
+    }
+    
+    /**
+     * Busca taxa SELIC atual da API Brasil API
+     */
+    private double getSELICRate() {
+        try {
+            // API Brasil API - taxa SELIC
+            String url = "https://brasilapi.com.br/api/taxas/v1/selic";
+            String response = httpGet(url);
+            
+            if (response != null && response.contains("valor")) {
+                // Procura pelo campo "valor" na resposta
+                int valorIdx = response.indexOf("\"valor\"");
+                if (valorIdx > 0) {
+                    int valueStart = response.indexOf(":", valorIdx) + 1;
+                    int valueEnd = response.indexOf(",", valueStart);
+                    if (valueEnd == -1) valueEnd = response.indexOf("}", valueStart);
+                    String rateStr = response.substring(valueStart, valueEnd).trim();
+                    double rate = Double.parseDouble(rateStr);
+                    return rate; // Retorna taxa anual
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("Erro ao buscar SELIC: " + e.getMessage());
+        }
+        // Fallback
+        return 10.5;
+    }
+    
+    /**
+     * Busca taxa CDI atual (aproximação: CDI geralmente é um pouco menor que SELIC)
+     */
+    private double getCDIRate() {
+        try {
+            // CDI geralmente é 0,1% a 0,2% menor que SELIC
+            double selic = getSELICRate();
+            return selic - 0.15; // Aproximação
+        } catch (Exception e) {
+            System.err.println("Erro ao buscar CDI: " + e.getMessage());
+        }
+        // Fallback
+        return 10.35;
+    }
+    
+    /**
+     * Busca taxa IPCA acumulado em 12 meses
+     */
+    private double getIPCARate() {
+        try {
+            // API Brasil API - IPCA
+            String url = "https://brasilapi.com.br/api/ibge/inflacao/v1/ipca";
+            String response = httpGet(url);
+            
+            if (response != null && response.contains("valor")) {
+                // Procura pelo último valor do IPCA acumulado em 12 meses
+                // A API retorna um array, precisamos pegar o último valor acumulado
+                int lastAccumulatedIdx = response.lastIndexOf("\"acumulado12Meses\"");
+                if (lastAccumulatedIdx > 0) {
+                    int valueStart = response.indexOf(":", lastAccumulatedIdx) + 1;
+                    int valueEnd = response.indexOf(",", valueStart);
+                    if (valueEnd == -1) valueEnd = response.indexOf("}", valueStart);
+                    String rateStr = response.substring(valueStart, valueEnd).trim();
+                    double rate = Double.parseDouble(rateStr);
+                    return rate;
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("Erro ao buscar IPCA: " + e.getMessage());
+        }
+        // Fallback
+        return 4.62;
+    }
+    
+    /**
+     * Retorna taxa de fallback quando não consegue buscar da API
+     */
+    private double getFallbackRate(String indice) {
         switch (indice.toUpperCase()) {
             case "SELIC":
-                return 10.50; // Taxa SELIC atual (aproximada - deveria buscar de API do BCB)
+                return 10.5;
             case "CDI":
-                return 10.25; // CDI geralmente é um pouco menor que SELIC
+                return 10.35;
             case "IPCA":
-                return 4.62; // IPCA acumulado em 12 meses (aproximado)
-            case "PRE":
-                return 12.0; // Taxa pré-fixada padrão (deveria vir do investimento)
+                return 4.62;
             default:
-                return 10.0; // Taxa padrão
+                return 10.0;
         }
     }
     

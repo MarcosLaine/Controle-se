@@ -1845,6 +1845,7 @@ public class ControleSeServer {
                     if ("RENDA_FIXA".equals(inv.getCategoria())) {
                         currentValue = quoteService.calculateFixedIncomeValue(
                             valorAporteBRL,
+                            inv.getTipoInvestimento(),
                             inv.getTipoRentabilidade(),
                             inv.getIndice(),
                             inv.getTaxaFixa(),
@@ -1891,6 +1892,7 @@ public class ControleSeServer {
                     
                     // Campos específicos de renda fixa
                     if ("RENDA_FIXA".equals(inv.getCategoria())) {
+                        invData.put("tipoInvestimento", inv.getTipoInvestimento());
                         invData.put("tipoRentabilidade", inv.getTipoRentabilidade());
                         invData.put("indice", inv.getIndice());
                         invData.put("taxaFixa", inv.getTaxaFixa());
@@ -2008,12 +2010,14 @@ public class ControleSeServer {
                 }
                 
                 // Processa campos específicos de renda fixa
+                String tipoInvestimento = null;
                 String tipoRentabilidade = null;
                 String indice = null;
                 Double taxaFixa = null;
                 LocalDate dataVencimento = null;
                 
                 if ("RENDA_FIXA".equals(categoria)) {
+                    tipoInvestimento = (String) data.get("tipoInvestimento");
                     // Para renda fixa, o valorAporte vem diretamente
                     if (data.containsKey("valorAporte")) {
                         double valorAporte = ((Number) data.get("valorAporte")).doubleValue();
@@ -2051,7 +2055,7 @@ public class ControleSeServer {
                 int investmentId = bancoDados.cadastrarInvestimento(nome, nomeAtivo, categoria, quantidade, 
                                                                   precoAporte, corretagem, corretoraFinal,
                                                                   dataAporte, userId, accountId, moeda,
-                                                                  tipoRentabilidade, indice, taxaFixa, dataVencimento);
+                                                                  tipoInvestimento, tipoRentabilidade, indice, taxaFixa, dataVencimento);
                 
                 Map<String, Object> response = new HashMap<>();
                 response.put("success", true);

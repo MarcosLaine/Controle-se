@@ -3625,6 +3625,21 @@ class ControleSeApp {
                     </small>
                 </div>
                 <div class="form-group">
+                    <label for="fixed-income-investment-type">Tipo de Investimento</label>
+                    <select id="fixed-income-investment-type" required>
+                        <option value="">Selecione...</option>
+                        <option value="CDB">CDB (Certificado de Depósito Bancário)</option>
+                        <option value="LCI">LCI (Letra de Crédito Imobiliário)</option>
+                        <option value="LCA">LCA (Letra de Crédito do Agronegócio)</option>
+                        <option value="TESOURO">Tesouro Direto</option>
+                        <option value="DEBENTURE">Debênture</option>
+                        <option value="OUTROS">Outros</option>
+                    </select>
+                    <small style="color: var(--neutral-600); margin-top: 4px; display: block;">
+                        <i class="fas fa-info-circle"></i> LCI e LCA são isentos de Imposto de Renda
+                    </small>
+                </div>
+                <div class="form-group">
                     <label for="fixed-income-issuer">Emissor (opcional)</label>
                     <input type="text" id="fixed-income-issuer" placeholder="Ex: Banco XYZ, Itaú, Bradesco">
                     <small style="color: var(--neutral-600); margin-top: 4px; display: block;">
@@ -3764,6 +3779,7 @@ class ControleSeApp {
         e.preventDefault();
         
         const name = document.getElementById('fixed-income-name').value;
+        const investmentType = document.getElementById('fixed-income-investment-type').value;
         const issuer = document.getElementById('fixed-income-issuer').value.trim() || null;
         const type = document.getElementById('fixed-income-type').value;
         const index = document.getElementById('fixed-income-index').value;
@@ -3773,6 +3789,12 @@ class ControleSeApp {
         const date = document.getElementById('fixed-income-date').value;
         const maturity = document.getElementById('fixed-income-maturity').value;
         const accountIdValue = document.getElementById('fixed-income-account').value;
+        
+        // Valida tipo de investimento
+        if (!investmentType) {
+            this.showToast('Selecione o tipo de investimento', 'error');
+            return;
+        }
         
         // Validações
         if (isNaN(amount) || amount <= 0) {
@@ -3811,6 +3833,7 @@ class ControleSeApp {
                 categoria: 'RENDA_FIXA',
                 quantidade: 1, // Renda fixa usa quantidade = 1
                 valorAporte: amount,
+                tipoInvestimento: investmentType,
                 tipoRentabilidade: type,
                 indice: index || null,
                 taxaFixa: type === 'POS_FIXADO_TAXA' ? fixedRate : (type === 'PRE_FIXADO' ? preRate : null),
