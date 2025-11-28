@@ -2880,6 +2880,9 @@ class ControleSeApp {
         sortedCategories.forEach(categoria => {
             const categoryInvestments = investmentsByCategory[categoria];
             const categoryTotal = categoryInvestments.reduce((sum, inv) => sum + (parseFloat(inv.valorAtual) || 0), 0);
+            const categoryInvested = categoryInvestments.reduce((sum, inv) => sum + (parseFloat(inv.valorAporte) || 0), 0);
+            const categoryReturn = categoryTotal - categoryInvested;
+            const categoryReturnPercent = categoryInvested > 0 ? (categoryReturn / categoryInvested) * 100 : 0;
             const categoryName = categoryNames[categoria] || categoria;
             const categoryIcon = categoryIcons[categoria] || 'fa-wallet';
             
@@ -2897,7 +2900,15 @@ class ControleSeApp {
                         </div>
                     </div>
                     <div class="category-header-right">
-                        <span class="category-total">${this.formatCurrency(categoryTotal)}</span>
+                        <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 4px;">
+                            <span class="category-total">${this.formatCurrency(categoryTotal)}</span>
+                            <span style="font-size: 0.85rem; color: var(--neutral-600);">
+                                Investido: ${this.formatCurrency(categoryInvested)}
+                                <span style="margin-left: 8px; color: ${categoryReturn >= 0 ? 'var(--success-color)' : 'var(--danger-color)'};">
+                                    (${categoryReturnPercent >= 0 ? '+' : ''}${categoryReturnPercent.toFixed(2)}%)
+                                </span>
+                            </span>
+                        </div>
                         <i class="fas fa-chevron-down category-chevron"></i>
                     </div>
                 </div>
