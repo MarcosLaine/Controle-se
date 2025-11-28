@@ -790,7 +790,7 @@ public class QuoteService {
         }
         
         // Fallback: taxa aproximada USD/BRL
-        return 5.0;
+        return 6.0;
     }
     
     /**

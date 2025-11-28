@@ -1807,17 +1807,24 @@ public class ControleSeServer {
                     QuoteService.QuoteResult quote = quoteService.getQuote(inv.getNome(), inv.getCategoria(), null);
                     double currentPrice = quote != null && quote.success ? quote.price : inv.getPrecoAporte();
                     
-                    // Converte para BRL se necessário
-                    if (quote != null && !"BRL".equals(inv.getMoeda()) && !"BRL".equals(quote.currency)) {
+                    // Converte preço atual para BRL se a cotação vier em outra moeda (ex: USD para Crypto/Stocks)
+                    if (quote != null && quote.success && !"BRL".equals(quote.currency)) {
                         double exchangeRate = quoteService.getExchangeRate(quote.currency, "BRL");
                         currentPrice *= exchangeRate;
                     }
                     
-                    double currentValue = inv.getQuantidade() * currentPrice;
-                    double returnValue = currentValue - inv.getValorAporte();
-                    double returnPercent = inv.getValorAporte() > 0 ? (returnValue / inv.getValorAporte()) * 100 : 0;
+                    // Converte valor do aporte para BRL se o investimento foi registrado em outra moeda
+                    double valorAporteBRL = inv.getValorAporte();
+                    if (!"BRL".equals(inv.getMoeda())) {
+                        double exchangeRate = quoteService.getExchangeRate(inv.getMoeda(), "BRL");
+                        valorAporteBRL *= exchangeRate;
+                    }
                     
-                    totalInvested += inv.getValorAporte();
+                    double currentValue = inv.getQuantidade() * currentPrice;
+                    double returnValue = currentValue - valorAporteBRL;
+                    double returnPercent = valorAporteBRL > 0 ? (returnValue / valorAporteBRL) * 100 : 0;
+                    
+                    totalInvested += valorAporteBRL;
                     totalCurrent += currentValue;
                     
                     Map<String, Object> invData = new HashMap<>();
