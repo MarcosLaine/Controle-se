@@ -10,6 +10,7 @@ class ControleSeApp {
         this.accountsCache = []; // Cache de contas
         this.tagsCache = []; // Cache de tags
         this.transactionsCache = []; // Cache de transações
+        this.investmentsCache = []; // Cache de investimentos
         this._loadingAccounts = false; // Flag para evitar loops infinitos ao carregar contas
         this.init();
     }
@@ -2804,9 +2805,23 @@ class ControleSeApp {
             const userId = this.currentUser ? this.currentUser.id : 1;
             const response = await this.apiCall(`/investments?userId=${userId}`, 'GET');
             if (response.success) {
+                this.investmentsCache = response.data; // Armazena investimentos
                 this.renderInvestments(response.data, response.summary);
-                this.updateInvestmentsChart(response.data);
+                
+                // Obtém o período selecionado ou usa 'max' como padrão
+                const periodSelect = document.getElementById('chart-period-select');
+                const selectedPeriod = periodSelect ? periodSelect.value : 'max';
+                this.updateInvestmentsChart(response.data, selectedPeriod);
                 this.updateAssetsAllocationChart(response.data);
+                
+                // Adiciona listener para mudança de período (apenas uma vez)
+                if (periodSelect && !periodSelect.dataset.listenerAdded) {
+                    periodSelect.dataset.listenerAdded = 'true';
+                    periodSelect.addEventListener('change', (e) => {
+                        const period = e.target.value;
+                        this.updateInvestmentsChart(this.investmentsCache, period);
+                    });
+                }
             }
         } catch (error) {
             console.error('Error loading investments:', error);
@@ -3114,7 +3129,53 @@ class ControleSeApp {
         });
     }
     
-    updateInvestmentsChart(investments) {
+    filterInvestmentsByPeriod(investments, period) {
+        if (!investments || investments.length === 0) {
+            return investments;
+        }
+        
+        if (period === 'max') {
+            return investments; // Retorna todos os investimentos
+        }
+        
+        const now = new Date();
+        now.setHours(23, 59, 59, 999); // Fim do dia atual
+        const cutoffDate = new Date();
+        cutoffDate.setHours(0, 0, 0, 0); // Início do dia de corte
+        
+        switch (period) {
+            case '1d':
+                cutoffDate.setDate(now.getDate() - 1);
+                break;
+            case '5d':
+                cutoffDate.setDate(now.getDate() - 5);
+                break;
+            case '1m':
+                cutoffDate.setMonth(now.getMonth() - 1);
+                break;
+            case '6m':
+                cutoffDate.setMonth(now.getMonth() - 6);
+                break;
+            case '1y':
+                cutoffDate.setFullYear(now.getFullYear() - 1);
+                break;
+            case '5y':
+                cutoffDate.setFullYear(now.getFullYear() - 5);
+                break;
+            default:
+                return investments;
+        }
+        
+        // Filtra investimentos cuja data de aporte seja maior ou igual à data de corte
+        // Isso mostra apenas os aportes feitos no período selecionado
+        return investments.filter(inv => {
+            const aporteDate = new Date(inv.dataAporte);
+            aporteDate.setHours(0, 0, 0, 0);
+            return aporteDate >= cutoffDate;
+        });
+    }
+    
+    updateInvestmentsChart(investments, period = 'max') {
         const ctx = document.getElementById('investments-chart');
         if (!ctx) return;
         
@@ -3144,24 +3205,67 @@ class ControleSeApp {
         }, {});
 
         // Converte para array e ordena
-        const sortedInvestments = Object.values(investmentsByDate).sort((a, b) => 
+        const allSortedInvestments = Object.values(investmentsByDate).sort((a, b) => 
             new Date(a.date) - new Date(b.date)
         );
         
-        const labels = sortedInvestments.map(item => this.formatDate(item.date));
-        const investedData = [];
-        const currentData = [];
+        // Calcula valores cumulativos desde o início (para todos os investimentos)
         let cumulativeInvested = 0;
         let cumulativeCurrent = 0;
-        
-        sortedInvestments.forEach(item => {
+        const cumulativeData = allSortedInvestments.map(item => {
             cumulativeInvested += item.valorAporte;
             cumulativeCurrent += item.valorAtual;
-            
-            // Garante que os valores são números válidos
-            investedData.push(isNaN(cumulativeInvested) || !isFinite(cumulativeInvested) ? 0 : cumulativeInvested);
-            currentData.push(isNaN(cumulativeCurrent) || !isFinite(cumulativeCurrent) ? 0 : cumulativeCurrent);
+            return {
+                date: item.date,
+                cumulativeInvested: cumulativeInvested,
+                cumulativeCurrent: cumulativeCurrent
+            };
         });
+        
+        // Filtra pontos de dados baseado no período selecionado
+        let filteredData = cumulativeData;
+        if (period !== 'max') {
+            const now = new Date();
+            now.setHours(23, 59, 59, 999);
+            const cutoffDate = new Date();
+            cutoffDate.setHours(0, 0, 0, 0);
+            
+            switch (period) {
+                case '1d':
+                    cutoffDate.setDate(now.getDate() - 1);
+                    break;
+                case '5d':
+                    cutoffDate.setDate(now.getDate() - 5);
+                    break;
+                case '1m':
+                    cutoffDate.setMonth(now.getMonth() - 1);
+                    break;
+                case '6m':
+                    cutoffDate.setMonth(now.getMonth() - 6);
+                    break;
+                case '1y':
+                    cutoffDate.setFullYear(now.getFullYear() - 1);
+                    break;
+                case '5y':
+                    cutoffDate.setFullYear(now.getFullYear() - 5);
+                    break;
+            }
+            
+            // Filtra apenas os pontos dentro do período
+            filteredData = cumulativeData.filter(item => {
+                const itemDate = new Date(item.date);
+                itemDate.setHours(0, 0, 0, 0);
+                return itemDate >= cutoffDate;
+            });
+        }
+        
+        const labels = filteredData.map(item => this.formatDate(item.date));
+        const investedData = filteredData.map(item => 
+            isNaN(item.cumulativeInvested) || !isFinite(item.cumulativeInvested) ? 0 : item.cumulativeInvested
+        );
+        const currentData = filteredData.map(item => 
+            isNaN(item.cumulativeCurrent) || !isFinite(item.cumulativeCurrent) ? 0 : item.cumulativeCurrent
+        );
         
         // Calcula valores mínimo e máximo para a escala
         const allValues = [...investedData, ...currentData].filter(v => 
