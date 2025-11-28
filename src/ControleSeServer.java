@@ -1840,9 +1840,12 @@ public class ControleSeServer {
                     
                     // Converte valor do aporte para BRL se o investimento foi registrado em outra moeda
                     double valorAporteBRL = inv.getValorAporte();
+                    double precoAporteBRL = inv.getPrecoAporte();
+                    
                     if (!"BRL".equals(inv.getMoeda())) {
                         double exchangeRate = quoteService.getExchangeRate(inv.getMoeda(), "BRL");
                         valorAporteBRL *= exchangeRate;
+                        precoAporteBRL *= exchangeRate;
                     }
                     
                     double currentValue = inv.getQuantidade() * currentPrice;
@@ -1858,8 +1861,8 @@ public class ControleSeServer {
                     invData.put("nomeAtivo", inv.getNomeAtivo());
                     invData.put("categoria", inv.getCategoria());
                     invData.put("quantidade", inv.getQuantidade());
-                    invData.put("precoAporte", inv.getPrecoAporte());
-                    invData.put("valorAporte", inv.getValorAporte());
+                    invData.put("precoAporte", precoAporteBRL);
+                    invData.put("valorAporte", valorAporteBRL);
                     invData.put("corretagem", inv.getCorretagem());
                     invData.put("corretora", inv.getCorretora());
                     invData.put("dataAporte", inv.getDataAporte().toString());
