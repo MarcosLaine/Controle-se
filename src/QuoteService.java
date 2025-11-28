@@ -110,7 +110,8 @@ public class QuoteService {
             }
             
             // Primeiro tenta fazer o parse do preço
-            double price = parseYahooPrice(response);
+            boolean isHistorical = date != null && !date.equals(LocalDate.now());
+            double price = parseYahooPrice(response, isHistorical);
             String assetName = parseAssetNameFromYahooResponse(response, symbol);
             
             if (price > 0) {
@@ -224,7 +225,8 @@ public class QuoteService {
             }
             
             // Primeiro tenta fazer o parse do preço
-            double price = parseYahooPrice(response);
+            boolean isHistorical = date != null && !date.equals(LocalDate.now());
+            double price = parseYahooPrice(response, isHistorical);
             String assetName = parseAssetNameFromYahooResponse(response, symbol);
             
             if (price > 0) {
@@ -573,8 +575,15 @@ public class QuoteService {
     /**
      * Parse preço de resposta Yahoo Finance
      */
-    private double parseYahooPrice(String response) {
+    private double parseYahooPrice(String response, boolean isHistorical) {
         try {
+            // Se for busca histórica, tenta primeiro buscar nos arrays (chart indicators)
+            // pois os campos de metadata (regularMarketPrice) trazem o valor atual
+            if (isHistorical) {
+                double priceFromArray = parsePriceFromYahooArray(response);
+                if (priceFromArray > 0) return priceFromArray;
+            }
+
             // Tenta vários campos possíveis (em ordem de prioridade)
             String[] priceFields = {"regularMarketPrice", "previousClose", "close", "price"};
             
@@ -636,6 +645,20 @@ public class QuoteService {
                 }
             }
             
+            // Se não for histórico (ou se falhou acima), tenta array como fallback
+            if (!isHistorical) {
+                 double priceFromArray = parsePriceFromYahooArray(response);
+                 if (priceFromArray > 0) return priceFromArray;
+            }
+            
+        } catch (Exception e) {
+            System.err.println("Erro ao fazer parse do preço Yahoo: " + e.getMessage());
+        }
+        return 0.0;
+    }
+
+    private double parsePriceFromYahooArray(String response) {
+        try {
             // Tenta buscar em arrays (result.chart.result[0].indicators.quote[0].close)
             int resultIdx = response.indexOf("\"result\"");
             if (resultIdx > 0) {
@@ -673,7 +696,7 @@ public class QuoteService {
                 }
             }
         } catch (Exception e) {
-            System.err.println("Erro ao fazer parse do preço Yahoo: " + e.getMessage());
+            System.err.println("Erro ao extrair preço do array Yahoo: " + e.getMessage());
         }
         return 0.0;
     }
