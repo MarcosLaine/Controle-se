@@ -1170,7 +1170,7 @@ input, select, textarea {
 .category-header-right {
     display: flex;
     align-items: center;
-    gap: var(--spacing-4);
+    gap: var(--spacing-3);
 }
 
 .category-total {
@@ -1201,6 +1201,60 @@ input, select, textarea {
 
 [data-theme="dark"] .category-content {
     background: var(--neutral-100);
+}
+
+/* Investment Category Section - Better separation */
+.investment-category-section {
+    background: var(--neutral-100);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--neutral-200);
+    margin-bottom: var(--spacing-4);
+    overflow: hidden;
+    box-shadow: var(--shadow-sm);
+    transition: all var(--transition-fast);
+}
+
+[data-theme="dark"] .investment-category-section {
+    background: var(--neutral-200);
+    border-color: var(--neutral-300);
+}
+
+.investment-category-section:hover {
+    box-shadow: var(--shadow-md);
+    border-color: var(--neutral-300);
+}
+
+[data-theme="dark"] .investment-category-section:hover {
+    border-color: var(--neutral-400);
+}
+
+/* Category Values Container */
+.category-values {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: var(--spacing-1);
+}
+
+.category-return {
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+}
+
+.category-return.positive {
+    color: var(--success-color);
+}
+
+.category-return.negative {
+    color: var(--error-color);
+}
+
+[data-theme="dark"] .category-return.positive {
+    color: #4ade80;
+}
+
+[data-theme="dark"] .category-return.negative {
+    color: #f87171;
 }
 
 .investments-grid {
