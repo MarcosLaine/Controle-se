@@ -10,6 +10,7 @@
 \usepackage{float}
 \usepackage{caption}
 \captionsetup{font=small,labelfont=bf}
+\usepackage{amsmath}
 \usepackage{hyperref}
 \hypersetup{colorlinks=true, linkcolor=black, urlcolor=blue}
 
@@ -173,7 +174,7 @@ O \textbf{Hash Extensível} foi implementado para gerenciar relacionamentos 1:N,
   \item \textbf{inserir(chave, valor)}: Inserção com divisão de bucket se necessário — O(1) médio
   \item \textbf{buscar(chave)}: Retorna lista de valores associados — O(1) médio
   \item \textbf{remover(chave)}: Remove todas entradas com a chave — O(1) médio
-  \item \textbf{expandirDiretorio()}: Duplica diretório quando necessário — O(2^d) onde d = profundidade
+  \item \textbf{expandirDiretorio()}: Duplica diretório quando necessário — $O(2^d)$ onde $d$ = profundidade
 \end{itemize}
 
 \section{Análise de Complexidade}
@@ -573,7 +574,7 @@ Os relacionamentos 1:N foram implementados através de:
 
 O sistema implementa dois relacionamentos N:N principais através de tabelas de junção, permitindo que múltiplas entidades se relacionem de forma flexível e eficiente.
 
-\subsubsection*{Categoria ↔ Gasto (N:N)}
+\subsubsection*{Categoria $\leftrightarrow$ Gasto (N:N)}
 \begin{itemize}
   \item \textbf{Tabela de Junção}: \texttt{CategoriaGasto}
   \item \textbf{Chaves}: \texttt{idCategoriaGasto} (PK), \texttt{idCategoria} (FK), \texttt{idGasto} (FK)
@@ -586,7 +587,7 @@ O sistema implementa dois relacionamentos N:N principais através de tabelas de 
     \end{itemize}
 \end{itemize}
 
-\subsubsection*{Tag ↔ Transação (N:N)}
+\subsubsection*{Tag $\leftrightarrow$ Transação (N:N)}
 \begin{itemize}
   \item \textbf{Tabela de Junção}: \texttt{TransacaoTag}
   \item \textbf{Chaves}: \texttt{idTransacaoTag} (PK), \texttt{idTransacao} (FK), \texttt{tipoTransacao} ("GASTO" ou "RECEITA"), \texttt{idTag} (FK)
@@ -781,11 +782,11 @@ O sistema permite combinar filtros por categoria (via relacionamento N:N) com ou
 O sistema implementa dois relacionamentos N:N principais:
 
 \begin{itemize}
-  \item \textbf{Categoria ↔ Gasto (N:N)}: Conecta as tabelas \texttt{Categoria} e \texttt{Gasto} através da tabela intermediária \texttt{CategoriaGasto}. Este relacionamento permite que um gasto tenha múltiplas categorias e que uma categoria possa estar associada a múltiplos gastos.
-  \item \textbf{Tag ↔ Transação (N:N)}: Conecta as tabelas \texttt{Tag} e \texttt{Transação} (que pode ser \texttt{Gasto} ou \texttt{Receita}) através da tabela intermediária \texttt{TransacaoTag}. Este relacionamento permite que uma transação tenha múltiplas tags e que uma tag possa estar associada a múltiplas transações.
+  \item \textbf{Categoria $\leftrightarrow$ Gasto (N:N)}: Conecta as tabelas \texttt{Categoria} e \texttt{Gasto} através da tabela intermediária \texttt{CategoriaGasto}. Este relacionamento permite que um gasto tenha múltiplas categorias e que uma categoria possa estar associada a múltiplos gastos.
+  \item \textbf{Tag $\leftrightarrow$ Transação (N:N)}: Conecta as tabelas \texttt{Tag} e \texttt{Transação} (que pode ser \texttt{Gasto} ou \texttt{Receita}) através da tabela intermediária \texttt{TransacaoTag}. Este relacionamento permite que uma transação tenha múltiplas tags e que uma tag possa estar associada a múltiplas transações.
 \end{itemize}
 
-O relacionamento principal escolhido para a Fase III é o \textbf{Categoria ↔ Gasto}, que é o relacionamento N:N fundamental do sistema, permitindo categorização múltipla e flexível dos gastos.
+O relacionamento principal escolhido para a Fase III é o \textbf{Categoria $\leftrightarrow$ Gasto}, que é o relacionamento N:N fundamental do sistema, permitindo categorização múltipla e flexível dos gastos.
 
 \textbf{2. Qual estrutura de índice foi utilizada (B+ ou Hash Extensível)? Justifique a escolha.}
 
@@ -839,7 +840,7 @@ A busca eficiente é realizada através dos índices Hash Extensível bidirecion
       \item Retorna a lista de objetos \texttt{CategoriaGasto} associados àquele gasto
       \item Filtra relacionamentos ativos e busca as categorias correspondentes na Árvore B+ — O(log n) por categoria
     \end{itemize}
-  \item \textbf{Complexidade total}: O(1) médio para acessar o índice + O(k) onde k = número de relacionamentos retornados + O(k × log n) para buscar as entidades relacionadas na Árvore B+
+  \item \textbf{Complexidade total}: $O(1)$ médio para acessar o índice + $O(k)$ onde $k$ = número de relacionamentos retornados + $O(k \times \log n)$ para buscar as entidades relacionadas na Árvore B+
   \item \textbf{Vantagem}: O Hash Extensível elimina a necessidade de percorrer todos os relacionamentos, acessando diretamente os relevantes através do hash
 \end{itemize}
 
@@ -1019,6 +1020,515 @@ Após a implementação da Fase III, a estrutura de diretórios e módulos do re
       \item Índices Hash Extensível para relacionamentos são inicializados em \texttt{BancoDados.java}
       \item Persistência de relacionamentos segue o mesmo padrão das outras tabelas
     \end{itemize}
+\end{itemize}
+
+\newpage
+\part*{Fase IV}
+\addcontentsline{toc}{part}{Fase IV}
+
+\section{Compressão de Dados}
+
+O sistema implementa compressão de dados utilizando dois algoritmos distintos: \textbf{Huffman} e \textbf{LZW}. A compressão é aplicada a nível de arquivo, funcionando como um sistema completo de backup que gera um único arquivo compactado contendo todos os arquivos de dados do sistema.
+
+\subsection{Implementação dos Algoritmos de Compressão}
+
+\subsubsection*{Algoritmo de Huffman}
+
+O algoritmo de Huffman foi implementado utilizando uma \textbf{árvore binária} para representar os códigos de compressão. A estrutura de dados utilizada é:
+
+\begin{itemize}
+  \item \textbf{Árvore binária}: Cada nó representa um byte ou um nó interno da árvore
+  \item \textbf{PriorityQueue (Heap)}: Utilizada para construir a árvore de Huffman, ordenando nós por frequência
+  \item \textbf{HashMap}: Armazena o mapa de frequências de bytes e o mapa de códigos gerados
+\end{itemize}
+
+\textbf{Processo de compressão:}
+\begin{enumerate}
+  \item Calcula a frequência de cada byte no arquivo
+  \item Constrói a árvore de Huffman combinando os dois nós com menor frequência
+  \item Gera códigos binários para cada byte percorrendo a árvore
+  \item Serializa a árvore (necessária para descompressão)
+  \item Codifica os dados usando os códigos gerados
+  \item Converte a string binária para bytes
+\end{enumerate}
+
+\textbf{Formato do arquivo comprimido:}
+\begin{itemize}
+  \item Tamanho da árvore (4 bytes)
+  \item Árvore serializada
+  \item Tamanho dos dados codificados (4 bytes)
+  \item Dados codificados
+  \item Tamanho original em bits (4 bytes)
+\end{itemize}
+
+\subsubsection*{Algoritmo LZW (Lempel-Ziv-Welch)}
+
+O algoritmo LZW foi implementado utilizando um \textbf{dicionário dinâmico} que cresce durante a compressão. A estrutura de dados utilizada é:
+
+\begin{itemize}
+  \item \textbf{HashMap}: Dicionário que mapeia sequências de bytes para códigos inteiros
+  \item \textbf{ArrayList}: Armazena sequências de bytes e códigos de saída
+  \item \textbf{Tamanho do dicionário}: 4096 entradas (12 bits por código)
+\end{itemize}
+
+\textbf{Processo de compressão:}
+\begin{enumerate}
+  \item Inicializa dicionário com todos os bytes possíveis (0-255)
+  \item Percorre os dados procurando a maior sequência conhecida no dicionário
+  \item Emite o código da sequência encontrada
+  \item Adiciona nova sequência (sequência atual + próximo byte) ao dicionário
+  \item Converte códigos para bytes usando codificação de 12 bits
+\end{enumerate}
+
+\textbf{Formato do arquivo comprimido:}
+\begin{itemize}
+  \item Número de códigos (4 bytes)
+  \item Códigos em 12 bits cada
+  \item Bits de padding (1 byte)
+  \item Informação de padding (1 byte)
+\end{itemize}
+
+\subsection{Sistema de Compressão de Arquivos}
+
+A classe \texttt{FileCompressor} gerencia a compressão de todos os arquivos \texttt{.db} do sistema:
+
+\begin{itemize}
+  \item \textbf{Arquivos comprimidos}: Todos os arquivos em \texttt{data/} e \texttt{data/idx/}
+  \item \textbf{Formato do arquivo}: Um único arquivo contendo todos os arquivos de dados
+  \item \textbf{Estrutura do arquivo}: [Número de arquivos][Para cada arquivo: caminho relativo, tamanho, dados]
+  \item \textbf{Algoritmos suportados}: LZW e Huffman
+  \item \textbf{Extensões}: \texttt{.lzw} para LZW e \texttt{.huffman} para Huffman
+  \item \textbf{Localização}: \texttt{data/compressed/lzw/} e \texttt{data/compressed/huffman/}
+\end{itemize}
+
+\subsection{Resultados de Compressão}
+
+Com base nos testes realizados com 22 arquivos \texttt{.db} (8 arquivos em \texttt{data/} e 14 arquivos em \texttt{data/idx/}):
+
+\textbf{Algoritmo de Huffman:}
+\begin{itemize}
+  \item \textbf{Tamanho original}: 2.003.853 bytes
+  \item \textbf{Tamanho comprimido}: 646.220 bytes
+  \item \textbf{Taxa de compressão}: 67,75\%
+  \item \textbf{Redução}: 1.357.633 bytes (aproximadamente 1,3 MB)
+\end{itemize}
+
+\textbf{Algoritmo LZW:}
+\begin{itemize}
+  \item \textbf{Tamanho original}: 2.003.853 bytes
+  \item \textbf{Tamanho comprimido}: 406.343 bytes
+  \item \textbf{Taxa de compressão}: 79,72\%
+  \item \textbf{Redução}: 1.597.510 bytes (aproximadamente 1,5 MB)
+\end{itemize}
+
+\textbf{Análise dos resultados:}
+\begin{itemize}
+  \item O algoritmo LZW obteve melhor taxa de compressão (79,72\%) comparado ao Huffman (67,75\%)
+  \item LZW é mais eficiente para dados com padrões repetitivos, como arquivos de banco de dados
+  \item Huffman é mais eficiente para dados com distribuição desigual de frequências
+  \item Ambos os algoritmos preservam a integridade dos dados após descompressão
+\end{itemize}
+
+\subsection{Descompressão e Restauração}
+
+O sistema de descompressão restaura todos os arquivos para suas localizações originais:
+
+\begin{itemize}
+  \item \textbf{Detecção automática}: O algoritmo é identificado pela extensão do arquivo (\texttt{.lzw} ou \texttt{.huffman})
+  \item \textbf{Restauração completa}: Todos os arquivos são restaurados mantendo a estrutura de diretórios
+  \item \textbf{Verificação}: O sistema verifica a integridade dos dados após descompressão
+  \item \textbf{Validação}: Tamanho dos arquivos restaurados corresponde ao tamanho original
+\end{itemize}
+
+\section{Criptografia RSA}
+
+O sistema implementa criptografia RSA para proteger dados sensíveis, especificamente o campo \textbf{senha} da entidade \texttt{Usuario}. A criptografia é aplicada antes do armazenamento em disco, garantindo que dados sensíveis nunca sejam armazenados em texto plano.
+
+\subsection{Escolha do Campo Criptografado}
+
+O campo escolhido para criptografia foi a \textbf{senha do usuário} (\texttt{Usuario.senha}). A justificativa para esta escolha é:
+
+\begin{itemize}
+  \item \textbf{Sensibilidade}: Senhas são informações altamente sensíveis que não devem ser armazenadas em texto plano
+  \item \textbf{Segurança}: Proteção contra acesso não autorizado aos dados do sistema
+  \item \textbf{Conformidade}: Boas práticas de segurança exigem criptografia de senhas
+  \item \textbf{Impacto}: Campo crítico para autenticação e segurança do sistema
+\end{itemize}
+
+\subsection{Implementação do RSA}
+
+\subsubsection*{Estrutura das Chaves}
+
+O sistema utiliza chaves RSA com as seguintes características:
+
+\begin{itemize}
+  \item \textbf{Tamanho das chaves}: 256 bits (128 bits para cada primo p e q)
+  \item \textbf{Expoente público (e)}: 65537 (padrão RSA)
+  \item \textbf{Expoente privado (d)}: Calculado usando algoritmo estendido de Euclides
+  \item \textbf{Módulo (n)}: Produto de dois números primos grandes ($p \times q$)
+  \item \textbf{Função totiente}: $\phi(n) = (p-1) \times (q-1)$
+\end{itemize}
+
+\textbf{Justificativa do tamanho das chaves:}
+\begin{itemize}
+  \item 256 bits oferece segurança adequada para aplicações acadêmicas
+  \item Balanceamento entre segurança e performance
+  \item Chaves maiores (512+ bits) seriam mais seguras mas mais lentas
+  \item 256 bits é suficiente para proteger senhas de usuários
+\end{itemize}
+
+\subsubsection*{Geração de Números Primos}
+
+A geração de números primos utiliza o \textbf{teste de Miller-Rabin}:
+
+\begin{itemize}
+  \item \textbf{Algoritmo}: Teste probabilístico de primalidade
+  \item \textbf{Iterações}: 20 iterações para alta confiança (probabilidade de erro $< 2^{-40}$)
+  \item \textbf{Geração}: Números primos de 128 bits cada (p e q)
+  \item \textbf{Garantia}: p e q são diferentes e ímpares
+\end{itemize}
+
+\subsubsection*{Armazenamento das Chaves}
+
+As chaves RSA são armazenadas da seguinte forma:
+
+\begin{itemize}
+  \item \textbf{Arquivo}: \texttt{data/chaves\_rsa.db}
+  \item \textbf{Formato}: Serialização Java (ObjectOutputStream)
+  \item \textbf{Conteúdo}: Três objetos BigInteger serializados (n, e, d)
+  \item \textbf{Segurança}: Arquivo contém chave privada - deve ser protegido em produção
+  \item \textbf{Persistência}: Chaves são geradas uma vez e reutilizadas
+\end{itemize}
+
+\subsubsection*{Carregamento das Chaves}
+
+O sistema utiliza o padrão \textbf{Singleton} para gerenciar as chaves RSA:
+
+\begin{itemize}
+  \item \textbf{Classe}: \texttt{RSAKeyManager}
+  \item \textbf{Comportamento}: 
+    \begin{itemize}
+      \item Se o arquivo \texttt{chaves\_rsa.db} existe, carrega as chaves existentes
+      \item Se não existe, gera novas chaves e as salva
+      \item Garante que apenas uma instância de RSA é criada
+    \end{itemize}
+  \item \textbf{Inicialização}: Automática na primeira chamada de \texttt{obterInstancia()}
+  \item \textbf{Reutilização}: Mesmas chaves são usadas durante toda a execução do sistema
+\end{itemize}
+
+\subsection{Processo de Criptografia e Descriptografia}
+
+\subsubsection*{Criptografia no CRUD (CREATE)}
+
+A criptografia ocorre durante a operação de \textbf{criação de usuário}:
+
+\begin{itemize}
+  \item \textbf{Método}: \texttt{cadastrarUsuario(nome, email, senha)}
+  \item \textbf{Processo}:
+    \begin{enumerate}
+      \item Recebe a senha em texto plano
+      \item Obtém instância de RSA através de \texttt{RSAKeyManager.obterInstancia()}
+      \item Criptografa a senha usando \texttt{rsa.criptografar(senha)}
+      \item Armazena a senha criptografada no objeto \texttt{Usuario}
+      \item Persiste o usuário no arquivo \texttt{usuarios.db}
+    \end{enumerate}
+  \item \textbf{Localização no código}: \texttt{BancoDados.java}, linha 229
+  \item \textbf{Resultado}: Senha é armazenada em formato hexadecimal criptografado
+\end{itemize}
+
+\subsubsection*{Descriptografia no CRUD (READ)}
+
+A descriptografia ocorre durante a operação de \textbf{autenticação de usuário}:
+
+\begin{itemize}
+  \item \textbf{Método}: \texttt{autenticarUsuario(email, senha)}
+  \item \textbf{Processo}:
+    \begin{enumerate}
+      \item Busca o usuário pelo email
+      \item Obtém a senha criptografada do objeto \texttt{Usuario}
+      \item Obtém instância de RSA através de \texttt{RSAKeyManager.obterInstancia()}
+      \item Descriptografa a senha usando \texttt{rsa.descriptografar(usuario.getSenha())}
+      \item Compara a senha descriptografada com a senha fornecida
+    \end{enumerate}
+  \item \textbf{Localização no código}: \texttt{BancoDados.java}, linha 272
+  \item \textbf{Resultado}: Senha é descriptografada apenas para verificação, nunca retornada ao usuário
+\end{itemize}
+
+\subsection{Conversões Realizadas}
+
+O processo de criptografia RSA envolve as seguintes conversões:
+
+\begin{enumerate}
+  \item \textbf{String → Bytes}: A senha (String) é convertida para array de bytes usando \texttt{texto.getBytes()}
+  \item \textbf{Bytes → BigInteger}: Os bytes são convertidos para BigInteger usando \texttt{new BigInteger(1, bytes)}
+  \item \textbf{Criptografia}: Aplicação da fórmula RSA: $c = m^e \bmod n$
+  \item \textbf{BigInteger → Hexadecimal}: O resultado criptografado é convertido para string hexadecimal usando \texttt{criptografado.toString(16)}
+  \item \textbf{Armazenamento}: String hexadecimal é armazenada no campo \texttt{senha} do objeto \texttt{Usuario}
+\end{enumerate}
+
+\textbf{Processo de descriptografia (reverso):}
+\begin{enumerate}
+  \item \textbf{Hexadecimal → BigInteger}: String hexadecimal é convertida para BigInteger usando \texttt{new BigInteger(textoCriptografado, 16)}
+  \item \textbf{Descriptografia}: Aplicação da fórmula RSA: $m = c^d \bmod n$
+  \item \textbf{BigInteger → Bytes}: O resultado descriptografado é convertido para array de bytes usando \texttt{descriptografado.toByteArray()}
+  \item \textbf{Bytes → String}: Os bytes são convertidos de volta para String usando \texttt{new String(bytes)}
+\end{enumerate}
+
+\subsection{Tratamento de Blocos}
+
+Para mensagens maiores que o módulo n, o sistema divide em blocos:
+
+\begin{itemize}
+  \item \textbf{Tamanho do bloco}: Calculado como $(n.bitLength() - 1) / 8$ bytes
+  \item \textbf{Separação}: Blocos são separados por dois pontos (\texttt{:}) na string hexadecimal
+  \item \textbf{Processamento}: Cada bloco é criptografado/descriptografado separadamente
+  \item \textbf{Reconstrução}: Blocos são concatenados após descriptografia
+\end{itemize}
+
+\subsection{Exponenciação Modular}
+
+A implementação utiliza exponenciação modular eficiente:
+
+\begin{itemize}
+  \item \textbf{Algoritmo}: Método de exponenciação binária (square-and-multiply)
+  \item \textbf{Otimização}: Reduz complexidade de O(n) para O(log n)
+  \item \textbf{Implementação}: Método \texttt{modPow()} na classe \texttt{RSAEncryption}
+  \item \textbf{Eficiência}: Essencial para operações com números grandes
+\end{itemize}
+
+\section*{Questionário Técnico - Fase IV}
+
+\textbf{1. Qual foi a taxa de compressão obtida com o algoritmo de Huffman?}
+
+\textbf{a) Tamanho do arquivo original:}
+\begin{itemize}
+  \item 2.003.853 bytes (aproximadamente 1,96 MB)
+  \item Composto por 22 arquivos \texttt{.db} (8 arquivos em \texttt{data/} e 14 arquivos em \texttt{data/idx/})
+\end{itemize}
+
+\textbf{b) Tamanho do arquivo comprimido:}
+\begin{itemize}
+  \item 646.220 bytes (aproximadamente 631 KB)
+\end{itemize}
+
+\textbf{c) Cálculo da taxa:}
+\begin{align*}
+\text{Taxa de compressão} &= \left(1 - \frac{\text{Tamanho comprimido}}{\text{Tamanho original}}\right) \times 100\% \\
+&= \left(1 - \frac{646220}{2003853}\right) \times 100\% \\
+&= \left(1 - 0{,}3225\right) \times 100\% \\
+&= 67{,}75\%
+\end{align*}
+
+\textbf{d) Interpretação do resultado:}
+\begin{itemize}
+  \item O algoritmo de Huffman conseguiu reduzir o tamanho dos arquivos em 67,75\%
+  \item Redução de 1.357.633 bytes (aproximadamente 1,3 MB)
+  \item A compressão é eficaz devido à distribuição desigual de frequências dos bytes nos arquivos de banco de dados
+  \item Bytes mais frequentes recebem códigos menores, otimizando o espaço de armazenamento
+  \item O overhead da árvore de Huffman serializada é compensado pela eficiência da codificação
+\end{itemize}
+
+\textbf{2. Qual foi a taxa de compressão obtida com o algoritmo de LZW?}
+
+\textbf{a) Tamanho do arquivo original:}
+\begin{itemize}
+  \item 2.003.853 bytes (aproximadamente 1,96 MB)
+  \item Mesmo conjunto de 22 arquivos \texttt{.db} usado no teste de Huffman
+\end{itemize}
+
+\textbf{b) Tamanho do arquivo comprimido:}
+\begin{itemize}
+  \item 406.343 bytes (aproximadamente 397 KB)
+\end{itemize}
+
+\textbf{c) Cálculo da taxa:}
+\begin{align*}
+\text{Taxa de compressão} &= \left(1 - \frac{\text{Tamanho comprimido}}{\text{Tamanho original}}\right) \times 100\% \\
+&= \left(1 - \frac{406343}{2003853}\right) \times 100\% \\
+&= \left(1 - 0{,}2028\right) \times 100\% \\
+&= 79{,}72\%
+\end{align*}
+
+\textbf{d) Interpretação do resultado:}
+\begin{itemize}
+  \item O algoritmo LZW obteve melhor desempenho que Huffman, com 79,72\% de compressão
+  \item Redução de 1.597.510 bytes (aproximadamente 1,5 MB)
+  \item LZW é mais eficiente para dados com padrões repetitivos, como arquivos de banco de dados
+  \item O dicionário dinâmico permite identificar e codificar sequências repetidas eficientemente
+  \item A codificação de 12 bits por símbolo (4096 entradas no dicionário) oferece boa relação compressão/performance
+  \item LZW é particularmente eficaz em dados estruturados como os arquivos \texttt{.db} do sistema
+\end{itemize}
+
+\textbf{3. Quais dificuldades surgiram ao implementar Huffman e LZW e como você resolveu?}
+
+\textbf{Dificuldades na implementação de Huffman:}
+\begin{itemize}
+  \item \textbf{Serialização da árvore}: A árvore de Huffman precisa ser serializada junto com os dados comprimidos para permitir descompressão. \textbf{Solução}: Implementação de métodos \texttt{serializeTree()} e \texttt{deserializeTree()} que percorrem a árvore em pré-ordem, marcando nós folha e internos.
+  \item \textbf{Conversão binária}: Strings binárias precisam ser convertidas para bytes e vice-versa. \textbf{Solução}: Implementação de métodos \texttt{binaryStringToBytes()} e \texttt{bytesToBinaryString()} que manipulam bits individualmente.
+  \item \textbf{Caso especial de um único byte}: Quando há apenas um tipo de byte no arquivo, a árvore degenera. \textbf{Solução}: Criação de nó auxiliar para garantir que sempre haja pelo menos dois nós na árvore.
+  \item \textbf{Padding de bits}: O último byte pode não estar completo. \textbf{Solução}: Armazenamento do tamanho original em bits para descartar bits de padding durante descompressão.
+\end{itemize}
+
+\textbf{Dificuldades na implementação de LZW:}
+\begin{itemize}
+  \item \textbf{Codificação de 12 bits}: Códigos precisam ser armazenados em 12 bits (1,5 bytes), não em múltiplos de 8. \textbf{Solução}: Implementação de buffer de bits que acumula bits até formar bytes completos, com tratamento especial para padding.
+  \item \textbf{Caso especial na descompressão}: Quando um código ainda não está no dicionário durante descompressão. \textbf{Solução}: Implementação do caso especial do algoritmo LZW onde o novo código é construído a partir do código anterior.
+  \item \textbf{Tamanho do dicionário}: Limitação do dicionário a 4096 entradas para usar 12 bits por código. \textbf{Solução}: Quando o dicionário está cheio, novas sequências não são adicionadas, mas o algoritmo continua funcionando.
+  \item \textbf{Conversão de códigos para bytes}: Códigos inteiros precisam ser convertidos para bytes de forma eficiente. \textbf{Solução}: Implementação de métodos \texttt{codesToBytes()} e \texttt{bytesToCodes()} que manipulam bits diretamente.
+\end{itemize}
+
+\textbf{4. Justifique a escolha da estrutura de dados usada para armazenar as tabelas, dicionários e árvores utilizados pelos algoritmos.}
+
+\textbf{Algoritmo de Huffman:}
+\begin{itemize}
+  \item \textbf{PriorityQueue (Heap)}: Utilizada para construir a árvore de Huffman. Justificativa: Permite acesso eficiente aos dois nós com menor frequência em O(log n), essencial para o algoritmo de construção da árvore.
+  \item \textbf{Árvore binária (HuffmanNode)}: Estrutura recursiva para representar a árvore. Justificativa: Representação natural da hierarquia de códigos, permite percurso eficiente para geração de códigos e descompressão.
+  \item \textbf{HashMap}: Armazena frequências e códigos gerados. Justificativa: Acesso O(1) para consulta de frequências e códigos durante compressão e descompressão.
+\end{itemize}
+
+\textbf{Algoritmo LZW:}
+\begin{itemize}
+  \item \textbf{HashMap}: Dicionário que mapeia sequências de bytes para códigos. Justificativa: Acesso O(1) médio para busca de sequências no dicionário, essencial para eficiência do algoritmo.
+  \item \textbf{ArrayList}: Armazena sequências de bytes e códigos de saída. Justificativa: Permite crescimento dinâmico e acesso sequencial eficiente durante compressão e descompressão.
+  \item \textbf{\texttt{List<Byte>}}: Representa sequências de bytes no dicionário. Justificativa: Permite comparação e manipulação eficiente de sequências de tamanho variável.
+\end{itemize}
+
+\textbf{Justificativa geral:}
+\begin{itemize}
+  \item As estruturas escolhidas oferecem complexidade temporal adequada para os algoritmos
+  \item HashMap e PriorityQueue são estruturas padrão da biblioteca Java, testadas e otimizadas
+  \item As estruturas permitem implementação clara e manutenível dos algoritmos
+  \item Balanceamento entre eficiência de memória e performance computacional
+\end{itemize}
+
+\textbf{5. Qual campo foi escolhido para criptografia? Por quê?}
+
+O campo escolhido para criptografia foi a \textbf{senha do usuário} (\texttt{Usuario.senha}).
+
+\textbf{Justificativa:}
+\begin{itemize}
+  \item \textbf{Alta sensibilidade}: Senhas são informações altamente sensíveis que não devem ser armazenadas em texto plano sob nenhuma circunstância
+  \item \textbf{Segurança do sistema}: A senha é o principal mecanismo de autenticação e controle de acesso ao sistema
+  \item \textbf{Proteção de dados}: Em caso de acesso não autorizado aos arquivos de banco de dados, as senhas criptografadas não podem ser utilizadas diretamente
+  \item \textbf{Boas práticas}: Criptografia de senhas é uma prática padrão em sistemas de segurança
+  \item \textbf{Impacto crítico}: Comprometimento de senhas pode levar a acesso não autorizado a todos os dados financeiros do usuário
+  \item \textbf{Conformidade}: Atende requisitos de segurança de dados pessoais e financeiros
+\end{itemize}
+
+\textbf{6. Descreva como o RSA foi implementado no projeto.}
+
+\textbf{a) Estrutura das chaves pública e privada:}
+\begin{itemize}
+  \item \textbf{Chave pública}: Composta por (n, e), onde:
+    \begin{itemize}
+      \item \textbf{n}: Módulo RSA, produto de dois números primos grandes ($p \times q$)
+      \item \textbf{e}: Expoente público, geralmente 65537
+    \end{itemize}
+  \item \textbf{Chave privada}: Composta por (n, d), onde:
+    \begin{itemize}
+      \item \textbf{n}: Mesmo módulo da chave pública
+      \item \textbf{d}: Expoente privado, calculado como inverso modular de e módulo $\phi(n)$
+    \end{itemize}
+  \item \textbf{Parâmetros internos}: p, q (números primos) e $\phi(n) = (p-1)(q-1)$ são mantidos apenas durante geração
+\end{itemize}
+
+\textbf{b) Como e onde foram armazenadas:}
+\begin{itemize}
+  \item \textbf{Arquivo}: \texttt{data/chaves\_rsa.db}
+  \item \textbf{Formato}: Serialização Java usando \texttt{ObjectOutputStream}
+  \item \textbf{Conteúdo}: Três objetos \texttt{BigInteger} serializados na ordem: n, e, d
+  \item \textbf{Método}: \texttt{RSAEncryption.salvarChaves(String arquivoChaves)}
+  \item \textbf{Persistência}: Chaves são geradas uma vez na primeira execução e reutilizadas
+\end{itemize}
+
+\textbf{c) Como foram carregadas pelo sistema:}
+\begin{itemize}
+  \item \textbf{Classe gerenciadora}: \texttt{RSAKeyManager} implementa padrão Singleton
+  \item \textbf{Método}: \texttt{RSAKeyManager.obterInstancia()}
+  \item \textbf{Processo}:
+    \begin{enumerate}
+      \item Verifica se instância já existe (retorna se existir)
+      \item Verifica se arquivo \texttt{chaves\_rsa.db} existe
+      \item Se existe: carrega chaves usando \texttt{RSAEncryption.carregarChaves()}
+      \item Se não existe: gera novas chaves e as salva
+      \item Retorna instância única de \texttt{RSAEncryption}
+    \end{enumerate}
+  \item \textbf{Deserialização}: \texttt{ObjectInputStream} lê os três \texttt{BigInteger} e reconstrói objeto \texttt{RSAEncryption}
+\end{itemize}
+
+\textbf{d) Tamanho das chaves escolhidas e justificativa:}
+\begin{itemize}
+  \item \textbf{Tamanho}: 256 bits (128 bits para cada primo p e q)
+  \item \textbf{Justificativa}:
+    \begin{itemize}
+      \item \textbf{Segurança adequada}: 256 bits oferece segurança suficiente para aplicações acadêmicas e sistemas internos
+      \item \textbf{Performance}: Chaves maiores (512+ bits) seriam mais seguras mas significativamente mais lentas
+      \item \textbf{Balanceamento}: Equilíbrio entre segurança e eficiência computacional
+      \item \textbf{Contexto}: Para proteção de senhas de usuários em sistema acadêmico, 256 bits é apropriado
+      \item \textbf{Recomendação}: Em produção, chaves de 2048+ bits seriam recomendadas
+    \end{itemize}
+\end{itemize}
+
+\textbf{e) Em qual momento a criptografia do(s) campo(s) ocorre (no CRUD):}
+\begin{itemize}
+  \item \textbf{Operação}: CREATE (Criação de usuário)
+  \item \textbf{Método}: \texttt{BancoDados.cadastrarUsuario(String nome, String email, String senha)}
+  \item \textbf{Localização no código}: Linha 229 de \texttt{BancoDados.java}
+  \item \textbf{Processo}:
+    \begin{enumerate}
+      \item Método recebe senha em texto plano
+      \item Obtém instância RSA: \texttt{RSAEncryption rsa = RSAKeyManager.obterInstancia()}
+      \item Criptografa senha: \texttt{String senhaCriptografada = rsa.criptografar(senha)}
+      \item Cria objeto \texttt{Usuario} com senha criptografada
+      \item Persiste usuário no arquivo \texttt{usuarios.db}
+    \end{enumerate}
+  \item \textbf{Resultado}: Senha é armazenada em formato hexadecimal criptografado
+\end{itemize}
+
+\textbf{f) Em qual momento ocorre a descriptografia:}
+\begin{itemize}
+  \item \textbf{Operação}: READ (Autenticação de usuário)
+  \item \textbf{Método}: \texttt{BancoDados.autenticarUsuario(String email, String senha)}
+  \item \textbf{Localização no código}: Linha 272 de \texttt{BancoDados.java}
+  \item \textbf{Processo}:
+    \begin{enumerate}
+      \item Busca usuário pelo email
+      \item Obtém senha criptografada do objeto \texttt{Usuario}
+      \item Obtém instância RSA: \texttt{RSAEncryption rsa = RSAKeyManager.obterInstancia()}
+      \item Descriptografa senha: \texttt{String senhaDescriptografada = rsa.descriptografar(usuario.getSenha())}
+      \item Compara senha descriptografada com senha fornecida
+      \item Retorna resultado da autenticação
+    \end{enumerate}
+  \item \textbf{Segurança}: Senha é descriptografada apenas para verificação, nunca retornada ao usuário ou exposta
+\end{itemize}
+
+\textbf{g) Conversões realizadas (ex.: string → bytes → blocos):}
+\begin{itemize}
+  \item \textbf{Processo de criptografia}:
+    \begin{enumerate}
+      \item \textbf{String → Bytes}: \texttt{byte[] bytes = texto.getBytes()} (codificação UTF-8)
+      \item \textbf{Bytes → BigInteger}: \texttt{BigInteger mensagem = new BigInteger(1, bytes)} (conversão com sinal positivo)
+      \item \textbf{Verificação de tamanho}: Se mensagem $\geq n$, divide em blocos
+      \item \textbf{Criptografia}: \texttt{BigInteger criptografado = modPow(mensagem, e, n)} (fórmula: $c = m^e \bmod n$)
+      \item \textbf{BigInteger → Hexadecimal}: \texttt{String hex = criptografado.toString(16)} (representação hexadecimal)
+      \item \textbf{Armazenamento}: String hexadecimal é armazenada no campo \texttt{senha}
+    \end{enumerate}
+  \item \textbf{Processo de descriptografia}:
+    \begin{enumerate}
+      \item \textbf{Hexadecimal → BigInteger}: \texttt{BigInteger criptografado = new BigInteger(hex, 16)} (parse hexadecimal)
+      \item \textbf{Descriptografia}: \texttt{BigInteger descriptografado = modPow(criptografado, d, n)} (fórmula: $m = c^d \bmod n$)
+      \item \textbf{BigInteger → Bytes}: \texttt{byte[] bytes = descriptografado.toByteArray()} (conversão para array)
+      \item \textbf{Remoção de padding}: Remove byte zero à esquerda se existir (artefato da conversão BigInteger)
+      \item \textbf{Bytes → String}: \texttt{String texto = new String(bytes)} (decodificação UTF-8)
+    \end{enumerate}
+      \item \textbf{Tratamento de blocos} (quando mensagem $> n$):
+    \begin{itemize}
+      \item \textbf{Divisão}: Mensagem é dividida em blocos de tamanho $(n.bitLength() - 1) / 8$ bytes
+      \item \textbf{Criptografia por bloco}: Cada bloco é criptografado separadamente
+      \item \textbf{Concatenação}: Blocos criptografados são concatenados com separador \texttt{:}
+      \item \textbf{Descriptografia}: Blocos são separados, descriptografados e concatenados
+    \end{itemize}
+  \item \textbf{Exponenciação modular}: Implementação eficiente usando método square-and-multiply (complexidade O(log n))
 \end{itemize}
 
 \end{document}
