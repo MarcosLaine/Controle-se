@@ -3606,16 +3606,21 @@ class ControleSeApp {
                         <option value="EUR" ${currency === 'EUR' ? 'selected' : ''}>EUR (Euro)</option>
                     </select>
                 </div>
-                <div class="form-actions">
-                    <button type="button" class="btn-secondary" onclick="app.closeModal()">Cancelar</button>
-                    <button type="submit" class="btn-primary">Salvar Investimento</button>
+                <div class="form-actions" style="justify-content: space-between;">
+                    <button type="button" class="btn-secondary" id="back-to-search-btn" style="color: var(--primary-color); border-color: var(--primary-color);">
+                        <i class="fas fa-arrow-left"></i> Voltar e corrigir nome
+                    </button>
+                    <div style="display: flex; gap: 10px;">
+                        <button type="button" class="btn-secondary" onclick="app.closeModal()">Cancelar</button>
+                        <button type="submit" class="btn-primary">Salvar Manualmente</button>
+                    </div>
                 </div>
             </form>
         `;
         
         this.showModal('Inserir Investimento Manualmente', content);
         
-        // Event listener para o formulário
+        // Event listener para o formulário e botão voltar
         setTimeout(() => {
             const form = document.getElementById('manual-investment-form');
             if (form) {
@@ -3623,6 +3628,24 @@ class ControleSeApp {
                 form.parentNode.replaceChild(newForm, form);
                 newForm.addEventListener('submit', (e) => {
                     this.handleManualInvestment(e, accountId, broker, category);
+                });
+            }
+            
+            const backBtn = document.getElementById('back-to-search-btn');
+            if (backBtn) {
+                backBtn.addEventListener('click', () => {
+                    // Reabre o modal anterior preservando os dados
+                    this.showAddInvestmentModal();
+                    // Após abrir, preenche os campos novamente
+                    setTimeout(() => {
+                        if (document.getElementById('investment-name')) document.getElementById('investment-name').value = name;
+                        if (document.getElementById('investment-category')) document.getElementById('investment-category').value = category;
+                        if (document.getElementById('investment-quantity')) document.getElementById('investment-quantity').value = quantity;
+                        if (document.getElementById('investment-date')) document.getElementById('investment-date').value = date;
+                        if (document.getElementById('investment-brokerage')) document.getElementById('investment-brokerage').value = brokerage;
+                        if (document.getElementById('investment-account')) document.getElementById('investment-account').value = accountId;
+                        if (document.getElementById('investment-currency')) document.getElementById('investment-currency').value = currency;
+                    }, 200);
                 });
             }
         }, 100);
