@@ -3030,22 +3030,35 @@ class ControleSeApp {
         }
         
         // Agrupa por data de aporte para mostrar evolução
-        const sortedInvestments = [...investments].sort((a, b) => 
-            new Date(a.dataAporte) - new Date(b.dataAporte)
+        // Agrupa investimentos por data para somar valores do mesmo dia
+        const investmentsByDate = investments.reduce((acc, inv) => {
+            const date = this.formatDate(inv.dataAporte);
+            if (!acc[date]) {
+                acc[date] = {
+                    date: inv.dataAporte, // Mantém objeto Date original para ordenação
+                    valorAporte: 0,
+                    valorAtual: 0
+                };
+            }
+            acc[date].valorAporte += parseFloat(inv.valorAporte) || 0;
+            acc[date].valorAtual += parseFloat(inv.valorAtual) || 0;
+            return acc;
+        }, {});
+
+        // Converte para array e ordena
+        const sortedInvestments = Object.values(investmentsByDate).sort((a, b) => 
+            new Date(a.date) - new Date(b.date)
         );
         
-        const labels = sortedInvestments.map(inv => this.formatDate(inv.dataAporte));
+        const labels = sortedInvestments.map(item => this.formatDate(item.date));
         const investedData = [];
         const currentData = [];
         let cumulativeInvested = 0;
         let cumulativeCurrent = 0;
         
-        sortedInvestments.forEach(inv => {
-            const valorAporte = parseFloat(inv.valorAporte) || 0;
-            const valorAtual = parseFloat(inv.valorAtual) || 0;
-            
-            cumulativeInvested += valorAporte;
-            cumulativeCurrent += valorAtual;
+        sortedInvestments.forEach(item => {
+            cumulativeInvested += item.valorAporte;
+            cumulativeCurrent += item.valorAtual;
             
             // Garante que os valores são números válidos
             investedData.push(isNaN(cumulativeInvested) || !isFinite(cumulativeInvested) ? 0 : cumulativeInvested);
@@ -3357,7 +3370,7 @@ class ControleSeApp {
                     <label for="investment-date">Data do Aporte</label>
                     <input type="date" id="investment-date" required>
                     <small style="color: var(--neutral-600); margin-top: 4px; display: block;">
-                        <i class="fas fa-info-circle"></i> O preço será calculado com base no <strong>fechamento da ação no dia selecionado</strong>
+                        <i class="fas fa-info-circle"></i> O preço será calculado com base no <strong>fechamento do ativo no dia selecionado</strong>
                     </small>
                 </div>
                 <div class="form-group">
