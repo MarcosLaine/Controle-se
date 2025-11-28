@@ -267,6 +267,31 @@ class ControleSeApp {
         document.getElementById('total-income').textContent = this.formatCurrency(data.totalIncome);
         document.getElementById('total-expense').textContent = this.formatCurrency(data.totalExpense);
         document.getElementById('total-balance').textContent = this.formatCurrency(data.balance);
+        
+        const netWorthElement = document.getElementById('total-net-worth');
+        if (netWorthElement) {
+            netWorthElement.textContent = this.formatCurrency(data.netWorth);
+        }
+    }
+
+    showSaldoInfo(event) {
+        if (event) event.stopPropagation();
+        this.showModal('Informação: Saldo', `
+            <div style="padding: 10px;">
+                <p style="margin-bottom: 10px;">O <strong>Saldo</strong> representa a soma de todas as suas contas disponíveis para uso imediato (Corrente, Poupança, Dinheiro, etc.).</p>
+                <p>Contas do tipo <strong>Investimento</strong> não são contabilizadas neste valor.</p>
+            </div>
+        `);
+    }
+
+    showPatrimonioInfo(event) {
+        if (event) event.stopPropagation();
+        this.showModal('Informação: Patrimônio', `
+            <div style="padding: 10px;">
+                <p style="margin-bottom: 10px;">O <strong>Patrimônio</strong> representa o valor total acumulado em todas as suas contas cadastrada no sistema.</p>
+                <p>Este valor inclui o saldo de todas as contas, inclusive as de <strong>Investimento</strong>.</p>
+            </div>
+        `);
     }
 
     async loadRecentTransactions() {

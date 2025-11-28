@@ -722,6 +722,20 @@ body {
     color: var(--primary-color);
 }
 
+.summary-card.net-worth::before {
+    background: #8b5cf6;
+}
+
+.summary-card.net-worth .card-icon {
+    background: #f5f3ff;
+    color: #8b5cf6;
+}
+
+[data-theme="dark"] .summary-card.net-worth .card-icon {
+    background: #2e1065;
+    color: #c4b5fd;
+}
+
 .summary-card.accounts .card-icon {
     background: var(--warning-light);
     color: var(--warning-color);

@@ -451,8 +451,8 @@ public class ControleSeServer {
                 
                 double totalIncome = bancoDados.calcularTotalReceitasUsuario(userId);
                 double totalExpense = bancoDados.calcularTotalGastosUsuario(userId);
-                double balance = bancoDados.calcularTotalSaldoContasUsuario(userId); // Saldo = soma de todas as contas
-                double totalAccounts = balance; // Mesmo valor
+                double balance = bancoDados.calcularSaldoContasUsuarioSemInvestimento(userId); // Saldo sem investimentos
+                double netWorth = bancoDados.calcularTotalSaldoContasUsuario(userId); // Patrimônio total
                 
                 // Get category breakdown
                 List<Categoria> categories = bancoDados.buscarCategoriasPorUsuario(userId);
@@ -473,7 +473,7 @@ public class ControleSeServer {
                     "totalIncome", totalIncome,
                     "totalExpense", totalExpense,
                     "balance", balance,
-                    "totalAccounts", totalAccounts,
+                    "netWorth", netWorth,
                     "categoryBreakdown", categoryBreakdown
                 ));
                 

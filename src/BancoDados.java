@@ -757,6 +757,14 @@ public class BancoDados {
         List<Conta> contas = buscarContasPorUsuario(idUsuario);
         return contas.stream().mapToDouble(Conta::getSaldoAtual).sum();
     }
+
+    public double calcularSaldoContasUsuarioSemInvestimento(int idUsuario) {
+        List<Conta> contas = buscarContasPorUsuario(idUsuario);
+        return contas.stream()
+            .filter(conta -> !conta.getTipo().equals("Investimento"))
+            .mapToDouble(Conta::getSaldoAtual)
+            .sum();
+    }
     
     // ========== OPERAÇÕES DE RELATÓRIOS POR PERÍODO ==========
     
