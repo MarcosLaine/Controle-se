@@ -3021,14 +3021,14 @@ class ControleSeApp {
                     <h4 style="font-size: 0.9rem; margin-bottom: 10px; color: var(--neutral-600);">Histórico de Aportes</h4>
                     <div class="history-list" style="display: flex; flex-direction: column; gap: 10px;">
                         ${group.map(inv => `
-                            <div class="history-item" style="display: flex; justify-content: space-between; align-items: center; padding: 8px; background: white; border-radius: 6px; border: 1px solid var(--neutral-200);">
+                            <div class="history-item investment-card">
                                 <div style="display: flex; flex-direction: column; gap: 2px;">
-                                    <span style="font-size: 0.8rem; font-weight: 600;">${this.formatDate(inv.dataAporte)}</span>
+                                    <span style="font-size: 0.8rem; font-weight: 600; color: var(--neutral-900);">${this.formatDate(inv.dataAporte)}</span>
                                     <span style="font-size: 0.75rem; color: var(--neutral-600);">${inv.corretora || 'N/A'}</span>
                                 </div>
                                 <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px;">
-                                    <span style="font-size: 0.8rem;">${parseFloat(inv.quantidade).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 6 })} x ${this.formatCurrency(inv.precoAporte)}</span>
-                                    <span style="font-size: 0.8rem; font-weight: 600;">${this.formatCurrency(inv.valorAporte)}</span>
+                                    <span style="font-size: 0.8rem; color: var(--neutral-700);">${parseFloat(inv.quantidade).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 6 })} x ${this.formatCurrency(inv.precoAporte)}</span>
+                                    <span style="font-size: 0.8rem; font-weight: 600; color: var(--neutral-900);">${this.formatCurrency(inv.valorAporte)}</span>
                                 </div>
                                 <div style="display: flex; gap: 5px; margin-left: 10px;">
                                     <button class="btn-icon-small btn-edit-investment" data-investment-id="${inv.idInvestimento}" title="Editar" style="padding: 4px; background: none; border: none; cursor: pointer; color: var(--neutral-600);">
