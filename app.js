@@ -2852,9 +2852,6 @@ class ControleSeApp {
         sortedCategories.forEach(categoria => {
             const categoryInvestments = investmentsByCategory[categoria];
             const categoryTotal = categoryInvestments.reduce((sum, inv) => sum + (parseFloat(inv.valorAtual) || 0), 0);
-            const categoryInvested = categoryInvestments.reduce((sum, inv) => sum + (parseFloat(inv.valorAporte) || 0), 0);
-            const categoryReturn = categoryTotal - categoryInvested;
-            const categoryReturnPercent = categoryInvested > 0 ? (categoryReturn / categoryInvested) * 100 : 0;
             const categoryName = categoryNames[categoria] || categoria;
             const categoryIcon = categoryIcons[categoria] || 'fa-wallet';
             
@@ -2872,13 +2869,7 @@ class ControleSeApp {
                         </div>
                     </div>
                     <div class="category-header-right">
-                        <div class="category-values">
-                            <span class="category-total">${this.formatCurrency(categoryTotal)}</span>
-                            <span class="category-return ${categoryReturn >= 0 ? 'positive' : 'negative'}">
-                                ${categoryReturn >= 0 ? '+' : ''}${this.formatCurrency(categoryReturn)} 
-                                (${categoryReturn >= 0 ? '+' : ''}${categoryReturnPercent.toFixed(2)}%)
-                            </span>
-                        </div>
+                        <span class="category-total">${this.formatCurrency(categoryTotal)}</span>
                         <i class="fas fa-chevron-down category-chevron"></i>
                     </div>
                 </div>
@@ -3019,22 +3010,22 @@ class ControleSeApp {
                         <span>Retorno Total</span>
                         <strong>${totalReturn >= 0 ? '+' : ''}${this.formatCurrency(totalReturn)}</strong>
                     </div>
-                    </div>
+                </div>
                 <div class="card-actions" style="display: flex; justify-content: flex-end; border-top: 1px solid var(--neutral-200); padding-top: 10px; margin-top: 10px;">
                     <button class="btn-secondary btn-toggle-details" style="padding: 4px 12px; font-size: 0.85rem;">
                         <i class="fas fa-list"></i> Detalhes (${group.length})
                     </button>
-                    </div>
+                </div>
                 
                 <div class="investment-history" style="display: none; margin-top: 15px; background: var(--neutral-100); padding: 10px; border-radius: 8px;">
                     <h4 style="font-size: 0.9rem; margin-bottom: 10px; color: var(--neutral-600);">Histórico de Aportes</h4>
                     <div class="history-list" style="display: flex; flex-direction: column; gap: 10px;">
                         ${group.map(inv => `
-                            <div class="history-item investment-card">
+                            <div class="history-item" style="display: flex; justify-content: space-between; align-items: center; padding: 8px; background: var(--neutral-100); border-radius: 6px; border: 1px solid var(--neutral-200);">
                                 <div style="display: flex; flex-direction: column; gap: 2px;">
                                     <span style="font-size: 0.8rem; font-weight: 600; color: var(--neutral-900);">${this.formatDate(inv.dataAporte)}</span>
                                     <span style="font-size: 0.75rem; color: var(--neutral-600);">${inv.corretora || 'N/A'}</span>
-                </div>
+                                </div>
                                 <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px;">
                                     <span style="font-size: 0.8rem; color: var(--neutral-700);">${parseFloat(inv.quantidade).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 6 })} x ${this.formatCurrency(inv.precoAporte)}</span>
                                     <span style="font-size: 0.8rem; font-weight: 600; color: var(--neutral-900);">${this.formatCurrency(inv.valorAporte)}</span>
@@ -3042,10 +3033,10 @@ class ControleSeApp {
                                 <div style="display: flex; gap: 5px; margin-left: 10px;">
                                     <button class="btn-icon-small btn-edit-investment" data-investment-id="${inv.idInvestimento}" title="Editar" style="padding: 4px; background: none; border: none; cursor: pointer; color: var(--neutral-600);">
                                         <i class="fas fa-edit"></i>
-                    </button>
+                                    </button>
                                     <button class="btn-icon-small btn-delete-investment" data-investment-id="${inv.idInvestimento}" title="Excluir" style="padding: 4px; background: none; border: none; cursor: pointer; color: var(--danger-color);">
                                         <i class="fas fa-trash"></i>
-                    </button>
+                                    </button>
                                 </div>
                             </div>
                         `).join('')}
@@ -3679,7 +3670,7 @@ class ControleSeApp {
                         <i class="fas fa-arrow-left"></i> Voltar e corrigir nome
                     </button>
                     <div style="display: flex; gap: 10px;">
-                    <button type="button" class="btn-secondary" onclick="app.closeModal()">Cancelar</button>
+                        <button type="button" class="btn-secondary" onclick="app.closeModal()">Cancelar</button>
                         <button type="submit" class="btn-primary">Salvar Manualmente</button>
                     </div>
                 </div>
@@ -3770,195 +3761,9 @@ class ControleSeApp {
         }
     }
     
-    async editInvestment(investmentId) {
-        try {
-            // Busca o investimento atual da lista
-            const userId = this.currentUser ? this.currentUser.id : 1;
-            const response = await this.apiCall(`/investments?userId=${userId}`, 'GET');
-            
-            if (!response.success) {
-                this.showToast('Erro ao carregar dados do investimento', 'error');
-                return;
-            }
-            
-            const investment = response.data.find(inv => inv.idInvestimento === investmentId);
-            if (!investment) {
-                this.showToast('Investimento não encontrado', 'error');
-                return;
-            }
-            
-            // Garante que as contas estão carregadas
-            if (!this.accountsCache || this.accountsCache.length === 0) {
-                await this.loadAccounts();
-            }
-            
-            // Filtra apenas contas do tipo "Investimento"
-            const investmentAccounts = this.accountsCache.filter(acc => 
-                acc.tipo && acc.tipo.toLowerCase() === 'investimento'
-            );
-            
-            if (investmentAccounts.length === 0) {
-                this.showToast('Nenhuma conta de investimento disponível', 'warning');
-                return;
-            }
-            
-            // Busca a conta atual do investimento
-            const currentAccount = this.accountsCache.find(acc => acc.nome === investment.corretora);
-            const currentAccountId = currentAccount ? currentAccount.idConta : null;
-            
-            // Formata a data para o input
-            const dateParts = investment.dataAporte.split('-');
-            const formattedDate = `${dateParts[0]}-${dateParts[1]}-${dateParts[2]}`;
-            
-            const content = `
-                <form id="edit-investment-form">
-                    <div class="form-group">
-                        <label for="edit-investment-name">Nome/Símbolo</label>
-                        <input type="text" id="edit-investment-name" value="${investment.nome}" required>
-                        <small style="color: var(--neutral-600); margin-top: 4px; display: block;">
-                            Digite o símbolo do investimento. O preço será obtido automaticamente com base no fechamento do dia através de nossa base de dados.
-                        </small>
-                    </div>
-                    <div class="form-group">
-                        <label for="edit-investment-category">Categoria</label>
-                        <select id="edit-investment-category" required>
-                            <option value="">Selecione...</option>
-                            <option value="ACAO" ${investment.categoria === 'ACAO' ? 'selected' : ''}>Ação (B3)</option>
-                            <option value="STOCK" ${investment.categoria === 'STOCK' ? 'selected' : ''}>Stock (NYSE/NASDAQ)</option>
-                            <option value="CRYPTO" ${investment.categoria === 'CRYPTO' ? 'selected' : ''}>Criptomoeda</option>
-                            <option value="FII" ${investment.categoria === 'FII' ? 'selected' : ''}>FII</option>
-                            <option value="RENDA_FIXA" ${investment.categoria === 'RENDA_FIXA' ? 'selected' : ''}>Renda Fixa</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label for="edit-investment-quantity">Quantidade</label>
-                        <input type="number" id="edit-investment-quantity" value="${investment.quantidade}" min="0.000001" step="0.000001" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="edit-investment-date">Data do Aporte</label>
-                        <input type="date" id="edit-investment-date" value="${formattedDate}" required>
-                        <small style="color: var(--neutral-600); margin-top: 4px; display: block;">
-                            <i class="fas fa-info-circle"></i> O preço será calculado com base no <strong>fechamento do ativo no dia selecionado</strong>
-                        </small>
-                    </div>
-                    <div class="form-group">
-                        <label for="edit-investment-brokerage">Corretagem</label>
-                        <input type="number" id="edit-investment-brokerage" value="${investment.corretagem || 0}" min="0" step="0.01">
-                    </div>
-                    <div class="form-group">
-                        <label for="edit-investment-account">Conta de Investimento (Corretora)</label>
-                        <select id="edit-investment-account" required>
-                            <option value="">Selecione uma conta de investimento...</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label for="edit-investment-currency">Moeda</label>
-                        <select id="edit-investment-currency">
-                            <option value="BRL" ${investment.moeda === 'BRL' ? 'selected' : ''}>BRL (Real)</option>
-                            <option value="USD" ${investment.moeda === 'USD' ? 'selected' : ''}>USD (Dólar)</option>
-                            <option value="EUR" ${investment.moeda === 'EUR' ? 'selected' : ''}>EUR (Euro)</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label for="edit-investment-price">Preço Unitário (opcional - deixe vazio para buscar automaticamente)</label>
-                        <input type="number" id="edit-investment-price" min="0.01" step="0.01" placeholder="Deixe vazio para buscar automaticamente">
-                        <small style="color: var(--neutral-600); margin-top: 4px; display: block;">
-                            Se preenchido, este valor será usado ao invés da cotação automática
-                        </small>
-                    </div>
-                    <div class="form-actions">
-                        <button type="button" class="btn-secondary" onclick="app.closeModal()">Cancelar</button>
-                        <button type="submit" class="btn-primary">Salvar Alterações</button>
-                    </div>
-                </form>
-            `;
-            
-            this.showModal('Editar Investimento', content);
-            
-            // Preenche select de contas
-            setTimeout(() => {
-                const accountSelect = document.getElementById('edit-investment-account');
-                if (accountSelect) {
-                    investmentAccounts.forEach(account => {
-                        const option = document.createElement('option');
-                        option.value = account.idConta;
-                        option.textContent = `${account.nome} (${account.tipo})`;
-                        if (currentAccountId && account.idConta === currentAccountId) {
-                            option.selected = true;
-                        }
-                        accountSelect.appendChild(option);
-                    });
-                }
-                
-                // Event listener para o formulário
-                const form = document.getElementById('edit-investment-form');
-                if (form) {
-                    const newForm = form.cloneNode(true);
-                    form.parentNode.replaceChild(newForm, form);
-                    newForm.addEventListener('submit', (e) => {
-                        this.handleUpdateInvestment(e, investmentId);
-                    });
-                }
-            }, 100);
-        } catch (error) {
-            this.showToast('Erro ao carregar investimento para edição', 'error');
-            console.error('Edit investment error:', error);
-        }
-    }
-    
-    async handleUpdateInvestment(e, investmentId) {
-        e.preventDefault();
-        
-        const category = document.getElementById('edit-investment-category').value;
-        const name = document.getElementById('edit-investment-name').value.toUpperCase();
-        const quantity = parseFloat(document.getElementById('edit-investment-quantity').value);
-        const date = document.getElementById('edit-investment-date').value;
-        const brokerage = parseFloat(document.getElementById('edit-investment-brokerage').value) || 0;
-        const accountIdValue = document.getElementById('edit-investment-account').value;
-        const currency = document.getElementById('edit-investment-currency').value;
-        const manualPrice = document.getElementById('edit-investment-price').value;
-        
-        // Valida quantidade mínima
-        if (isNaN(quantity) || quantity <= 0) {
-            this.showToast('A quantidade deve ser maior que zero', 'error');
-            return;
-        }
-        
-        const accountId = parseInt(accountIdValue);
-        const selectedAccount = this.accountsCache.find(acc => acc.idConta === accountId);
-        const broker = selectedAccount ? selectedAccount.nome : '';
-        
-        try {
-            // Prepara dados para atualização
-            const updateData = {
-                id: investmentId,
-                nome: name,
-                categoria: category,
-                quantidade: quantity,
-                corretagem: brokerage,
-                corretora: broker,
-                dataAporte: date,
-                moeda: currency
-            };
-            
-            // Se preço manual foi fornecido, inclui
-            if (manualPrice && !isNaN(parseFloat(manualPrice)) && parseFloat(manualPrice) > 0) {
-                updateData.precoAporte = parseFloat(manualPrice);
-            }
-            
-            const response = await this.apiCall('/investments', 'PUT', updateData);
-            
-            if (response.success) {
-                this.showToast('Investimento atualizado com sucesso!', 'success');
-                this.closeModal();
-                this.loadInvestments();
-            } else {
-                this.showToast(response.message || 'Erro ao atualizar investimento', 'error');
-            }
-        } catch (error) {
-            this.showToast('Erro de conexão', 'error');
-            console.error('Update investment error:', error);
-        }
+    editInvestment(investmentId) {
+        // Implementar edição de investimento
+        this.showToast('Funcionalidade de edição em desenvolvimento', 'info');
     }
     
     deleteInvestment(investmentId) {
