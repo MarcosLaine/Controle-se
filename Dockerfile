@@ -59,5 +59,5 @@ COPY --from=frontend-build /app/dist ./dist
 EXPOSE 8080
 
 # Start the server
-# We use a shell command to load .env variables if the file exists (Render Secret Files)
-CMD ["sh", "-c", "if [ -f .env ]; then export $(cat .env | grep -v '^#' | xargs); fi; java -cp bin:lib/postgresql.jar ControleSeServer"]
+# Modificado para priorizar variáveis de ambiente do sistema, usando .env apenas se existir e variáveis não estiverem definidas
+CMD ["sh", "-c", "if [ -f .env ]; then echo 'Carregando .env...'; export $(cat .env | grep -v '^#' | xargs); fi; java -cp bin:lib/postgresql.jar ControleSeServer"]

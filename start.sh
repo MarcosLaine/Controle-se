@@ -167,12 +167,13 @@ if [ -f .env ]; then
     echo "Carregando variáveis de ambiente de .env..."
     export $(cat .env | grep -v '^#' | xargs)
 elif [ -f db.properties ]; then
-    echo "Carregando configuração de db.properties..."
-    export PGHOST=$(grep "^db.host=" db.properties | cut -d'=' -f2)
-    export PGPORT=$(grep "^db.port=" db.properties | cut -d'=' -f2)
-    export PGDATABASE=$(grep "^db.database=" db.properties | cut -d'=' -f2)
-    export PGUSER=$(grep "^db.username=" db.properties | cut -d'=' -f2)
-    export PGPASSWORD=$(grep "^db.password=" db.properties | cut -d'=' -f2)
+    # Apenas carrega se NÃO estiverem definidas no ambiente (prioridade para env vars do sistema/container)
+    echo "Carregando configuração de db.properties (fallback)..."
+    [ -z "$PGHOST" ] && export PGHOST=$(grep "^db.host=" db.properties | cut -d'=' -f2)
+    [ -z "$PGPORT" ] && export PGPORT=$(grep "^db.port=" db.properties | cut -d'=' -f2)
+    [ -z "$PGDATABASE" ] && export PGDATABASE=$(grep "^db.database=" db.properties | cut -d'=' -f2)
+    [ -z "$PGUSER" ] && export PGUSER=$(grep "^db.username=" db.properties | cut -d'=' -f2)
+    [ -z "$PGPASSWORD" ] && export PGPASSWORD=$(grep "^db.password=" db.properties | cut -d'=' -f2)
 fi
 
 echo ""

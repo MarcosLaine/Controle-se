@@ -42,11 +42,12 @@ public class BancoDadosPostgreSQL {
         // Se não encontrar nas variáveis de ambiente, tenta arquivo de configuração
             if (host == null || host.isEmpty()) {
                 loadConfigFromFile();
-                host = System.getProperty("db.host");
-                port = System.getProperty("db.port");
-                database = System.getProperty("db.database");
-                this.username = System.getProperty("db.username");
-                this.password = System.getProperty("db.password");
+                // Só usa db.properties se a variável de ambiente NÃO estiver definida
+                if (host == null || host.isEmpty()) host = System.getProperty("db.host");
+                if (port == null || port.isEmpty()) port = System.getProperty("db.port");
+                if (database == null || database.isEmpty()) database = System.getProperty("db.database");
+                if (this.username == null || this.username.isEmpty()) this.username = System.getProperty("db.username");
+                if (this.password == null || this.password.isEmpty()) this.password = System.getProperty("db.password");
                 
                 // Se ainda não encontrou, tenta ler do .env manualmente
                 if (host == null || host.isEmpty()) {
