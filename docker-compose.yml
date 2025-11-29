@@ -4,26 +4,36 @@ services:
   controle-se:
     build:
       context: .
-      dockerfile: Dockerfile.producao
+      dockerfile: Dockerfile
     container_name: controle-se
     restart: unless-stopped
     ports:
       - "8080:8080"
     environment:
-      - PGHOST=${PGHOST}
-      - PGPORT=${PGPORT:-5432}
-      - PGDATABASE=${PGDATABASE:-defaultdb}
-      - PGUSER=${PGUSER}
-      - PGPASSWORD=${PGPASSWORD}
+      - PGHOST=db
+      - PGPORT=5432
+      - PGDATABASE=controle_se
+      - PGUSER=postgres
+      - PGPASSWORD=postgres
+    depends_on:
+      - db
     volumes:
       - ./logs:/app/logs
-      - ./config:/app/config
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
-      interval: 30s
-      timeout: 3s
-      retries: 3
-      start_period: 40s
+    networks:
+      - controle-se-network
+
+  db:
+    image: postgres:15-alpine
+    container_name: controle-se-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=controle_se
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
     networks:
       - controle-se-network
 
@@ -31,3 +41,5 @@ networks:
   controle-se-network:
     driver: bridge
 
+volumes:
+  postgres_data:

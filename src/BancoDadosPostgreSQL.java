@@ -78,10 +78,16 @@ public class BancoDadosPostgreSQL {
         
         // Constrói JDBC URL
         if (host != null && !host.isEmpty()) {
-            // Aiven requer SSL - usar sslmode=require
-            // Usa NonValidatingFactory para evitar problemas com certificado (produção deve usar certificado real)
-            this.jdbcUrl = String.format("jdbc:postgresql://%s:%s/%s?sslmode=require&sslfactory=org.postgresql.ssl.NonValidatingFactory", 
-                host, port != null ? port : "5432", database != null ? database : "controle_se");
+            if ("localhost".equals(host) || "127.0.0.1".equals(host) || "db".equals(host) || "controle-se-db".equals(host)) {
+                 // Conexão local sem SSL
+                 this.jdbcUrl = String.format("jdbc:postgresql://%s:%s/%s?sslmode=disable", 
+                    host, port != null ? port : "5432", database != null ? database : "controle_se");
+            } else {
+                // Aiven e produção requerem SSL - usar sslmode=require
+                // Usa NonValidatingFactory para evitar problemas com certificado (produção deve usar certificado real)
+                this.jdbcUrl = String.format("jdbc:postgresql://%s:%s/%s?sslmode=require&sslfactory=org.postgresql.ssl.NonValidatingFactory", 
+                    host, port != null ? port : "5432", database != null ? database : "controle_se");
+            }
         } else {
             // ERRO EXPLÍCITO se não houver configuração
             System.err.println("ERRO CRÍTICO: Configuração de banco de dados não encontrada! Defina as variáveis de ambiente PGHOST, PGUSER, etc.");
@@ -98,7 +104,11 @@ public class BancoDadosPostgreSQL {
      * Construtor com parâmetros explícitos
      */
     public BancoDadosPostgreSQL(String host, String port, String database, String username, String password) {
-        this.jdbcUrl = String.format("jdbc:postgresql://%s:%s/%s?sslmode=require", host, port, database);
+        if ("localhost".equals(host) || "127.0.0.1".equals(host) || "db".equals(host) || "controle-se-db".equals(host)) {
+            this.jdbcUrl = String.format("jdbc:postgresql://%s:%s/%s?sslmode=disable", host, port, database);
+        } else {
+            this.jdbcUrl = String.format("jdbc:postgresql://%s:%s/%s?sslmode=require", host, port, database);
+        }
         this.username = username;
         this.password = password;
         // Não conecta aqui - conexão será criada por thread quando necessário
