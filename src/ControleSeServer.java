@@ -2292,11 +2292,11 @@ public class ControleSeServer {
                 double corretagem = data.containsKey("corretagem") ? 
                     ((Number) data.get("corretagem")).doubleValue() : 0.0;
                 
-                // Valida quantidade mínima
-                if (quantidade <= 0) {
+                // Valida quantidade (deve ser diferente de zero, permite negativos para vendas)
+                if (quantidade == 0 || Double.isNaN(quantidade) || Double.isInfinite(quantidade)) {
                     Map<String, Object> response = new HashMap<>();
                     response.put("success", false);
-                    response.put("message", "A quantidade deve ser maior que zero");
+                    response.put("message", "A quantidade deve ser diferente de zero");
                     sendJsonResponse(exchange, 400, response);
                     return;
                 }
@@ -2475,11 +2475,11 @@ public class ControleSeServer {
                 double quantidade = ((Number) data.get("quantidade")).doubleValue();
                 double corretagem = ((Number) data.get("corretagem")).doubleValue();
                 
-                // Valida quantidade mínima
-                if (quantidade <= 0) {
+                // Valida quantidade (deve ser diferente de zero, permite negativos para vendas)
+                if (quantidade == 0 || Double.isNaN(quantidade) || Double.isInfinite(quantidade)) {
                     Map<String, Object> response = new HashMap<>();
                     response.put("success", false);
-                    response.put("message", "A quantidade deve ser maior que zero");
+                    response.put("message", "A quantidade deve ser diferente de zero");
                     sendJsonResponse(exchange, 400, response);
                     return;
                 }
