@@ -33,50 +33,50 @@ public class BancoDadosPostgreSQL {
         this.password = System.getenv("PGPASSWORD");
         
         // Se não encontrar nas variáveis de ambiente, tenta arquivo de configuração
-        if (host == null || host.isEmpty()) {
-            loadConfigFromFile();
-            host = System.getProperty("db.host");
-            port = System.getProperty("db.port");
-            database = System.getProperty("db.database");
-            this.username = System.getProperty("db.username");
-            this.password = System.getProperty("db.password");
-            
-            // Se ainda não encontrou, tenta ler do .env manualmente
             if (host == null || host.isEmpty()) {
-                try {
-                    java.io.File envFile = new java.io.File(".env");
-                    if (envFile.exists()) {
-                        java.util.Scanner scanner = new java.util.Scanner(envFile);
-                        while (scanner.hasNextLine()) {
-                            String line = scanner.nextLine().trim();
-                            if (line.startsWith("PGHOST=") && !line.startsWith("#")) {
-                                host = line.substring(7).trim();
-                            } else if (line.startsWith("PGPORT=") && !line.startsWith("#")) {
-                                port = line.substring(7).trim();
-                            } else if (line.startsWith("PGDATABASE=") && !line.startsWith("#")) {
-                                database = line.substring(11).trim();
-                            } else if (line.startsWith("PGUSER=") && !line.startsWith("#")) {
-                                this.username = line.substring(7).trim();
-                            } else if (line.startsWith("PGPASSWORD=") && !line.startsWith("#")) {
-                                this.password = line.substring(11).trim();
+                loadConfigFromFile();
+                host = System.getProperty("db.host");
+                port = System.getProperty("db.port");
+                database = System.getProperty("db.database");
+                this.username = System.getProperty("db.username");
+                this.password = System.getProperty("db.password");
+                
+                // Se ainda não encontrou, tenta ler do .env manualmente
+                if (host == null || host.isEmpty()) {
+                    try {
+                        java.io.File envFile = new java.io.File(".env");
+                        if (envFile.exists()) {
+                            java.util.Scanner scanner = new java.util.Scanner(envFile);
+                            while (scanner.hasNextLine()) {
+                                String line = scanner.nextLine().trim();
+                                if (line.startsWith("PGHOST=") && !line.startsWith("#")) {
+                                    host = line.substring(7).trim();
+                                } else if (line.startsWith("PGPORT=") && !line.startsWith("#")) {
+                                    port = line.substring(7).trim();
+                                } else if (line.startsWith("PGDATABASE=") && !line.startsWith("#")) {
+                                    database = line.substring(11).trim();
+                                } else if (line.startsWith("PGUSER=") && !line.startsWith("#")) {
+                                    this.username = line.substring(7).trim();
+                                } else if (line.startsWith("PGPASSWORD=") && !line.startsWith("#")) {
+                                    this.password = line.substring(11).trim();
+                                }
                             }
+                            scanner.close();
                         }
-                        scanner.close();
+                    } catch (Exception e) {
+                        System.out.println("Aviso: Não foi possível ler .env: " + e.getMessage());
                     }
-                } catch (Exception e) {
-                    System.out.println("Aviso: Não foi possível ler .env: " + e.getMessage());
                 }
+                
+                // Fallback final - Comentado para evitar que conecte em localhost em produção
+                /* if (host == null || host.isEmpty()) {
+                    host = "localhost";
+                    port = "5432";
+                    database = "controle_se";
+                    this.username = "postgres";
+                    this.password = "";
+                } */
             }
-            
-            // Fallback final
-            if (host == null || host.isEmpty()) {
-                host = "localhost";
-                port = "5432";
-                database = "controle_se";
-                this.username = "postgres";
-                this.password = "";
-            }
-        }
         
         // Constrói JDBC URL
         if (host != null && !host.isEmpty()) {
