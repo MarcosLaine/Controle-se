@@ -32,6 +32,13 @@ public class BancoDadosPostgreSQL {
         this.username = System.getenv("PGUSER");
         this.password = System.getenv("PGPASSWORD");
         
+        // DEBUG: Imprime variáveis de ambiente para ajudar no diagnóstico
+        System.out.println("DEBUG DB: PGHOST=" + host);
+        System.out.println("DEBUG DB: PGPORT=" + port);
+        System.out.println("DEBUG DB: PGDATABASE=" + database);
+        System.out.println("DEBUG DB: PGUSER=" + username);
+        // Não logar senha!
+        
         // Se não encontrar nas variáveis de ambiente, tenta arquivo de configuração
             if (host == null || host.isEmpty()) {
                 loadConfigFromFile();
@@ -67,15 +74,6 @@ public class BancoDadosPostgreSQL {
                         System.out.println("Aviso: Não foi possível ler .env: " + e.getMessage());
                     }
                 }
-                
-                // Fallback final - Comentado para evitar que conecte em localhost em produção
-                /* if (host == null || host.isEmpty()) {
-                    host = "localhost";
-                    port = "5432";
-                    database = "controle_se";
-                    this.username = "postgres";
-                    this.password = "";
-                } */
             }
         
         // Constrói JDBC URL
@@ -85,8 +83,10 @@ public class BancoDadosPostgreSQL {
             this.jdbcUrl = String.format("jdbc:postgresql://%s:%s/%s?sslmode=require&sslfactory=org.postgresql.ssl.NonValidatingFactory", 
                 host, port != null ? port : "5432", database != null ? database : "controle_se");
         } else {
-            // Fallback para configuração local
-            this.jdbcUrl = "jdbc:postgresql://localhost:5432/controle_se?sslmode=prefer";
+            // ERRO EXPLÍCITO se não houver configuração
+            System.err.println("ERRO CRÍTICO: Configuração de banco de dados não encontrada! Defina as variáveis de ambiente PGHOST, PGUSER, etc.");
+            // URL inválida para forçar erro de conexão em vez de tentar localhost
+            this.jdbcUrl = "jdbc:postgresql://missing-configuration:5432/controle_se";
         }
         
         // Não conecta aqui - conexão será criada por thread quando necessário
