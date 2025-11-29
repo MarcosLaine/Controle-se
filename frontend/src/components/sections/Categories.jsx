@@ -11,7 +11,7 @@ export default function Categories() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingCategory, setEditingCategory] = useState(null);
-  const [formData, setFormData] = useState({ nome: '' });
+  const [formData, setFormData] = useState({ nome: '', budget: '' });
 
   useEffect(() => {
     loadCategories();
@@ -54,6 +54,7 @@ export default function Categories() {
         const response = await api.post('/categories', {
           nome: formData.nome,
           userId: user.id,
+          budget: formData.budget ? parseFloat(formData.budget) : null
         });
         if (response.success) {
           toast.success('Categoria criada!');
@@ -68,7 +69,7 @@ export default function Categories() {
 
   const handleEdit = (category) => {
     setEditingCategory(category);
-    setFormData({ nome: category.nome });
+    setFormData({ nome: category.nome, budget: '' });
     setShowModal(true);
   };
 
@@ -89,7 +90,7 @@ export default function Categories() {
   const handleCloseModal = () => {
     setShowModal(false);
     setEditingCategory(null);
-    setFormData({ nome: '' });
+    setFormData({ nome: '', budget: '' });
   };
 
   if (loading) {
@@ -171,6 +172,27 @@ export default function Categories() {
               required
             />
           </div>
+
+          {!editingCategory && (
+            <div>
+              <label className="label">Orçamento Mensal (Opcional)</label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">
+                  R$
+                </span>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={formData.budget}
+                  onChange={(e) => setFormData({ ...formData, budget: e.target.value })}
+                  className="input pl-10"
+                  placeholder="0,00"
+                />
+              </div>
+            </div>
+          )}
+
           <div className="flex gap-2 justify-end">
             <button
               type="button"

@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
-import { Plus, Edit, Trash2, Building2 } from 'lucide-react';
+import { Building2, Edit, Plus, Trash2 } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import toast from 'react-hot-toast';
 import { useAuth } from '../../contexts/AuthContext';
 import api from '../../services/api';
 import { formatCurrency } from '../../utils/formatters';
 import Modal from '../common/Modal';
-import toast from 'react-hot-toast';
 
 export default function Accounts() {
   const { user } = useAuth();
@@ -181,7 +181,7 @@ export default function Accounts() {
               value={formData.nome}
               onChange={(e) => setFormData({ ...formData, nome: e.target.value })}
               className="input"
-              placeholder="Ex: Conta Corrente, Poupança..."
+              placeholder="Ex: Itaú, Caixa, Binance, Avenue..."
               required
             />
           </div>

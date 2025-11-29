@@ -60,8 +60,17 @@ public class AccountsHandler implements HttpHandler {
             Map<String, String> data = JsonUtil.parseJson(requestBody);
             
             String name = data.get("name");
+            if (name == null) name = data.get("nome");
+
             String type = data.get("type");
-            double balance = Double.parseDouble(data.get("balance"));
+            if (type == null) type = data.get("tipo");
+            
+            String balanceStr = data.get("balance");
+            if (balanceStr == null) {
+                balanceStr = data.get("saldoInicial");
+            }
+            if (balanceStr == null) throw new IllegalArgumentException("Saldo é obrigatório");
+            double balance = Double.parseDouble(balanceStr);
             int userId = 1;
             
             int accountId = bancoDados.cadastrarConta(name, type, balance, userId);
@@ -85,10 +94,40 @@ public class AccountsHandler implements HttpHandler {
             String requestBody = RequestUtil.readRequestBody(exchange);
             Map<String, String> data = JsonUtil.parseJson(requestBody);
             
-            int accountId = Integer.parseInt(data.get("id"));
+            String idStr = data.get("id");
+            
+            // Se não encontrou no body, tenta pegar da URL
+            if (idStr == null) {
+                String path = exchange.getRequestURI().getPath();
+                String[] segments = path.split("/");
+                if (segments.length > 0) {
+                    try {
+                        // Tenta o último segmento
+                        String lastSegment = segments[segments.length - 1];
+                        // Verifica se é número
+                        Integer.parseInt(lastSegment);
+                        idStr = lastSegment;
+                    } catch (NumberFormatException e) {
+                        // Ignora se não for número
+                    }
+                }
+            }
+            
+            if (idStr == null) throw new IllegalArgumentException("ID é obrigatório");
+            int accountId = Integer.parseInt(idStr);
+            
             String name = data.get("name");
+            if (name == null) name = data.get("nome");
+
             String type = data.get("type");
-            double balance = Double.parseDouble(data.get("balance"));
+            if (type == null) type = data.get("tipo");
+            
+            String balanceStr = data.get("balance");
+            if (balanceStr == null) {
+                balanceStr = data.get("saldoInicial");
+            }
+            if (balanceStr == null) throw new IllegalArgumentException("Saldo é obrigatório");
+            double balance = Double.parseDouble(balanceStr);
             
             bancoDados.atualizarConta(accountId, name, type, balance);
             
@@ -108,6 +147,24 @@ public class AccountsHandler implements HttpHandler {
     private void handleDelete(HttpExchange exchange) throws IOException {
         try {
             String idParam = RequestUtil.getQueryParam(exchange, "id");
+            
+            // Se não encontrou no query param, tenta pegar da URL
+            if (idParam == null) {
+                String path = exchange.getRequestURI().getPath();
+                String[] segments = path.split("/");
+                if (segments.length > 0) {
+                    try {
+                        // Tenta o último segmento
+                        String lastSegment = segments[segments.length - 1];
+                        // Verifica se é número
+                        Integer.parseInt(lastSegment);
+                        idParam = lastSegment;
+                    } catch (NumberFormatException e) {
+                        // Ignora se não for número
+                    }
+                }
+            }
+            
             if (idParam == null) {
                 ResponseUtil.sendErrorResponse(exchange, 400, "ID da conta não fornecido");
                 return;

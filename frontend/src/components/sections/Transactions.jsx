@@ -421,7 +421,7 @@ function TransactionModal({ isOpen, onClose, type, categories, accounts, tags, o
             </div>
           </div>
         )}
-        <div>
+        <div className="relative">
           <label className="label">Conta</label>
           <select
             value={formData.accountId}

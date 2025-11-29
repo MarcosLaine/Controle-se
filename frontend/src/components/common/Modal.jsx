@@ -28,10 +28,11 @@ export default function Modal({ isOpen, onClose, title, children, size = 'md' })
       onClick={onClose}
     >
       <div
-        className={`bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full ${sizeClasses[size]} max-h-[90vh] overflow-y-auto animate-slide-up`}
+        className={`bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full ${sizeClasses[size]} max-h-[90vh] overflow-visible animate-slide-up relative`}
         onClick={(e) => e.stopPropagation()}
+        style={{ zIndex: 50 }}
       >
-        <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex items-center justify-between">
+        <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex items-center justify-between z-10">
           <h3 className="text-xl font-semibold text-gray-900 dark:text-white">
             {title}
           </h3>
@@ -42,7 +43,7 @@ export default function Modal({ isOpen, onClose, title, children, size = 'md' })
             <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />
           </button>
         </div>
-        <div className="p-6">{children}</div>
+        <div className="p-6 overflow-y-auto max-h-[calc(90vh-80px)]">{children}</div>
       </div>
     </div>
   );

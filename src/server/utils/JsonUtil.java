@@ -59,6 +59,7 @@ public class JsonUtil {
      */
     public static Map<String, String> parseJson(String json) {
         Map<String, String> result = new HashMap<>();
+        if (json == null) return result;
         
         try {
             // Pattern to match "key": "value" or "key": value pairs

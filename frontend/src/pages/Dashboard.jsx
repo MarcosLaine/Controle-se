@@ -16,6 +16,29 @@ export default function Dashboard() {
   });
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
+  const renderSection = () => {
+    switch (activeSection) {
+      case 'overview':
+        return <Overview />;
+      case 'categories':
+        return <Categories />;
+      case 'accounts':
+        return <Accounts />;
+      case 'transactions':
+        return <Transactions />;
+      case 'budgets':
+        return <Budgets />;
+      case 'tags':
+        return <Tags />;
+      case 'reports':
+        return <Reports />;
+      case 'investments':
+        return <Investments />;
+      default:
+        return <Overview />;
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <Header onMenuClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} />
@@ -24,6 +47,7 @@ export default function Dashboard() {
           activeSection={activeSection} 
           onSectionChange={(section) => {
             setActiveSection(section);
+            localStorage.setItem('controle-se-active-section', section);
             setIsMobileMenuOpen(false);
           }}
           isOpen={isMobileMenuOpen}
@@ -31,31 +55,7 @@ export default function Dashboard() {
         />
         <main className="flex-1 p-4 lg:p-6 overflow-y-auto h-[calc(100vh-73px)] w-full">
           <div className="max-w-7xl mx-auto">
-            {/* Mantém todos os componentes montados, apenas oculta os inativos */}
-            <div style={{ display: activeSection === 'overview' ? 'block' : 'none' }}>
-              <Overview />
-            </div>
-            <div style={{ display: activeSection === 'categories' ? 'block' : 'none' }}>
-              <Categories />
-            </div>
-            <div style={{ display: activeSection === 'accounts' ? 'block' : 'none' }}>
-              <Accounts />
-            </div>
-            <div style={{ display: activeSection === 'transactions' ? 'block' : 'none' }}>
-              <Transactions />
-            </div>
-            <div style={{ display: activeSection === 'budgets' ? 'block' : 'none' }}>
-              <Budgets />
-            </div>
-            <div style={{ display: activeSection === 'tags' ? 'block' : 'none' }}>
-              <Tags />
-            </div>
-            <div style={{ display: activeSection === 'reports' ? 'block' : 'none' }}>
-              <Reports />
-            </div>
-            <div style={{ display: activeSection === 'investments' ? 'block' : 'none' }}>
-              <Investments />
-            </div>
+            {renderSection()}
           </div>
         </main>
       </div>

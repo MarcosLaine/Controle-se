@@ -188,6 +188,9 @@ public class BancoDadosPostgreSQL {
             synchronized (connectionLock) {
                 activeConnections--;
             }
+            // Se falhou, não deve decrementar se a conexão nem foi criada, mas activeConnections++ foi chamado antes
+            // O problema é que se falha aqui, connectionThreadLocal fica null/velho
+            
             System.err.println("Erro ao conectar ao PostgreSQL: " + e.getMessage());
             System.err.println("URL: " + jdbcUrl.replace(password != null ? password : "", "***"));
             

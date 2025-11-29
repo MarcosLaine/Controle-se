@@ -71,10 +71,26 @@ public class CategoriesHandler implements HttpHandler {
             Map<String, String> data = JsonUtil.parseJson(requestBody);
             
             String name = data.get("name");
+            if (name == null) name = data.get("nome");
             String userIdStr = data.get("userId");
             int userId = (userIdStr != null && !userIdStr.isEmpty()) ? Integer.parseInt(userIdStr) : 1;
             
             int categoryId = bancoDados.cadastrarCategoria(name, userId);
+            
+            // Verifica se foi enviado um orçamento
+            String budgetStr = data.get("budget");
+            if (budgetStr != null && !budgetStr.isEmpty() && !budgetStr.equals("null")) {
+                try {
+                    double budgetValue = Double.parseDouble(budgetStr);
+                    if (budgetValue > 0) {
+                        // Por padrão, definimos como mensal se não especificado
+                        bancoDados.cadastrarOrcamento(budgetValue, "MENSAL", categoryId, userId);
+                    }
+                } catch (NumberFormatException e) {
+                    // Ignora erro de conversão, apenas cria a categoria sem orçamento
+                    System.err.println("Erro ao converter orçamento: " + budgetStr);
+                }
+            }
             
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);
@@ -98,6 +114,7 @@ public class CategoriesHandler implements HttpHandler {
             
             int categoryId = Integer.parseInt(data.get("id"));
             String newName = data.get("name");
+            if (newName == null) newName = data.get("nome");
             
             bancoDados.atualizarCategoria(categoryId, newName);
             
@@ -118,6 +135,24 @@ public class CategoriesHandler implements HttpHandler {
     private void handleDelete(HttpExchange exchange) throws IOException {
         try {
             String idParam = RequestUtil.getQueryParam(exchange, "id");
+            
+            // Se não encontrou no query param, tenta pegar da URL
+            if (idParam == null) {
+                String path = exchange.getRequestURI().getPath();
+                String[] segments = path.split("/");
+                if (segments.length > 0) {
+                    try {
+                        // Tenta o último segmento
+                        String lastSegment = segments[segments.length - 1];
+                        // Verifica se é número
+                        Integer.parseInt(lastSegment);
+                        idParam = lastSegment;
+                    } catch (NumberFormatException e) {
+                        // Ignora se não for número
+                    }
+                }
+            }
+            
             if (idParam == null) {
                 ResponseUtil.sendErrorResponse(exchange, 400, "ID da categoria não fornecido");
                 return;

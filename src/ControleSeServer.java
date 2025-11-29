@@ -90,6 +90,11 @@ public class ControleSeServer {
                 } catch (Exception e) {
                     System.err.println("Erro ao processar recorrências: " + e.getMessage());
                     e.printStackTrace();
+                } finally {
+                    // IMPORTANTE: Fechar conexão após a execução da tarefa agendada
+                    if (bancoDados != null) {
+                        bancoDados.closeConnection();
+                    }
                 }
             }
         }, delay, periodo);
@@ -105,6 +110,11 @@ public class ControleSeServer {
             }
         } catch (Exception e) {
             System.err.println("[INICIALIZAÇÃO] Erro ao processar recorrências: " + e.getMessage());
+        } finally {
+            // IMPORTANTE: Fechar conexão após a execução inicial
+            if (bancoDados != null) {
+                bancoDados.closeConnection();
+            }
         }
         System.out.println();
     }
@@ -159,10 +169,10 @@ public class ControleSeServer {
         server.createContext("/", new StaticFileHandler());
         
         // Configura executor com pool de threads para múltiplos usuários simultâneos
-        // Thread pool: mínimo 10, máximo 100, timeout de 60s para threads idle
+        // Thread pool reduzido para evitar estourar limite de conexões do banco gratuito
         ExecutorService executor = new ThreadPoolExecutor(
-            10,                      // corePoolSize: mínimo de threads
-            100,                     // maximumPoolSize: máximo de threads
+            2,                       // corePoolSize: mínimo de threads
+            5,                       // maximumPoolSize: máximo de threads (limitado pelo banco)
             60L,                     // keepAliveTime: 60 segundos
             TimeUnit.SECONDS,        // unidade de tempo
             new LinkedBlockingQueue<>(500), // fila de requisições (limite de 500)
@@ -269,7 +279,7 @@ public class ControleSeServer {
                 sendErrorResponse(exchange, 500, "Erro interno do servidor");
             } finally {
                 // Garante que conexão da thread seja fechada após requisição
-                // (ThreadLocal será limpo quando thread terminar)
+                bancoDados.closeConnection();
             }
         }
         
@@ -328,7 +338,7 @@ public class ControleSeServer {
                 sendErrorResponse(exchange, 500, "Erro interno do servidor");
             } finally {
                 // Garante que conexão da thread seja fechada após requisição
-                // (ThreadLocal será limpo quando thread terminar)
+                bancoDados.closeConnection();
             }
         }
     }
@@ -363,6 +373,9 @@ public class ControleSeServer {
                 response.put("message", e.getMessage());
                 
                 sendJsonResponse(exchange, 400, response);
+            } finally {
+                // Garante que conexão da thread seja fechada após requisição
+                bancoDados.closeConnection();
             }
         }
     }
@@ -410,17 +423,25 @@ public class ControleSeServer {
                 double totalAccounts = bancoDados.calcularTotalSaldoContasUsuario(userId); // Inclui saldo em conta de corretora
                 double netWorth = totalAccounts + totalInvestmentsValue; // Patrimônio = Contas + Ativos
                 
-                // Get category breakdown
+                // Get category breakdown - otimizado: busca todas as categorias e calcula gastos em batch
                 List<Categoria> categories = bancoDados.buscarCategoriasPorUsuario(userId);
                 List<Map<String, Object>> categoryBreakdown = new ArrayList<>();
                 
+                // Cria um mapa de categorias para acesso rápido
+                Map<Integer, Categoria> categoryMap = new HashMap<>();
                 for (Categoria categoria : categories) {
-                    // Calcula apenas os gastos do usuário para esta categoria
+                    categoryMap.put(categoria.getIdCategoria(), categoria);
+                }
+                
+                // Calcula gastos por categoria de forma otimizada (uma query agregada seria melhor, mas mantemos compatibilidade)
+                for (Categoria categoria : categories) {
                     double categoryTotal = bancoDados.calcularTotalGastosPorCategoriaEUsuario(categoria.getIdCategoria(), userId);
-                    Map<String, Object> categoryData = new HashMap<>();
-                    categoryData.put("name", categoria.getNome());
-                    categoryData.put("value", categoryTotal);
-                    categoryBreakdown.add(categoryData);
+                    if (categoryTotal > 0) { // Só adiciona se houver gastos
+                        Map<String, Object> categoryData = new HashMap<>();
+                        categoryData.put("name", categoria.getNome());
+                        categoryData.put("value", categoryTotal);
+                        categoryBreakdown.add(categoryData);
+                    }
                 }
                 
                 Map<String, Object> response = new HashMap<>();
@@ -439,7 +460,7 @@ public class ControleSeServer {
                 sendErrorResponse(exchange, 500, "Erro interno do servidor");
             } finally {
                 // Garante que conexão da thread seja fechada após requisição
-                // (ThreadLocal será limpo quando thread terminar)
+                bancoDados.closeConnection();
             }
         }
     }
@@ -488,7 +509,7 @@ public class ControleSeServer {
                 sendErrorResponse(exchange, 500, "Erro interno do servidor");
             } finally {
                 // Garante que conexão da thread seja fechada após requisição
-                // (ThreadLocal será limpo quando thread terminar)
+                bancoDados.closeConnection();
             }
         }
         
@@ -498,6 +519,9 @@ public class ControleSeServer {
                 Map<String, Object> data = parseJsonWithNested(requestBody);
                 
                 String name = (String) data.get("name");
+                if (name == null) {
+                    name = (String) data.get("nome");
+                }
                 Object userIdObj = data.get("userId");
                 int userId = 1;
                 if (userIdObj instanceof Number) {
@@ -511,20 +535,36 @@ public class ControleSeServer {
                 // Verifica se deve criar orçamento junto
                 Integer budgetId = null;
                 if (data.containsKey("budget") && data.get("budget") != null) {
-                    @SuppressWarnings("unchecked")
-                    Map<String, Object> budgetData = (Map<String, Object>) data.get("budget");
-                    
+                    Object budgetObj = data.get("budget");
                     double value = 0.0;
-                    Object valueObj = budgetData.get("value");
-                    if (valueObj instanceof Number) {
-                        value = ((Number) valueObj).doubleValue();
-                    } else if (valueObj instanceof String) {
-                        value = Double.parseDouble((String) valueObj);
+                    String period = "MENSAL";
+                    
+                    if (budgetObj instanceof Map) {
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> budgetData = (Map<String, Object>) budgetObj;
+                        
+                        Object valueObj = budgetData.get("value");
+                        if (valueObj instanceof Number) {
+                            value = ((Number) valueObj).doubleValue();
+                        } else if (valueObj instanceof String) {
+                            value = Double.parseDouble((String) valueObj);
+                        }
+                        
+                        if (budgetData.containsKey("period")) {
+                            period = (String) budgetData.get("period");
+                        }
+                    } else if (budgetObj instanceof Number) {
+                        value = ((Number) budgetObj).doubleValue();
+                    } else if (budgetObj instanceof String) {
+                        try {
+                            value = Double.parseDouble((String) budgetObj);
+                        } catch (NumberFormatException e) {
+                            // ignore
+                        }
                     }
                     
-                    String period = (String) budgetData.get("period");
-                    
                     if (value > 0 && period != null && !period.isEmpty()) {
+                        System.out.println("Criando orçamento automático para categoria " + categoryId + ": " + value);
                         budgetId = bancoDados.cadastrarOrcamento(value, period, categoryId, userId);
                     }
                 }
@@ -546,6 +586,8 @@ public class ControleSeServer {
                 response.put("message", e.getMessage());
                 
                 sendJsonResponse(exchange, 400, response);
+            } finally {
+                bancoDados.closeConnection();
             }
         }
         
@@ -556,6 +598,7 @@ public class ControleSeServer {
                 
                 int categoryId = Integer.parseInt(data.get("id"));
                 String newName = data.get("name");
+                if (newName == null) newName = data.get("nome");
                 
                 bancoDados.atualizarCategoria(categoryId, newName);
                 
@@ -570,12 +613,25 @@ public class ControleSeServer {
                 response.put("message", e.getMessage());
                 
                 sendJsonResponse(exchange, 400, response);
+            } finally {
+                bancoDados.closeConnection();
             }
         }
         
         private void handleDeleteCategory(HttpExchange exchange) throws IOException {
             try {
                 String idParam = getQueryParam(exchange, "id");
+                
+                // Se não encontrou no query param, tenta pegar da URL
+                if (idParam == null) {
+                    String path = exchange.getRequestURI().getPath();
+                    String[] segments = path.split("/");
+                    // path esperado: /api/categories/123 -> ["", "api", "categories", "123"]
+                    if (segments.length > 3) {
+                        idParam = segments[segments.length - 1];
+                    }
+                }
+                
                 if (idParam == null) {
                     sendErrorResponse(exchange, 400, "ID da categoria não fornecido");
                     return;
@@ -595,6 +651,8 @@ public class ControleSeServer {
                 response.put("message", e.getMessage());
                 
                 sendJsonResponse(exchange, 400, response);
+            } finally {
+                bancoDados.closeConnection();
             }
         }
     }
@@ -713,7 +771,7 @@ public class ControleSeServer {
                 sendErrorResponse(exchange, 500, "Erro interno do servidor");
             } finally {
                 // Garante que conexão da thread seja fechada após requisição
-                // (ThreadLocal será limpo quando thread terminar)
+                bancoDados.closeConnection();
             }
         }
         
@@ -723,8 +781,19 @@ public class ControleSeServer {
                 Map<String, String> data = parseJson(requestBody);
                 
                 String name = data.get("name");
+                if (name == null) name = data.get("nome");
+
                 String type = data.get("type");
-                double balance = Double.parseDouble(data.get("balance"));
+                if (type == null) type = data.get("tipo");
+                
+                String balanceStr = data.get("balance");
+                if (balanceStr == null) {
+                    balanceStr = data.get("saldoInicial");
+                }
+                if (balanceStr == null) {
+                    throw new IllegalArgumentException("Saldo é obrigatório");
+                }
+                double balance = Double.parseDouble(balanceStr);
                 
                 // Obtém userId do request
                 String userIdStr = data.get("userId");
@@ -747,6 +816,8 @@ public class ControleSeServer {
                 response.put("message", e.getMessage());
                 
                 sendJsonResponse(exchange, 400, response);
+            } finally {
+                bancoDados.closeConnection();
             }
         }
         
@@ -755,10 +826,33 @@ public class ControleSeServer {
                 String requestBody = readRequestBody(exchange);
                 Map<String, String> data = parseJson(requestBody);
                 
-                int accountId = Integer.parseInt(data.get("id"));
+                String idStr = data.get("id");
+                
+                // Se não encontrou no body, tenta pegar da URL
+                if (idStr == null) {
+                    String path = exchange.getRequestURI().getPath();
+                    String[] segments = path.split("/");
+                    // path esperado: /api/accounts/123 -> ["", "api", "accounts", "123"]
+                    if (segments.length > 3) {
+                        idStr = segments[segments.length - 1];
+                    }
+                }
+                
+                if (idStr == null) throw new IllegalArgumentException("ID da conta é obrigatório");
+                int accountId = Integer.parseInt(idStr);
+                
                 String name = data.get("name");
+                if (name == null) name = data.get("nome");
+
                 String type = data.get("type");
-                double balance = Double.parseDouble(data.get("balance"));
+                if (type == null) type = data.get("tipo");
+                
+                String balanceStr = data.get("balance");
+                if (balanceStr == null) {
+                    balanceStr = data.get("saldoInicial");
+                }
+                if (balanceStr == null) throw new IllegalArgumentException("Saldo é obrigatório");
+                double balance = Double.parseDouble(balanceStr);
                 
                 bancoDados.atualizarConta(accountId, name, type, balance);
                 
@@ -773,12 +867,25 @@ public class ControleSeServer {
                 response.put("message", e.getMessage());
                 
                 sendJsonResponse(exchange, 400, response);
+            } finally {
+                bancoDados.closeConnection();
             }
         }
         
         private void handleDeleteAccount(HttpExchange exchange) throws IOException {
             try {
                 String idParam = getQueryParam(exchange, "id");
+                
+                // Se não encontrou no query param, tenta pegar da URL
+                if (idParam == null) {
+                    String path = exchange.getRequestURI().getPath();
+                    String[] segments = path.split("/");
+                    // path esperado: /api/accounts/123 -> ["", "api", "accounts", "123"]
+                    if (segments.length > 3) {
+                        idParam = segments[segments.length - 1];
+                    }
+                }
+                
                 if (idParam == null) {
                     sendErrorResponse(exchange, 400, "ID da conta não fornecido");
                     return;
@@ -798,6 +905,9 @@ public class ControleSeServer {
                 response.put("message", e.getMessage());
                 
                 sendJsonResponse(exchange, 400, response);
+            } finally {
+                // Garante que conexão da thread seja fechada após requisição
+                bancoDados.closeConnection();
             }
         }
     }
@@ -886,6 +996,9 @@ public class ControleSeServer {
             } catch (Exception e) {
                 e.printStackTrace();
                 sendErrorResponse(exchange, 500, "Erro interno do servidor");
+            } finally {
+                // Garante que conexão da thread seja fechada após requisição
+                bancoDados.closeConnection();
             }
         }
     }
@@ -998,6 +1111,8 @@ public class ControleSeServer {
             } catch (Exception e) {
                 e.printStackTrace();
                 sendErrorResponse(exchange, 500, "Erro interno do servidor");
+            } finally {
+                bancoDados.closeConnection();
             }
         }
     }
@@ -1199,6 +1314,9 @@ public class ControleSeServer {
                 response.put("success", false);
                 response.put("message", "Erro: " + e.getMessage());
                 sendJsonResponse(exchange, 400, response);
+            } finally {
+                // Garante que conexão da thread seja fechada após requisição
+                bancoDados.closeConnection();
             }
         }
         
@@ -1233,6 +1351,9 @@ public class ControleSeServer {
                 response.put("success", false);
                 response.put("message", "Erro: " + e.getMessage());
                 sendJsonResponse(exchange, 400, response);
+            } finally {
+                // Garante que conexão da thread seja fechada após requisição
+                bancoDados.closeConnection();
             }
         }
     }
@@ -1352,6 +1473,9 @@ public class ControleSeServer {
                 response.put("message", e.getMessage());
                 
                 sendJsonResponse(exchange, 400, response);
+            } finally {
+                // Garante que conexão da thread seja fechada após requisição
+                bancoDados.closeConnection();
             }
         }
         
@@ -1380,6 +1504,9 @@ public class ControleSeServer {
                 response.put("success", false);
                 response.put("message", "Erro: " + e.getMessage());
                 sendJsonResponse(exchange, 400, response);
+            } finally {
+                // Garante que conexão da thread seja fechada após requisição
+                bancoDados.closeConnection();
             }
         }
     }
@@ -1411,8 +1538,15 @@ public class ControleSeServer {
                 List<Orcamento> budgets = bancoDados.buscarOrcamentosPorUsuario(userId);
                 List<Map<String, Object>> budgetList = new ArrayList<>();
                 
+                // Otimização: busca todas as categorias de uma vez em vez de uma por orçamento
+                List<Categoria> allCategories = bancoDados.buscarCategoriasPorUsuario(userId);
+                Map<Integer, Categoria> categoryMap = new HashMap<>();
+                for (Categoria cat : allCategories) {
+                    categoryMap.put(cat.getIdCategoria(), cat);
+                }
+                
                 for (Orcamento orcamento : budgets) {
-                    Categoria categoria = bancoDados.buscarCategoria(orcamento.getIdCategoria());
+                    Categoria categoria = categoryMap.get(orcamento.getIdCategoria());
                     // Calcula apenas os gastos do usuário para esta categoria
                     double spent = bancoDados.calcularTotalGastosPorCategoriaEUsuario(orcamento.getIdCategoria(), userId);
                     double percentageUsed = orcamento.getValorPlanejado() > 0 ? 
@@ -1424,7 +1558,9 @@ public class ControleSeServer {
                     
                     Map<String, Object> budgetData = new HashMap<>();
                     budgetData.put("idOrcamento", orcamento.getIdOrcamento());
+                    budgetData.put("idCategoria", orcamento.getIdCategoria());
                     budgetData.put("valorPlanejado", orcamento.getValorPlanejado());
+                    budgetData.put("valorUsado", spent);
                     budgetData.put("periodo", orcamento.getPeriodo());
                     budgetData.put("categoryName", categoria != null ? categoria.getNome() : "Sem categoria");
                     budgetData.put("percentageUsed", percentageUsed);
@@ -1441,7 +1577,7 @@ public class ControleSeServer {
                 sendErrorResponse(exchange, 500, "Erro interno do servidor");
             } finally {
                 // Garante que conexão da thread seja fechada após requisição
-                // (ThreadLocal será limpo quando thread terminar)
+                bancoDados.closeConnection();
             }
         }
         
@@ -1451,7 +1587,11 @@ public class ControleSeServer {
                 Map<String, String> data = parseJson(requestBody);
                 
                 int categoryId = Integer.parseInt(data.get("categoryId"));
-                double value = Double.parseDouble(data.get("value"));
+                
+                String valueStr = data.get("value");
+                if (valueStr == null) throw new IllegalArgumentException("Valor é obrigatório");
+                double value = Double.parseDouble(valueStr);
+                
                 String period = data.get("period");
                 
                 // Obtém userId do request
@@ -1475,6 +1615,8 @@ public class ControleSeServer {
                 response.put("message", e.getMessage());
                 
                 sendJsonResponse(exchange, 400, response);
+            } finally {
+                bancoDados.closeConnection();
             }
         }
         
@@ -1484,7 +1626,11 @@ public class ControleSeServer {
                 Map<String, String> data = parseJson(requestBody);
                 
                 int budgetId = Integer.parseInt(data.get("id"));
-                double value = Double.parseDouble(data.get("value"));
+                
+                String valueStr = data.get("value");
+                if (valueStr == null) throw new IllegalArgumentException("Valor é obrigatório");
+                double value = Double.parseDouble(valueStr);
+                
                 String period = data.get("period");
                 
                 bancoDados.atualizarOrcamento(budgetId, value, period);
@@ -1500,12 +1646,26 @@ public class ControleSeServer {
                 response.put("message", e.getMessage());
                 
                 sendJsonResponse(exchange, 400, response);
+            } finally {
+                // Garante que conexão da thread seja fechada após requisição
+                bancoDados.closeConnection();
             }
         }
         
         private void handleDeleteBudget(HttpExchange exchange) throws IOException {
             try {
                 String idParam = getQueryParam(exchange, "id");
+                
+                // Se não encontrou no query param, tenta pegar da URL
+                if (idParam == null) {
+                    String path = exchange.getRequestURI().getPath();
+                    String[] segments = path.split("/");
+                    // path esperado: /api/budgets/123 -> ["", "api", "budgets", "123"]
+                    if (segments.length > 3) {
+                        idParam = segments[segments.length - 1];
+                    }
+                }
+                
                 if (idParam == null) {
                     sendErrorResponse(exchange, 400, "ID do orçamento não fornecido");
                     return;
@@ -1525,6 +1685,9 @@ public class ControleSeServer {
                 response.put("message", e.getMessage());
                 
                 sendJsonResponse(exchange, 400, response);
+            } finally {
+                // Garante que conexão da thread seja fechada após requisição
+                bancoDados.closeConnection();
             }
         }
     }
@@ -1574,7 +1737,7 @@ public class ControleSeServer {
                 sendErrorResponse(exchange, 500, "Erro interno do servidor");
             } finally {
                 // Garante que conexão da thread seja fechada após requisição
-                // (ThreadLocal será limpo quando thread terminar)
+                bancoDados.closeConnection();
             }
         }
         
@@ -1605,6 +1768,9 @@ public class ControleSeServer {
                 response.put("message", e.getMessage());
                 
                 sendJsonResponse(exchange, 400, response);
+            } finally {
+                // Garante que conexão da thread seja fechada após requisição
+                bancoDados.closeConnection();
             }
         }
         
@@ -1630,12 +1796,26 @@ public class ControleSeServer {
                 response.put("message", e.getMessage());
                 
                 sendJsonResponse(exchange, 400, response);
+            } finally {
+                // Garante que conexão da thread seja fechada após requisição
+                bancoDados.closeConnection();
             }
         }
         
         private void handleDeleteTag(HttpExchange exchange) throws IOException {
             try {
                 String idParam = getQueryParam(exchange, "id");
+                
+                // Se não encontrou no query param, tenta pegar da URL
+                if (idParam == null) {
+                    String path = exchange.getRequestURI().getPath();
+                    String[] segments = path.split("/");
+                    // path esperado: /api/tags/123 -> ["", "api", "tags", "123"]
+                    if (segments.length > 3) {
+                        idParam = segments[segments.length - 1];
+                    }
+                }
+                
                 if (idParam == null) {
                     sendErrorResponse(exchange, 400, "ID da tag não fornecido");
                     return;
@@ -1655,6 +1835,9 @@ public class ControleSeServer {
                 response.put("message", e.getMessage());
                 
                 sendJsonResponse(exchange, 400, response);
+            } finally {
+                // Garante que conexão da thread seja fechada após requisição
+                bancoDados.closeConnection();
             }
         }
     }
@@ -2410,6 +2593,7 @@ public class ControleSeServer {
     private static Map<String, String> parseJson(String json) {
         // Robust JSON parser using regex
         Map<String, String> result = new HashMap<>();
+        if (json == null) return result;
         
         try {
             // Pattern to match "key": "value" or "key": value or "key": [array]
@@ -2450,6 +2634,7 @@ public class ControleSeServer {
      */
     private static Map<String, Object> parseJsonWithNested(String json) {
         Map<String, Object> result = new HashMap<>();
+        if (json == null) return result;
         
         try {
             json = json.trim();
@@ -2606,6 +2791,7 @@ public class ControleSeServer {
     @SuppressWarnings("unchecked")
     private static List<Object> parseJsonArray(String json) {
         List<Object> result = new ArrayList<>();
+        if (json == null) return result;
         
         try {
             json = json.trim();
