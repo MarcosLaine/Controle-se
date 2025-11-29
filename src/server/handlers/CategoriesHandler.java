@@ -11,9 +11,9 @@ import server.utils.*;
  * GET, POST, PUT, DELETE /api/categories
  */
 public class CategoriesHandler implements HttpHandler {
-    private BancoDados bancoDados;
+    private BancoDadosPostgreSQL bancoDados;
     
-    public CategoriesHandler(BancoDados bancoDados) {
+    public CategoriesHandler(BancoDadosPostgreSQL bancoDados) {
         this.bancoDados = bancoDados;
     }
     

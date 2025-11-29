@@ -7,9 +7,9 @@ import server.utils.*;
  * Handler para operações com Contas
  */
 public class AccountsHandler implements HttpHandler {
-    private BancoDados bancoDados;
+    private BancoDadosPostgreSQL bancoDados;
     
-    public AccountsHandler(BancoDados bancoDados) {
+    public AccountsHandler(BancoDadosPostgreSQL bancoDados) {
         this.bancoDados = bancoDados;
     }
     

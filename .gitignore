@@ -1,4 +1,46 @@
-*.db
+# Configurações sensíveis
+.env
+db.properties
+*.key
+*.pem
+*.p12
+ca-certificate.crt
+*.crt
+
+# Arquivos compilados
 bin/
 *.class
-compressed/
+
+# Bibliotecas (opcional - pode commitar se quiser)
+lib/postgresql.jar
+lib/*.jar
+
+# Dados locais (não mais usado, mas mantido para compatibilidade)
+data/
+*.db
+
+# Logs
+logs/
+*.log
+
+# IDEs
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Backups
+backups/
+*.sql.gz
+*.dump
+
+# Temporários
+tmp/
+temp/
+*.tmp

@@ -4,20 +4,21 @@ import java.net.*;
 import java.time.LocalDate;
 import java.util.*;
 import java.util.regex.*;
+import java.util.concurrent.*;
 
 /**
  * Servidor HTTP simplificado para conectar Frontend com Backend Java
  * Implementa uma API REST básica para o sistema Controle-se
  */
 public class ControleSeServer {
-    private static BancoDados bancoDados;
+    private static BancoDadosPostgreSQL bancoDados;
     private static HttpServer server;
     private static final int PORT = 8080;
     
     public static void main(String[] args) {
         try {
-            // Inicializa o banco de dados
-            bancoDados = new BancoDados();
+            // Inicializa o banco de dados PostgreSQL (Aiven)
+            bancoDados = new BancoDadosPostgreSQL();
             
             // Cria o servidor HTTP
             server = HttpServer.create(new InetSocketAddress(PORT), 0);
@@ -34,9 +35,8 @@ public class ControleSeServer {
             // Inicia o scheduler de atualização de cotações (executa a cada 30 minutos)
             iniciarSchedulerCotacoes();
             
-            // Exibe informações do servidor e inicia loop do menu
+            // Exibe informações do servidor
             exibirInformacoesServidor();
-            iniciarLoopMenu();
             
         } catch (IOException e) {
             System.err.println("Erro ao iniciar servidor: " + e.getMessage());
@@ -53,159 +53,6 @@ public class ControleSeServer {
         System.out.println("API disponível em: http://localhost:" + PORT + "/api/");
         // System.out.println("Scheduler de recorrências: ATIVO (verifica diariamente às 00:05)");
         System.out.println("Pressione Ctrl+C para parar o servidor");
-    }
-    
-    /**
-     * Inicia loop contínuo do menu de compressão
-     */
-    private static void iniciarLoopMenu() {
-        Scanner scanner = new Scanner(System.in);
-        
-        while (true) {
-            try {
-                exibirMenuCompressao(scanner);
-            } catch (Exception e) {
-                System.err.println("Erro no menu: " + e.getMessage());
-                e.printStackTrace();
-                System.out.println("\nPressione Enter para continuar...");
-                try {
-                    scanner.nextLine();
-                } catch (Exception ex) {
-                    // Ignora
-                }
-            }
-        }
-    }
-    
-    /**
-     * Exibe menu CLI para compressão/descompressão de arquivos
-     */
-    private static void exibirMenuCompressao(Scanner scanner) {
-        System.out.println("\n========================================");
-        System.out.println("   SISTEMA DE COMPRESSÃO DE DADOS");
-        System.out.println("========================================");
-        System.out.println("1. Comprimir arquivos com LZW");
-        System.out.println("2. Comprimir arquivos com Huffman");
-        System.out.println("3. Descomprimir arquivo");
-        System.out.println("4. Mostrar informações do servidor");
-        System.out.println("========================================");
-        System.out.print("Escolha uma opção: ");
-        
-        try {
-            int opcao = scanner.nextInt();
-            scanner.nextLine(); // Limpa buffer
-            
-            switch (opcao) {
-                case 1:
-                    comprimirArquivos("LZW", scanner);
-                    break;
-                case 2:
-                    comprimirArquivos("HUFFMAN", scanner);
-                    break;
-                case 3:
-                    descomprimirArquivo(scanner);
-                    break;
-                case 4:
-                    exibirInformacoesServidor();
-                    System.out.println("\nPressione Enter para continuar...");
-                    scanner.nextLine();
-                    break;
-                default:
-                    System.out.println("Opção inválida. Tente novamente.");
-                    System.out.println("Pressione Enter para continuar...");
-                    scanner.nextLine();
-                    break;
-            }
-        } catch (Exception e) {
-            System.err.println("Erro ao processar opção: " + e.getMessage());
-            System.out.println("Pressione Enter para continuar...");
-            try {
-                scanner.nextLine();
-            } catch (Exception ex) {
-                // Ignora
-            }
-        }
-    }
-    
-    /**
-     * Comprime todos os arquivos .db usando o algoritmo especificado
-     */
-    private static void comprimirArquivos(String algoritmo, Scanner scanner) {
-        try {
-            System.out.println("\n=== COMPRESSÃO COM " + algoritmo + " ===\n");
-            String arquivoComprimido = FileCompressor.compressAllFiles(algoritmo);
-            System.out.println("\nCompressão concluída com sucesso!");
-            System.out.println("Arquivo salvo em: " + arquivoComprimido);
-            System.out.println("\nPressione Enter para continuar...");
-            scanner.nextLine();
-            exibirInformacoesServidor();
-        } catch (Exception e) {
-            System.err.println("\nErro ao comprimir arquivos: " + e.getMessage());
-            e.printStackTrace();
-            System.out.println("\nPressione Enter para continuar...");
-            try {
-                scanner.nextLine();
-            } catch (Exception ex) {
-                // Ignora
-            }
-            exibirInformacoesServidor();
-        }
-    }
-    
-    /**
-     * Descomprime um arquivo selecionado
-     */
-    private static void descomprimirArquivo(Scanner scanner) {
-        try {
-            System.out.println("\n=== DESCOMPRESSÃO DE ARQUIVO ===\n");
-            
-            List<String> arquivosComprimidos = FileCompressor.listCompressedFiles();
-            
-            if (arquivosComprimidos.isEmpty()) {
-                System.out.println("Nenhum arquivo comprimido encontrado no diretório atual.");
-                System.out.println("Pressione Enter para continuar...");
-                scanner.nextLine();
-                exibirInformacoesServidor();
-                return;
-            }
-            
-            System.out.println("Arquivos comprimidos disponíveis:");
-            for (int i = 0; i < arquivosComprimidos.size(); i++) {
-                File file = new File(arquivosComprimidos.get(i));
-                System.out.println((i + 1) + ". " + file.getName() + " (" + file.length() + " bytes)");
-            }
-            
-            System.out.print("\nEscolha o número do arquivo para descomprimir (ou 0 para cancelar): ");
-            int escolha = scanner.nextInt();
-            scanner.nextLine(); // Limpa buffer
-            
-            if (escolha < 1 || escolha > arquivosComprimidos.size()) {
-                System.out.println("Opção cancelada ou inválida.");
-                exibirInformacoesServidor();
-                return;
-            }
-            
-            String arquivoSelecionado = arquivosComprimidos.get(escolha - 1);
-            System.out.println("\nDescomprimindo: " + new File(arquivoSelecionado).getName());
-            
-            FileCompressor.decompressAllFiles(arquivoSelecionado);
-            
-            System.out.println("\nDescompressão concluída com sucesso!");
-            System.out.println("Pressione Enter para continuar...");
-            scanner.nextLine();
-            exibirInformacoesServidor();
-            
-        } catch (Exception e) {
-            System.err.println("\nErro ao descomprimir arquivo: " + e.getMessage());
-            e.printStackTrace();
-            System.out.println("\nPressione Enter para continuar...");
-            try {
-                scanner.nextLine();
-            } catch (Exception ex) {
-                // Ignora
-            }
-            exibirInformacoesServidor();
-        }
     }
     
     /**
@@ -311,8 +158,26 @@ public class ControleSeServer {
         // Servir arquivos estáticos (HTML, CSS, JS) - deve vir por último
         server.createContext("/", new StaticFileHandler());
         
-        // Configura executor
-        server.setExecutor(null);
+        // Configura executor com pool de threads para múltiplos usuários simultâneos
+        // Thread pool: mínimo 10, máximo 100, timeout de 60s para threads idle
+        ExecutorService executor = new ThreadPoolExecutor(
+            10,                      // corePoolSize: mínimo de threads
+            100,                     // maximumPoolSize: máximo de threads
+            60L,                     // keepAliveTime: 60 segundos
+            TimeUnit.SECONDS,        // unidade de tempo
+            new LinkedBlockingQueue<>(500), // fila de requisições (limite de 500)
+            new ThreadFactory() {
+                private int threadNumber = 1;
+                @Override
+                public Thread newThread(Runnable r) {
+                    Thread t = new Thread(r, "ControleSe-Handler-" + threadNumber++);
+                    t.setDaemon(false);
+                    return t;
+                }
+            },
+            new ThreadPoolExecutor.CallerRunsPolicy() // se fila cheia, executa na thread chamadora
+        );
+        server.setExecutor(executor);
     }
     
     // ===== HANDLERS SIMPLIFICADOS =====
@@ -322,16 +187,67 @@ public class ControleSeServer {
         public void handle(HttpExchange exchange) throws IOException {
             String path = exchange.getRequestURI().getPath();
             
-            // Serve index.html for root path
-            if (path.equals("/")) {
-                path = "/index.html";
+            // Never handle API routes here
+            if (path.startsWith("/api/")) {
+                sendErrorResponse(exchange, 404, "Not found");
+                return;
             }
             
-            // Try to serve file
+            // Check if dist directory exists (React build)
+            File distDir = new File("dist");
+            boolean distExists = distDir.exists() && distDir.isDirectory();
+            
+            // Check if path is a static file (has file extension)
+            boolean isStaticFile = path.contains(".") && 
+                (path.endsWith(".html") || path.endsWith(".js") || path.endsWith(".css") || 
+                 path.endsWith(".json") || path.endsWith(".png") || path.endsWith(".jpg") || 
+                 path.endsWith(".jpeg") || path.endsWith(".svg") || path.endsWith(".woff") || 
+                 path.endsWith(".woff2") || path.endsWith(".ttf") || path.endsWith(".map") ||
+                 path.endsWith(".ico") || path.startsWith("/assets/"));
+            
             try {
-                File file = new File("." + path);
-                if (file.exists() && file.isFile()) {
-                    String contentType = getContentType(path);
+                File file = null;
+                
+                // If it's a static file, try to serve it
+                if (isStaticFile) {
+                    // Try React build directory first if it exists
+                    if (distExists) {
+                        File distFile = new File("dist" + path);
+                        if (distFile.exists() && distFile.isFile()) {
+                            file = distFile;
+                        }
+                    }
+                    
+                    // If not found in dist, try root directory
+                    if (file == null) {
+                        File rootFile = new File("." + path);
+                        if (rootFile.exists() && rootFile.isFile()) {
+                            file = rootFile;
+                        }
+                    }
+                }
+                
+                // If not a static file or file not found, serve index.html for SPA routing
+                if (file == null) {
+                    if (distExists) {
+                        File distIndex = new File("dist/index.html");
+                        if (distIndex.exists()) {
+                            file = distIndex;
+                        }
+                    }
+                    if (file == null) {
+                        File rootIndex = new File("./index.html");
+                        if (rootIndex.exists()) {
+                            file = rootIndex;
+                        }
+                    }
+                }
+                
+                if (file != null && file.exists() && file.isFile()) {
+                    // Always serve index.html as HTML, even if path doesn't end with .html
+                    String contentType = file.getName().equals("index.html") 
+                        ? "text/html; charset=utf-8" 
+                        : getContentType(path);
                     exchange.getResponseHeaders().set("Content-Type", contentType);
                     exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
                     exchange.sendResponseHeaders(200, file.length());
@@ -349,16 +265,27 @@ public class ControleSeServer {
                     sendErrorResponse(exchange, 404, "Arquivo não encontrado");
                 }
             } catch (Exception e) {
+                e.printStackTrace(); // Log do erro para debug
                 sendErrorResponse(exchange, 500, "Erro interno do servidor");
+            } finally {
+                // Garante que conexão da thread seja fechada após requisição
+                // (ThreadLocal será limpo quando thread terminar)
             }
         }
         
         private String getContentType(String path) {
-            if (path.endsWith(".html")) return "text/html";
-            if (path.endsWith(".css")) return "text/css";
-            if (path.endsWith(".js")) return "application/javascript";
-            if (path.endsWith(".json")) return "application/json";
-            return "text/plain";
+            if (path.endsWith(".html")) return "text/html; charset=utf-8";
+            if (path.endsWith(".css")) return "text/css; charset=utf-8";
+            if (path.endsWith(".js")) return "application/javascript; charset=utf-8";
+            if (path.endsWith(".json")) return "application/json; charset=utf-8";
+            if (path.endsWith(".png")) return "image/png";
+            if (path.endsWith(".jpg") || path.endsWith(".jpeg")) return "image/jpeg";
+            if (path.endsWith(".svg")) return "image/svg+xml";
+            if (path.endsWith(".woff")) return "font/woff";
+            if (path.endsWith(".woff2")) return "font/woff2";
+            if (path.endsWith(".ttf")) return "font/ttf";
+            if (path.endsWith(".map")) return "application/json";
+            return "text/plain; charset=utf-8";
         }
     }
     
@@ -397,7 +324,11 @@ public class ControleSeServer {
                     sendJsonResponse(exchange, 401, response);
                 }
             } catch (Exception e) {
+                e.printStackTrace(); // Log do erro para debug
                 sendErrorResponse(exchange, 500, "Erro interno do servidor");
+            } finally {
+                // Garante que conexão da thread seja fechada após requisição
+                // (ThreadLocal será limpo quando thread terminar)
             }
         }
     }
@@ -504,7 +435,11 @@ public class ControleSeServer {
                 
                 sendJsonResponse(exchange, 200, response);
             } catch (Exception e) {
+                e.printStackTrace(); // Log do erro para debug
                 sendErrorResponse(exchange, 500, "Erro interno do servidor");
+            } finally {
+                // Garante que conexão da thread seja fechada após requisição
+                // (ThreadLocal será limpo quando thread terminar)
             }
         }
     }
@@ -549,7 +484,11 @@ public class ControleSeServer {
                 
                 sendJsonResponse(exchange, 200, response);
             } catch (Exception e) {
+                e.printStackTrace(); // Log do erro para debug
                 sendErrorResponse(exchange, 500, "Erro interno do servidor");
+            } finally {
+                // Garante que conexão da thread seja fechada após requisição
+                // (ThreadLocal será limpo quando thread terminar)
             }
         }
         
@@ -684,6 +623,57 @@ public class ControleSeServer {
                 int userId = userIdParam != null ? Integer.parseInt(userIdParam) : 1;
                 
                 List<Conta> accounts = bancoDados.buscarContasPorUsuario(userId);
+                
+                // Busca investimentos para calcular saldo de contas de investimento
+                List<Investimento> investments = bancoDados.buscarInvestimentosPorUsuario(userId);
+                QuoteService quoteService = QuoteService.getInstance();
+                
+                // Mapa para acumular valor dos investimentos por conta
+                Map<Integer, Double> investimentoPorConta = new HashMap<>();
+                
+                for (Investimento inv : investments) {
+                    double currentPrice = 0.0;
+                    double currentValue = 0.0;
+                    
+                    // Para renda fixa, calcula valor atual
+                    if ("RENDA_FIXA".equals(inv.getCategoria())) {
+                        // Converte aporte para BRL se necessário
+                        double valorAporteBRL = inv.getValorAporte();
+                        if (!"BRL".equals(inv.getMoeda())) {
+                            double exchangeRate = quoteService.getExchangeRate(inv.getMoeda(), "BRL");
+                            valorAporteBRL *= exchangeRate;
+                        }
+                        
+                        currentValue = quoteService.calculateFixedIncomeValue(
+                            valorAporteBRL,
+                            inv.getTipoInvestimento(),
+                            inv.getTipoRentabilidade(),
+                            inv.getIndice(),
+                            inv.getPercentualIndice(),
+                            inv.getTaxaFixa(),
+                            inv.getDataAporte(),
+                            inv.getDataVencimento()
+                        );
+                    } else {
+                        // Renda variável
+                        QuoteService.QuoteResult quote = quoteService.getQuote(inv.getNome(), inv.getCategoria(), null);
+                        currentPrice = quote != null && quote.success ? quote.price : inv.getPrecoAporte();
+                        
+                        if (quote != null && quote.success && !"BRL".equals(quote.currency)) {
+                            double exchangeRate = quoteService.getExchangeRate(quote.currency, "BRL");
+                            currentPrice *= exchangeRate;
+                        } else if (!"BRL".equals(inv.getMoeda())) {
+                            double exchangeRate = quoteService.getExchangeRate(inv.getMoeda(), "BRL");
+                            currentPrice *= exchangeRate;
+                        }
+                        
+                        currentValue = inv.getQuantidade() * currentPrice;
+                    }
+                    
+                    int contaId = inv.getIdConta();
+                    investimentoPorConta.put(contaId, investimentoPorConta.getOrDefault(contaId, 0.0) + currentValue);
+                }
+                
                 List<Map<String, Object>> accountList = new ArrayList<>();
                 
                 for (Conta conta : accounts) {
@@ -691,7 +681,24 @@ public class ControleSeServer {
                     accountData.put("idConta", conta.getIdConta());
                     accountData.put("nome", conta.getNome());
                     accountData.put("tipo", conta.getTipo());
-                    accountData.put("saldoAtual", conta.getSaldoAtual());
+                    
+                    double saldoExibicao = conta.getSaldoAtual();
+                    
+                    // Se for conta de investimento, substitui (ou soma?) o saldo pelo valor dos ativos
+                    // O usuário pediu: "considere o valor investido como valor da conta"
+                    // Assumindo que para conta de investimento, o valor relevante é o patrimônio nela
+                    if (conta.getTipo() != null && conta.getTipo().equalsIgnoreCase("Investimento")) {
+                        // Soma o saldo em conta (caixa) + valor dos ativos
+                        double valorAtivos = investimentoPorConta.getOrDefault(conta.getIdConta(), 0.0);
+                        // saldoExibicao = valorAtivos + conta.getSaldoAtual(); 
+                        // Na verdade, se o sistema não controla o saldo de caixa da corretora automaticamente, 
+                        // o saldoAtual do banco pode estar desatualizado ou ser apenas o "inicial".
+                        // Mas geralmente conta de investimento tem "saldo em conta" + "meus investimentos".
+                        // Vou somar os dois. Se o usuário não usa o saldo da conta, ele deve estar 0.
+                        saldoExibicao = conta.getSaldoAtual() + valorAtivos;
+                    }
+                    
+                    accountData.put("saldoAtual", saldoExibicao);
                     accountData.put("idUsuario", conta.getIdUsuario());
                     accountList.add(accountData);
                 }
@@ -702,7 +709,11 @@ public class ControleSeServer {
                 
                 sendJsonResponse(exchange, 200, response);
             } catch (Exception e) {
+                e.printStackTrace(); // Log do erro para debug
                 sendErrorResponse(exchange, 500, "Erro interno do servidor");
+            } finally {
+                // Garante que conexão da thread seja fechada após requisição
+                // (ThreadLocal será limpo quando thread terminar)
             }
         }
         
@@ -994,10 +1005,42 @@ public class ControleSeServer {
     static class ExpensesHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
-            if (!"POST".equals(exchange.getRequestMethod())) {
-                sendErrorResponse(exchange, 405, "Método não permitido");
-                return;
+            String method = exchange.getRequestMethod();
+            if (method != null) {
+                method = method.toUpperCase().trim();
             }
+            String path = exchange.getRequestURI().getPath();
+            String query = exchange.getRequestURI().getQuery();
+            
+            // Debug log
+            System.out.println("ExpensesHandler - Method: '" + method + "', Path: " + path + ", Query: " + query);
+            System.out.println("ExpensesHandler - Method length: " + (method != null ? method.length() : 0));
+            System.out.println("ExpensesHandler - Method equals DELETE: " + "DELETE".equals(method));
+            
+            if ("OPTIONS".equals(method)) {
+                System.out.println("ExpensesHandler - Chamando handleOptions");
+                handleOptions(exchange);
+            } else if ("POST".equals(method)) {
+                System.out.println("ExpensesHandler - Chamando handlePost");
+                handlePost(exchange);
+            } else if ("DELETE".equals(method)) {
+                System.out.println("ExpensesHandler - Chamando handleDelete");
+                handleDelete(exchange);
+            } else {
+                System.out.println("ExpensesHandler - Método não permitido: '" + method + "'");
+                sendErrorResponse(exchange, 405, "Método não permitido: " + method);
+            }
+        }
+        
+        private void handleOptions(HttpExchange exchange) throws IOException {
+            exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
+            exchange.getResponseHeaders().set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+            exchange.getResponseHeaders().set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+            exchange.sendResponseHeaders(200, -1);
+            exchange.close();
+        }
+        
+        private void handlePost(HttpExchange exchange) throws IOException {
             
             try {
                 String requestBody = readRequestBody(exchange);
@@ -1089,8 +1132,11 @@ public class ControleSeServer {
                     if (observacoesObj instanceof String) {
                         String observacoesStr = (String) observacoesObj;
                         if (!observacoesStr.trim().isEmpty()) {
-                            // Divide por quebras de linha ou vírgulas
-                            String[] obsArray = observacoesStr.split("[\\n,;]");
+                            // Trata quebras de linha literais que podem vir do JSON
+                            observacoesStr = observacoesStr.replace("\\n", "\n");
+                            
+                            // Divide por quebras de linha apenas (removemos , e ; para permitir texto normal)
+                            String[] obsArray = observacoesStr.split("[\\r\\n]+");
                             List<String> obsList = new ArrayList<>();
                             for (String obs : obsArray) {
                                 String trimmed = obs.trim();
@@ -1117,6 +1163,23 @@ public class ControleSeServer {
                     }
                 }
                 
+                // Valida se a conta não é do tipo "Investimento"
+                Conta conta = bancoDados.buscarConta(accountId);
+                if (conta == null) {
+                    Map<String, Object> response = new HashMap<>();
+                    response.put("success", false);
+                    response.put("message", "Conta não encontrada");
+                    sendJsonResponse(exchange, 400, response);
+                    return;
+                }
+                if (conta.getTipo() != null && conta.getTipo().equalsIgnoreCase("INVESTIMENTO")) {
+                    Map<String, Object> response = new HashMap<>();
+                    response.put("success", false);
+                    response.put("message", "Contas de investimento não podem ser usadas para gastos");
+                    sendJsonResponse(exchange, 400, response);
+                    return;
+                }
+                
                 int expenseId = bancoDados.cadastrarGasto(description, value, date, frequency, userId, categoryIds, accountId, observacoes);
                 
                 // Associa tags se houver
@@ -1138,15 +1201,73 @@ public class ControleSeServer {
                 sendJsonResponse(exchange, 400, response);
             }
         }
+        
+        private void handleDelete(HttpExchange exchange) throws IOException {
+            System.out.println("ExpensesHandler.handleDelete - Iniciando exclusão");
+            try {
+                String idParam = getQueryParam(exchange, "id");
+                System.out.println("ExpensesHandler.handleDelete - ID recebido: " + idParam);
+                
+                if (idParam == null) {
+                    Map<String, Object> response = new HashMap<>();
+                    response.put("success", false);
+                    response.put("message", "ID do gasto não fornecido");
+                    sendJsonResponse(exchange, 400, response);
+                    return;
+                }
+                
+                int expenseId = Integer.parseInt(idParam);
+                System.out.println("ExpensesHandler.handleDelete - Excluindo gasto ID: " + expenseId);
+                bancoDados.excluirGasto(expenseId);
+                
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", true);
+                response.put("message", "Gasto excluído com sucesso");
+                
+                System.out.println("ExpensesHandler.handleDelete - Gasto excluído com sucesso");
+                sendJsonResponse(exchange, 200, response);
+            } catch (Exception e) {
+                e.printStackTrace();
+                System.out.println("ExpensesHandler.handleDelete - Erro: " + e.getMessage());
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Erro: " + e.getMessage());
+                sendJsonResponse(exchange, 400, response);
+            }
+        }
     }
     
     static class IncomesHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
-            if (!"POST".equals(exchange.getRequestMethod())) {
-                sendErrorResponse(exchange, 405, "Método não permitido");
-                return;
+            String method = exchange.getRequestMethod().toUpperCase();
+            String path = exchange.getRequestURI().getPath();
+            String query = exchange.getRequestURI().getQuery();
+            
+            // Debug log
+            System.out.println("IncomesHandler - Method: " + method + ", Path: " + path + ", Query: " + query);
+            
+            if ("OPTIONS".equals(method)) {
+                handleOptions(exchange);
+            } else if ("POST".equals(method)) {
+                handlePost(exchange);
+            } else if ("DELETE".equals(method)) {
+                handleDelete(exchange);
+            } else {
+                System.out.println("IncomesHandler - Método não permitido: " + method);
+                sendErrorResponse(exchange, 405, "Método não permitido: " + method);
             }
+        }
+        
+        private void handleOptions(HttpExchange exchange) throws IOException {
+            exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
+            exchange.getResponseHeaders().set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+            exchange.getResponseHeaders().set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+            exchange.sendResponseHeaders(200, -1);
+            exchange.close();
+        }
+        
+        private void handlePost(HttpExchange exchange) throws IOException {
             
             try {
                 String requestBody = readRequestBody(exchange);
@@ -1195,6 +1316,23 @@ public class ControleSeServer {
                     }
                 }
                 
+                // Valida se a conta não é do tipo "Investimento"
+                Conta conta = bancoDados.buscarConta(accountId);
+                if (conta == null) {
+                    Map<String, Object> response = new HashMap<>();
+                    response.put("success", false);
+                    response.put("message", "Conta não encontrada");
+                    sendJsonResponse(exchange, 400, response);
+                    return;
+                }
+                if (conta.getTipo() != null && conta.getTipo().equalsIgnoreCase("INVESTIMENTO")) {
+                    Map<String, Object> response = new HashMap<>();
+                    response.put("success", false);
+                    response.put("message", "Contas de investimento não podem ser usadas para receitas");
+                    sendJsonResponse(exchange, 400, response);
+                    return;
+                }
+                
                 int incomeId = bancoDados.cadastrarReceita(description, value, date, userId, accountId);
                 
                 // Associa tags se houver
@@ -1213,6 +1351,34 @@ public class ControleSeServer {
                 response.put("success", false);
                 response.put("message", e.getMessage());
                 
+                sendJsonResponse(exchange, 400, response);
+            }
+        }
+        
+        private void handleDelete(HttpExchange exchange) throws IOException {
+            try {
+                String idParam = getQueryParam(exchange, "id");
+                if (idParam == null) {
+                    Map<String, Object> response = new HashMap<>();
+                    response.put("success", false);
+                    response.put("message", "ID da receita não fornecido");
+                    sendJsonResponse(exchange, 400, response);
+                    return;
+                }
+                
+                int incomeId = Integer.parseInt(idParam);
+                bancoDados.excluirReceita(incomeId);
+                
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", true);
+                response.put("message", "Receita excluída com sucesso");
+                
+                sendJsonResponse(exchange, 200, response);
+            } catch (Exception e) {
+                e.printStackTrace();
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Erro: " + e.getMessage());
                 sendJsonResponse(exchange, 400, response);
             }
         }
@@ -1271,7 +1437,11 @@ public class ControleSeServer {
                 
                 sendJsonResponse(exchange, 200, response);
             } catch (Exception e) {
+                e.printStackTrace(); // Log do erro para debug
                 sendErrorResponse(exchange, 500, "Erro interno do servidor");
+            } finally {
+                // Garante que conexão da thread seja fechada após requisição
+                // (ThreadLocal será limpo quando thread terminar)
             }
         }
         
@@ -1400,7 +1570,11 @@ public class ControleSeServer {
                 
                 sendJsonResponse(exchange, 200, response);
             } catch (Exception e) {
+                e.printStackTrace(); // Log do erro para debug
                 sendErrorResponse(exchange, 500, "Erro interno do servidor");
+            } finally {
+                // Garante que conexão da thread seja fechada após requisição
+                // (ThreadLocal será limpo quando thread terminar)
             }
         }
         
@@ -2074,8 +2248,9 @@ public class ControleSeServer {
                         }
                     }
                 } else {
-                    // Valida preço para outros tipos
-                    if (precoAporte <= 0) {
+                // Valida preço para outros tipos
+                // Preço de aporte deve ser positivo mesmo na venda (é o preço unitário)
+                if (precoAporte <= 0) {
                         Map<String, Object> response = new HashMap<>();
                         response.put("success", false);
                         response.put("message", "O preço de aporte deve ser maior que zero");
@@ -2583,6 +2758,8 @@ public class ControleSeServer {
         
         exchange.getResponseHeaders().set("Content-Type", "application/json; charset=UTF-8");
         exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
+        exchange.getResponseHeaders().set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+        exchange.getResponseHeaders().set("Access-Control-Allow-Headers", "Content-Type, Authorization");
         
         exchange.sendResponseHeaders(statusCode, jsonResponse.getBytes("UTF-8").length);
         try (OutputStream os = exchange.getResponseBody()) {

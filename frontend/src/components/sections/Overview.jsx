@@ -1,0 +1,329 @@
+import React, { useState, useEffect } from 'react';
+import { ArrowUp, ArrowDown, Scale, Landmark, TrendingUp, Info } from 'lucide-react';
+import { useAuth } from '../../contexts/AuthContext';
+import { useData } from '../../contexts/DataContext';
+import api from '../../services/api';
+import { formatCurrency, formatDate } from '../../utils/formatters';
+import SummaryCard from '../common/SummaryCard';
+import Modal from '../common/Modal';
+import { Doughnut, Bar } from 'react-chartjs-2';
+import {
+  Chart as ChartJS,
+  ArcElement,
+  Tooltip,
+  Legend,
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  Title,
+} from 'chart.js';
+
+ChartJS.register(
+  ArcElement,
+  Tooltip,
+  Legend,
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  Title
+);
+
+export default function Overview() {
+  const { user } = useAuth();
+  const { fetchData, getCachedData } = useData();
+  const [loading, setLoading] = useState(false);
+  const [period, setPeriod] = useState('month');
+  const [overviewData, setOverviewData] = useState(null);
+  const [recentTransactions, setRecentTransactions] = useState([]);
+  const [showSaldoInfo, setShowSaldoInfo] = useState(false);
+  const [showPatrimonioInfo, setShowPatrimonioInfo] = useState(false);
+
+  useEffect(() => {
+    if (!user) return;
+    
+    const loadData = async () => {
+      const cacheKey = `overview-${user.id}-${period}`;
+      const transactionsKey = `recent-transactions-${user.id}`;
+      
+      // Verifica cache primeiro
+      const cachedOverview = getCachedData(cacheKey);
+      const cachedTrans = getCachedData(transactionsKey);
+      
+      if (cachedOverview && cachedTrans) {
+        setOverviewData(cachedOverview);
+        setRecentTransactions(cachedTrans);
+        return;
+      }
+
+      setLoading(true);
+      try {
+        const [overviewRes, transactionsRes] = await Promise.all([
+          fetchData(
+            cacheKey,
+            async () => {
+              const res = await api.get(`/dashboard/overview?userId=${user.id}`);
+              return res.success ? res.data : null;
+            }
+          ),
+          fetchData(
+            transactionsKey,
+            async () => {
+              const res = await api.get(`/transactions/recent?userId=${user.id}`);
+              return res.success ? (res.data || []) : [];
+            }
+          ),
+        ]);
+
+        if (overviewRes) setOverviewData(overviewRes);
+        if (transactionsRes) setRecentTransactions(transactionsRes);
+      } catch (error) {
+        console.error('Erro ao carregar dados:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadData();
+  }, [user, period, fetchData, getCachedData]);
+
+  const categoryChartData = overviewData?.categoryBreakdown
+    ? {
+        labels: overviewData.categoryBreakdown.map((cat) => cat.name),
+        datasets: [
+          {
+            data: overviewData.categoryBreakdown.map((cat) => cat.value),
+            backgroundColor: [
+              '#ef4444',
+              '#f59e0b',
+              '#3b82f6',
+              '#8b5cf6',
+              '#ec4899',
+              '#14b8a6',
+              '#f97316',
+              '#6366f1',
+            ],
+            borderWidth: 2,
+            borderColor: '#fff',
+          },
+        ],
+      }
+    : null;
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-12 w-12 border-4 border-primary-600 border-t-transparent"></div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6 animate-fade-in">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-3xl font-bold text-gray-900 dark:text-white">
+            Visão Geral
+          </h2>
+          <p className="text-gray-600 dark:text-gray-400 mt-1">
+            Resumo das suas finanças
+          </p>
+        </div>
+        <select
+          value={period}
+          onChange={(e) => setPeriod(e.target.value)}
+          className="input w-auto"
+        >
+          <option value="month">Este Mês</option>
+          <option value="year">Este Ano</option>
+          <option value="all">Todos os Períodos</option>
+        </select>
+      </div>
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <SummaryCard
+          title="Receitas"
+          amount={formatCurrency(overviewData?.totalIncome || 0)}
+          icon={ArrowUp}
+          type="income"
+        />
+        <SummaryCard
+          title="Gastos"
+          amount={formatCurrency(overviewData?.totalExpense || 0)}
+          icon={ArrowDown}
+          type="expense"
+        />
+        <SummaryCard
+          title={
+            <span className="flex items-center gap-2">
+              Saldo
+              <Info
+                className="w-4 h-4 cursor-pointer opacity-70 hover:opacity-100"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowSaldoInfo(true);
+                }}
+              />
+            </span>
+          }
+          amount={formatCurrency(overviewData?.balance || 0)}
+          icon={Scale}
+          type="balance"
+        />
+        <SummaryCard
+          title={
+            <span className="flex items-center gap-2">
+              Patrimônio
+              <Info
+                className="w-4 h-4 cursor-pointer opacity-70 hover:opacity-100"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowPatrimonioInfo(true);
+                }}
+              />
+            </span>
+          }
+          amount={formatCurrency(overviewData?.netWorth || 0)}
+          icon={Landmark}
+          type="default"
+        />
+      </div>
+
+      {/* Charts and Recent Transactions */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Category Chart */}
+        <div className="card">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+            Gastos por Categoria
+          </h3>
+          {categoryChartData ? (
+            <div className="h-64">
+              <Doughnut
+                data={categoryChartData}
+                options={{
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  plugins: {
+                    legend: {
+                      position: 'bottom',
+                      labels: {
+                        padding: 15,
+                        usePointStyle: true,
+                        color: '#6b7280',
+                      },
+                    },
+                    tooltip: {
+                      callbacks: {
+                        label: (context) => {
+                          const label = context.label || '';
+                          const value = formatCurrency(context.parsed);
+                          return `${label}: ${value}`;
+                        },
+                      },
+                    },
+                  },
+                }}
+              />
+            </div>
+          ) : (
+            <p className="text-center text-gray-500 py-8">
+              Nenhum dado disponível
+            </p>
+          )}
+        </div>
+
+        {/* Recent Transactions */}
+        <div className="card">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+            Transações Recentes
+          </h3>
+          <div className="space-y-3 max-h-64 overflow-y-auto">
+            {recentTransactions.length > 0 ? (
+              recentTransactions.map((transaction) => (
+                <div
+                  key={transaction.id}
+                  className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg"
+                >
+                  <div className="flex items-center gap-3">
+                    <div
+                      className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                        transaction.type === 'income'
+                          ? 'bg-green-100 dark:bg-green-900/30 text-green-600'
+                          : 'bg-red-100 dark:bg-red-900/30 text-red-600'
+                      }`}
+                    >
+                      {transaction.type === 'income' ? (
+                        <ArrowUp className="w-5 h-5" />
+                      ) : (
+                        <ArrowDown className="w-5 h-5" />
+                      )}
+                    </div>
+                    <div>
+                      <p className="font-medium text-gray-900 dark:text-white">
+                        {transaction.description || 'Sem descrição'}
+                      </p>
+                      <p className="text-sm text-gray-500 dark:text-gray-400">
+                        {formatDate(transaction.date)}
+                      </p>
+                    </div>
+                  </div>
+                  <div
+                    className={`font-semibold ${
+                      transaction.type === 'income'
+                        ? 'text-green-600 dark:text-green-400'
+                        : 'text-red-600 dark:text-red-400'
+                    }`}
+                  >
+                    {transaction.type === 'income' ? '+' : '-'}
+                    {formatCurrency(transaction.value || 0)}
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p className="text-center text-gray-500 py-8">
+                Nenhuma transação recente
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Info Modals */}
+      <Modal
+        isOpen={showSaldoInfo}
+        onClose={() => setShowSaldoInfo(false)}
+        title="Informação: Saldo"
+      >
+        <div className="space-y-2">
+          <p>
+            O <strong>Saldo</strong> representa a soma de todas as suas contas
+            disponíveis para uso imediato (Corrente, Poupança, Dinheiro, etc.).
+          </p>
+          <p>
+            Contas do tipo <strong>Investimento</strong> não são contabilizadas
+            neste valor.
+          </p>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={showPatrimonioInfo}
+        onClose={() => setShowPatrimonioInfo(false)}
+        title="Informação: Patrimônio"
+      >
+        <div className="space-y-2">
+          <p>
+            O <strong>Patrimônio</strong> representa o valor total acumulado em
+            todas as suas contas cadastradas no sistema.
+          </p>
+          <p>
+            Este valor inclui o saldo de todas as contas, inclusive as de{' '}
+            <strong>Investimento</strong>.
+          </p>
+        </div>
+      </Modal>
+    </div>
+  );
+}
+

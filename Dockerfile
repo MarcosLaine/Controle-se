@@ -1,24 +1,62 @@
-# Use Eclipse Temurin 17 (alternativa moderna ao OpenJDK)
-FROM eclipse-temurin:17-jdk
+# ==========================================
+# Stage 1: Build React Frontend
+# ==========================================
+FROM node:18-alpine AS frontend-build
+WORKDIR /app/frontend
 
-# Define o diretório de trabalho
+# Copy package files
+COPY frontend/package*.json ./
+
+# Install dependencies
+RUN npm ci
+
+# Copy source code
+COPY frontend/ ./
+
+# Build frontend (creates /app/frontend/dist)
+RUN npm run build
+
+# ==========================================
+# Stage 2: Build Java Backend
+# ==========================================
+FROM eclipse-temurin:17-jdk AS backend-build
 WORKDIR /app
 
-# Copia os arquivos fonte
-COPY src/ ./src/
-COPY index.html ./
-COPY styles.css ./
-COPY app.js ./
+# Download PostgreSQL JDBC Driver
+RUN mkdir -p lib && \
+    curl -L -o lib/postgresql.jar https://repo1.maven.org/maven2/org/postgresql/postgresql/42.7.1/postgresql-42.7.1.jar
 
-# Cria o diretório de dados (será montado como volume persistente)
-RUN mkdir -p /app/data
+# Copy Java source code
+COPY src/ src/
 
-# Compila o projeto
-RUN javac -d bin -cp src src/*.java src/server/handlers/*.java src/server/utils/*.java
+# Create bin directory
+RUN mkdir -p bin
 
-# Expõe a porta 8080
+# Compile Java Code
+RUN javac -cp "src:lib/postgresql.jar" -d bin $(find src -name "*.java")
+
+# ==========================================
+# Stage 3: Runtime Environment
+# ==========================================
+FROM eclipse-temurin:17-jre
+WORKDIR /app
+
+# Create non-root user for security
+RUN useradd -m -u 1000 appuser
+USER appuser
+
+# Copy compiled backend classes
+COPY --from=backend-build /app/bin ./bin
+
+# Copy library files (PostgreSQL driver)
+COPY --from=backend-build /app/lib ./lib
+
+# Copy built frontend static files to dist/
+COPY --from=frontend-build /app/frontend/dist ./dist
+
+# Expose the port
 EXPOSE 8080
 
-# Comando para executar o servidor
-CMD ["java", "-cp", "bin:src", "ControleSeServer"]
-
+# Start the server
+# We use a shell command to load .env variables if the file exists (Render Secret Files)
+CMD ["sh", "-c", "if [ -f .env ]; then export $(cat .env | grep -v '^#' | xargs); fi; java -cp bin:lib/postgresql.jar ControleSeServer"]

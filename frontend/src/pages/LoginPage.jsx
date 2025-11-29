@@ -1,0 +1,216 @@
+import React, { useState } from 'react';
+import { useAuth } from '../contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
+import { Wallet, Mail, Lock, User, Moon, Sun } from 'lucide-react';
+import { useTheme } from '../contexts/ThemeContext';
+
+export default function LoginPage() {
+  const [activeTab, setActiveTab] = useState('login');
+  const [loading, setLoading] = useState(false);
+  const { login, register } = useAuth();
+  const navigate = useNavigate();
+  const { theme, toggleTheme } = useTheme();
+
+  // Login form state
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+
+  // Register form state
+  const [registerName, setRegisterName] = useState('');
+  const [registerEmail, setRegisterEmail] = useState('');
+  const [registerPassword, setRegisterPassword] = useState('');
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    const result = await login(loginEmail, loginPassword);
+    setLoading(false);
+    if (result.success) {
+      navigate('/dashboard');
+    }
+  };
+
+  const handleRegister = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    const result = await register(registerName, registerEmail, registerPassword);
+    setLoading(false);
+    if (result.success) {
+      setActiveTab('login');
+      setRegisterName('');
+      setRegisterEmail('');
+      setRegisterPassword('');
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-50 via-white to-primary-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 p-4">
+      <div className="absolute top-4 right-4">
+        <button
+          onClick={toggleTheme}
+          className="p-2 rounded-lg bg-white dark:bg-gray-800 shadow-md hover:shadow-lg transition-all"
+          aria-label="Alternar tema"
+        >
+          {theme === 'dark' ? (
+            <Sun className="w-5 h-5 text-yellow-500" />
+          ) : (
+            <Moon className="w-5 h-5 text-gray-700" />
+          )}
+        </button>
+      </div>
+
+      <div className="w-full max-w-md">
+        {/* Logo */}
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-primary-600 rounded-2xl mb-4 shadow-lg">
+            <Wallet className="w-8 h-8 text-white" />
+          </div>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
+            Controle-se
+          </h1>
+          <p className="text-gray-600 dark:text-gray-400">
+            Sistema de Controle Financeiro Pessoal
+          </p>
+        </div>
+
+        {/* Auth Card */}
+        <div className="card">
+          {/* Tabs */}
+          <div className="flex gap-2 mb-6">
+            <button
+              onClick={() => setActiveTab('login')}
+              className={`flex-1 py-2 px-4 rounded-lg font-medium transition-all ${
+                activeTab === 'login'
+                  ? 'bg-primary-600 text-white shadow-md'
+                  : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+              }`}
+            >
+              Entrar
+            </button>
+            <button
+              onClick={() => setActiveTab('register')}
+              className={`flex-1 py-2 px-4 rounded-lg font-medium transition-all ${
+                activeTab === 'register'
+                  ? 'bg-primary-600 text-white shadow-md'
+                  : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+              }`}
+            >
+              Cadastrar
+            </button>
+          </div>
+
+          {/* Login Form */}
+          {activeTab === 'login' && (
+            <form onSubmit={handleLogin} className="space-y-4">
+              <div>
+                <label className="label">
+                  <Mail className="inline w-4 h-4 mr-2" />
+                  Email
+                </label>
+                <input
+                  type="email"
+                  value={loginEmail}
+                  onChange={(e) => setLoginEmail(e.target.value)}
+                  className="input"
+                  placeholder="seu@email.com"
+                  required
+                />
+              </div>
+              <div>
+                <label className="label">
+                  <Lock className="inline w-4 h-4 mr-2" />
+                  Senha
+                </label>
+                <input
+                  type="password"
+                  value={loginPassword}
+                  onChange={(e) => setLoginPassword(e.target.value)}
+                  className="input"
+                  placeholder="••••••••"
+                  required
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={loading}
+                className="btn-primary w-full justify-center"
+              >
+                {loading ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                    Entrando...
+                  </>
+                ) : (
+                  'Entrar'
+                )}
+              </button>
+            </form>
+          )}
+
+          {/* Register Form */}
+          {activeTab === 'register' && (
+            <form onSubmit={handleRegister} className="space-y-4">
+              <div>
+                <label className="label">
+                  <User className="inline w-4 h-4 mr-2" />
+                  Nome
+                </label>
+                <input
+                  type="text"
+                  value={registerName}
+                  onChange={(e) => setRegisterName(e.target.value)}
+                  className="input"
+                  placeholder="Seu nome completo"
+                  required
+                />
+              </div>
+              <div>
+                <label className="label">
+                  <Mail className="inline w-4 h-4 mr-2" />
+                  Email
+                </label>
+                <input
+                  type="email"
+                  value={registerEmail}
+                  onChange={(e) => setRegisterEmail(e.target.value)}
+                  className="input"
+                  placeholder="seu@email.com"
+                  required
+                />
+              </div>
+              <div>
+                <label className="label">
+                  <Lock className="inline w-4 h-4 mr-2" />
+                  Senha
+                </label>
+                <input
+                  type="password"
+                  value={registerPassword}
+                  onChange={(e) => setRegisterPassword(e.target.value)}
+                  className="input"
+                  placeholder="••••••••"
+                  required
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={loading}
+                className="btn-primary w-full justify-center"
+              >
+                {loading ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                    Cadastrando...
+                  </>
+                ) : (
+                  'Cadastrar'
+                )}
+              </button>
+            </form>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+

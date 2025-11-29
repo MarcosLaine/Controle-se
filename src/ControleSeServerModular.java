@@ -9,12 +9,12 @@ import java.net.*;
 public class ControleSeServerModular {
     private static final int PORT = 8080;
     private static HttpServer server;
-    private static BancoDados bancoDados;
+    private static BancoDadosPostgreSQL bancoDados;
     
     public static void main(String[] args) {
         try {
-            // Inicializa o banco de dados
-            bancoDados = new BancoDados();
+            // Inicializa o banco de dados PostgreSQL (Aiven)
+            bancoDados = new BancoDadosPostgreSQL();
             
             // Cria o servidor HTTP
             server = HttpServer.create(new InetSocketAddress(PORT), 0);

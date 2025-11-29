@@ -354,10 +354,14 @@ public class BancoDados {
         
         // Atualiza saldo da conta (subtrai o gasto)
         Conta conta = buscarConta(idConta);
-        if (conta != null) {
-            conta.setSaldoAtual(conta.getSaldoAtual() - valor);
-            salvarContas();
+        if (conta == null) {
+            throw new IllegalArgumentException("Conta não encontrada");
         }
+        if (conta.getTipo() != null && conta.getTipo().equalsIgnoreCase("INVESTIMENTO")) {
+            throw new IllegalArgumentException("Contas de investimento não podem ser usadas para gastos");
+        }
+        conta.setSaldoAtual(conta.getSaldoAtual() - valor);
+        salvarContas();
         
         // Persiste os dados e índices (uma vez só, depois do loop)
         salvarGastos();
@@ -561,10 +565,14 @@ public class BancoDados {
         
         // Atualiza saldo da conta (adiciona a receita)
         Conta conta = buscarConta(idConta);
-        if (conta != null) {
-            conta.setSaldoAtual(conta.getSaldoAtual() + valor);
-            salvarContas();
+        if (conta == null) {
+            throw new IllegalArgumentException("Conta não encontrada");
         }
+        if (conta.getTipo() != null && conta.getTipo().equalsIgnoreCase("INVESTIMENTO")) {
+            throw new IllegalArgumentException("Contas de investimento não podem ser usadas para receitas");
+        }
+        conta.setSaldoAtual(conta.getSaldoAtual() + valor);
+        salvarContas();
         
         // Persiste os dados e índices
         salvarReceitas();

@@ -8,12 +8,12 @@ import java.util.Scanner;
  * Interface principal que integra todas as funcionalidades do sistema
  */
 public class SistemaFinanceiro {
-    private BancoDados bancoDados;
+    private BancoDadosPostgreSQL bancoDados;
     private Usuario usuarioLogado;
     private Scanner scanner;
     
     public SistemaFinanceiro() {
-        this.bancoDados = new BancoDados();
+        this.bancoDados = new BancoDadosPostgreSQL();
         this.usuarioLogado = null;
         this.scanner = new Scanner(System.in);
     }
@@ -46,7 +46,7 @@ public class SistemaFinanceiro {
                     bancoDados.imprimirEstatisticas();
                     break;
                 case 5:
-                    bancoDados.imprimirEstruturasIndices();
+                    System.out.println("Funcionalidade não disponível com PostgreSQL");
                     break;
                 case 0:
                     System.out.println("Saindo do sistema...");

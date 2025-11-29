@@ -5,6 +5,8 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import javax.net.ssl.*;
+import java.security.cert.X509Certificate;
 
 /**
  * Serviço para buscar cotações de investimentos de APIs públicas
@@ -16,6 +18,38 @@ public class QuoteService {
     private static final long CACHE_DURATION_MS = 30 * 60 * 1000; // 30 minutos
     private static final String EXCHANGE_RATE_API = "https://api.exchangerate-api.com/v4/latest/USD";
     
+    static {
+        disableSSLVerification();
+    }
+
+    private static void disableSSLVerification() {
+        try {
+            // Create a trust manager that does not validate certificate chains
+            TrustManager[] trustAllCerts = new TrustManager[] {
+                new X509TrustManager() {
+                    public java.security.cert.X509Certificate[] getAcceptedIssuers() { return null; }
+                    public void checkClientTrusted(X509Certificate[] certs, String authType) { }
+                    public void checkServerTrusted(X509Certificate[] certs, String authType) { }
+                }
+            };
+
+            // Install the all-trusting trust manager
+            SSLContext sc = SSLContext.getInstance("SSL");
+            sc.init(null, trustAllCerts, new java.security.SecureRandom());
+            HttpsURLConnection.setDefaultSSLSocketFactory(sc.getSocketFactory());
+
+            // Create all-trusting host name verifier
+            HostnameVerifier allHostsValid = new HostnameVerifier() {
+                public boolean verify(String hostname, SSLSession session) { return true; }
+            };
+
+            // Install the all-trusting host verifier
+            HttpsURLConnection.setDefaultHostnameVerifier(allHostsValid);
+        } catch (Exception e) {
+            System.err.println("Erro ao desabilitar verificação SSL: " + e.getMessage());
+        }
+    }
+
     private QuoteService() {
         this.cache = new ConcurrentHashMap<>();
     }
@@ -93,10 +127,12 @@ public class QuoteService {
             String urlStr;
             
             if (date != null && !date.equals(LocalDate.now())) {
-                // Cotação histórica
+                // Cotação histórica - expande janela para 7 dias para cobrir feriados/fins de semana
+                // e pegar o último dia útil anterior
                 long timestamp = date.atStartOfDay().toEpochSecond(java.time.ZoneOffset.UTC);
+                long timestampStart = timestamp - (7 * 86400); // 7 dias antes
                 urlStr = String.format("https://query1.finance.yahoo.com/v8/finance/chart/%s?interval=1d&period1=%d&period2=%d", 
-                                     yahooSymbol, timestamp, timestamp + 86400);
+                                     yahooSymbol, timestampStart, timestamp + 86400);
             } else {
                 // Cotação atual
                 urlStr = String.format("https://query1.finance.yahoo.com/v8/finance/chart/%s?interval=1d&range=1d", yahooSymbol);
@@ -210,8 +246,9 @@ public class QuoteService {
             String urlStr;
             if (date != null && !date.equals(LocalDate.now())) {
                 long timestamp = date.atStartOfDay().toEpochSecond(java.time.ZoneOffset.UTC);
+                long timestampStart = timestamp - (7 * 86400); // 7 dias antes
                 urlStr = String.format("https://query1.finance.yahoo.com/v8/finance/chart/%s?interval=1d&period1=%d&period2=%d", 
-                                     symbol, timestamp, timestamp + 86400);
+                                     symbol, timestampStart, timestamp + 86400);
             } else {
                 urlStr = String.format("https://query1.finance.yahoo.com/v8/finance/chart/%s?interval=1d&range=1d", symbol);
             }
@@ -598,14 +635,22 @@ public class QuoteService {
      */
     private double parseYahooPrice(String response, boolean isHistorical) {
         try {
-            // Se for busca histórica, tenta primeiro buscar nos arrays (chart indicators)
-            // pois os campos de metadata (regularMarketPrice) trazem o valor atual
+            // Se for busca histórica, tenta PRIMEIRO e ÚNICO buscar nos arrays (chart indicators)
+            // pois os campos de metadata (regularMarketPrice) trazem o valor ATUAL, o que estaria errado para histórico.
             if (isHistorical) {
                 double priceFromArray = parsePriceFromYahooArray(response);
-                if (priceFromArray > 0) return priceFromArray;
+                if (priceFromArray > 0) {
+                    return priceFromArray;
+                } else {
+                    // Se não encontrou no array histórico, NÃO tenta pegar do metadata atual.
+                    // Isso previne o bug de retornar preço de hoje para datas passadas sem negociação (ex: feriados).
+                    // Se chegou aqui, é porque não achou dados no período solicitado (mesmo com janela de 7 dias).
+                    System.err.println("Não foi possível encontrar cotação histórica no array (periodo sem negociação?)");
+                    return 0.0; 
+                }
             }
 
-            // Tenta vários campos possíveis (em ordem de prioridade)
+            // Para cotação ATUAL, tenta vários campos possíveis (em ordem de prioridade)
             String[] priceFields = {"regularMarketPrice", "previousClose", "close", "price"};
             
             for (String field : priceFields) {

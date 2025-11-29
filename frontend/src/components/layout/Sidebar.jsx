@@ -1,0 +1,61 @@
+import React from 'react';
+import { 
+  LayoutDashboard, 
+  Tag, 
+  Building2, 
+  ArrowLeftRight, 
+  TrendingUp, 
+  FileText, 
+  PieChart,
+  BarChart3
+} from 'lucide-react';
+import { useLocation, useNavigate } from 'react-router-dom';
+
+const menuItems = [
+  { id: 'overview', label: 'Visão Geral', icon: LayoutDashboard },
+  { id: 'categories', label: 'Categorias', icon: Tag },
+  { id: 'accounts', label: 'Contas', icon: Building2 },
+  { id: 'transactions', label: 'Transações', icon: ArrowLeftRight },
+  { id: 'budgets', label: 'Orçamentos', icon: TrendingUp },
+  { id: 'tags', label: 'Tags', icon: Tag },
+  { id: 'reports', label: 'Relatórios', icon: FileText },
+  { id: 'investments', label: 'Investimentos', icon: PieChart },
+];
+
+export default function Sidebar({ activeSection, onSectionChange }) {
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  const handleClick = (sectionId) => {
+    onSectionChange(sectionId);
+    // Salva a seção ativa no localStorage
+    localStorage.setItem('controle-se-active-section', sectionId);
+  };
+
+  return (
+    <aside className="w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 h-[calc(100vh-73px)] overflow-y-auto">
+      <nav className="p-4 space-y-1">
+        {menuItems.map((item) => {
+          const Icon = item.icon;
+          const isActive = activeSection === item.id;
+          
+          return (
+            <button
+              key={item.id}
+              onClick={() => handleClick(item.id)}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 ${
+                isActive
+                  ? 'bg-primary-600 text-white shadow-md'
+                  : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+              }`}
+            >
+              <Icon className="w-5 h-5" />
+              <span className="font-medium">{item.label}</span>
+            </button>
+          );
+        })}
+      </nav>
+    </aside>
+  );
+}
+

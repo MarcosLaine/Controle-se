@@ -502,13 +502,13 @@
                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
                                 <h3>Evolução dos Investimentos</h3>
                                 <select id="chart-period-select" style="padding: 0.5rem; border-radius: 4px; border: 1px solid var(--neutral-300); background: var(--neutral-100); color: var(--neutral-900);">
-                                    <option value="max">Máximo</option>
+                                    <option value="max">Todo o período</option>
                                     <option value="1d">Último dia</option>
                                     <option value="5d">Últimos 5 dias</option>
                                     <option value="1m">Último mês</option>
                                     <option value="6m">Último semestre</option>
                                     <option value="1y">Último ano</option>
-                                    <option value="5y">5 anos</option>
+                                    <option value="5y">Últimos 5 anos</option>
                                 </select>
                             </div>
                             <canvas id="investments-chart"></canvas>

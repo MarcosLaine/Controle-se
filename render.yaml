@@ -2,17 +2,11 @@ services:
   - type: web
     name: controle-se
     runtime: docker
-    plan: free  # ou 'starter' para planos pagos
+    plan: starter
     dockerfilePath: ./Dockerfile
     dockerContext: .
     envVars:
       - key: PORT
         value: 8080
-    # Disco persistente para manter os arquivos .db
-    # IMPORTANTE: Discos persistentes requerem plano pago no Render
-    # Descomente as linhas abaixo se estiver usando um plano pago:
-    # disk:
-    #   name: controle-se-data
-    #   mountPath: /app/data
-    #   sizeGB: 1
-
+    # Se você usar a opção "Secret Files" do Render para o .env, 
+    # o Dockerfile já está configurado para lê-lo.

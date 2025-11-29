@@ -541,11 +541,28 @@ class ControleSeApp {
                         ${observationsHtml}
                     </div>
                 </div>
-                <div class="transaction-amount ${transaction.type}">
-                    ${transaction.type === 'income' ? '+' : '-'}${this.formatCurrency(transaction.value)}
+                <div class="transaction-actions">
+                    <div class="transaction-amount ${transaction.type}">
+                        ${transaction.type === 'income' ? '+' : '-'}${this.formatCurrency(transaction.value)}
+                    </div>
+                    <button class="btn-icon btn-danger delete-transaction-btn" data-transaction-id="${transaction.id}" data-transaction-type="${transaction.type}" title="Excluir">
+                        <i class="fas fa-trash"></i>
+                    </button>
                 </div>
             `;
             container.appendChild(item);
+            
+            // Adiciona event listener ao botão de exclusão
+            const deleteBtn = item.querySelector('.delete-transaction-btn');
+            if (deleteBtn) {
+                deleteBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const transactionId = parseInt(deleteBtn.getAttribute('data-transaction-id'));
+                    const transactionType = deleteBtn.getAttribute('data-transaction-type');
+                    this.deleteTransaction(transactionId, transactionType);
+                });
+            }
         });
     }
 
@@ -877,7 +894,7 @@ class ControleSeApp {
                 return;
             }
             
-            const accounts = this.getAccountsForSelect();
+            const accounts = this.getAccountsForSelect(true); // Exclui contas de investimento
             const categoryCheckboxes = this.getCategoriesForCheckbox();
             const content = `
                 <form id="add-expense-form">
@@ -960,7 +977,7 @@ class ControleSeApp {
                 return;
             }
             
-            const accounts = this.getAccountsForSelect();
+            const accounts = this.getAccountsForSelect(true); // Exclui contas de investimento
             const content = `
                 <form id="add-income-form">
                     <div class="form-group">
@@ -1275,6 +1292,32 @@ class ControleSeApp {
         }
     }
 
+    async deleteTransaction(id, type) {
+        const transactionType = type === 'income' ? 'receita' : 'gasto';
+        const confirmMessage = `Tem certeza que deseja excluir esta ${transactionType}?`;
+        
+        if (!confirm(confirmMessage)) {
+            return;
+        }
+        
+        try {
+            const endpoint = type === 'income' ? '/incomes' : '/expenses';
+            const response = await this.apiCall(`${endpoint}?id=${id}`, 'DELETE');
+            
+            if (response.success) {
+                this.showToast(`${transactionType.charAt(0).toUpperCase() + transactionType.slice(1)} excluída com sucesso!`, 'success');
+                this.loadTransactions();
+                this.loadAccounts(); // Recarrega contas para atualizar saldo
+                this.updateOverview();
+            } else {
+                this.showToast(response.message || `Erro ao excluir ${transactionType}`, 'error');
+            }
+        } catch (error) {
+            this.showToast('Erro de conexão', 'error');
+            console.error('Delete transaction error:', error);
+        }
+    }
+
     async addBudget() {
         const categorySelectValue = document.getElementById('budget-category').value;
         const value = parseFloat(document.getElementById('budget-value').value);
@@ -1466,18 +1509,24 @@ class ControleSeApp {
     async apiCall(endpoint, method = 'GET', data = null) {
         const url = `${this.apiBaseUrl}${endpoint}`;
         const options = {
-            method,
+            method: method.toUpperCase(),
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': this.currentUser ? `Bearer ${this.currentUser.token}` : ''
             }
         };
 
-        if (data && method !== 'GET') {
+        if (data && method !== 'GET' && method !== 'DELETE') {
             options.body = JSON.stringify(data);
         }
 
+        console.log('apiCall - Method:', method, 'URL:', url, 'Options:', options);
         const response = await fetch(url, options);
+        
+        if (!response.ok) {
+            console.error('apiCall - Response not OK:', response.status, response.statusText);
+        }
+        
         return await response.json();
     }
 
@@ -1524,14 +1573,19 @@ class ControleSeApp {
         return checkboxes;
     }
 
-    getAccountsForSelect() {
+    getAccountsForSelect(excludeInvestment = false) {
         if (this.accountsCache.length === 0) {
             return '<option value="">Nenhuma conta disponível</option>';
         }
         
         let options = '';
         this.accountsCache.forEach(account => {
-            options += `<option value="${account.idConta}">${account.nome}</option>`;
+            // Filtra contas de investimento se solicitado
+            if (excludeInvestment && account.tipo && account.tipo.toLowerCase() === 'investimento') {
+                return;
+            }
+            const tipoDisplay = account.tipo ? ` (${account.tipo})` : '';
+            options += `<option value="${account.idConta}">${account.nome}${tipoDisplay}</option>`;
         });
         return options;
     }
