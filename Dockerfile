@@ -13,7 +13,7 @@ RUN npm ci
 # Copy source code
 COPY frontend/ ./
 
-# Build frontend (creates /app/frontend/dist)
+# Build frontend (creates /app/dist because of vite config)
 RUN npm run build
 
 # ==========================================
@@ -52,7 +52,8 @@ COPY --from=backend-build /app/bin ./bin
 COPY --from=backend-build /app/lib ./lib
 
 # Copy built frontend static files to dist/
-COPY --from=frontend-build /app/frontend/dist ./dist
+# NOTE: vite config builds to ../dist relative to frontend dir, so it is at /app/dist
+COPY --from=frontend-build /app/dist ./dist
 
 # Expose the port
 EXPOSE 8080
