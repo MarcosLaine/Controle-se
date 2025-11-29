@@ -117,16 +117,16 @@ export default function Reports() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
           <h2 className="text-3xl font-bold text-gray-900 dark:text-white">Relatórios</h2>
           <p className="text-gray-600 dark:text-gray-400 mt-1">Análise detalhada das suas finanças</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-col sm:flex-row gap-2">
           <select
             value={period}
             onChange={(e) => setPeriod(e.target.value)}
-            className="input w-auto"
+            className="input w-full sm:w-auto"
           >
             <option value="month">Este Mês</option>
             <option value="year">Este Ano</option>
@@ -138,30 +138,32 @@ export default function Reports() {
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
-                className="input w-auto"
+                className="input w-full sm:w-auto"
                 placeholder="Data Início"
               />
               <input
                 type="date"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
-                className="input w-auto"
+                className="input w-full sm:w-auto"
                 placeholder="Data Fim"
               />
             </>
           )}
-          <select
-            value={exportFormat}
-            onChange={(e) => setExportFormat(e.target.value)}
-            className="input w-auto"
-          >
-            <option value="csv">CSV</option>
-            <option value="xlsx">XLSX</option>
-          </select>
-          <button onClick={handleExport} className="btn-primary">
-            <Download className="w-4 h-4" />
-            Exportar
-          </button>
+          <div className="flex gap-2">
+            <select
+              value={exportFormat}
+              onChange={(e) => setExportFormat(e.target.value)}
+              className="input w-full sm:w-auto"
+            >
+              <option value="csv">CSV</option>
+              <option value="xlsx">XLSX</option>
+            </select>
+            <button onClick={handleExport} className="btn-primary flex-1 sm:flex-none justify-center">
+              <Download className="w-4 h-4" />
+              Exportar
+            </button>
+          </div>
         </div>
       </div>
 

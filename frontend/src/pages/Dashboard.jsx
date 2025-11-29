@@ -14,13 +14,22 @@ export default function Dashboard() {
   const [activeSection, setActiveSection] = useState(() => {
     return localStorage.getItem('controle-se-active-section') || 'overview';
   });
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <Header />
+      <Header onMenuClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} />
       <div className="flex">
-        <Sidebar activeSection={activeSection} onSectionChange={setActiveSection} />
-        <main className="flex-1 p-6 overflow-y-auto h-[calc(100vh-73px)]">
+        <Sidebar 
+          activeSection={activeSection} 
+          onSectionChange={(section) => {
+            setActiveSection(section);
+            setIsMobileMenuOpen(false);
+          }}
+          isOpen={isMobileMenuOpen}
+          onClose={() => setIsMobileMenuOpen(false)}
+        />
+        <main className="flex-1 p-4 lg:p-6 overflow-y-auto h-[calc(100vh-73px)] w-full">
           <div className="max-w-7xl mx-auto">
             {/* Mantém todos os componentes montados, apenas oculta os inativos */}
             <div style={{ display: activeSection === 'overview' ? 'block' : 'none' }}>

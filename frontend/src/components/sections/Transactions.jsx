@@ -92,7 +92,7 @@ export default function Transactions() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-3xl font-bold text-gray-900 dark:text-white">
             Transações
@@ -101,12 +101,12 @@ export default function Transactions() {
             Gerencie suas receitas e gastos
           </p>
         </div>
-        <div className="flex gap-2">
-          <button onClick={() => setShowExpenseModal(true)} className="btn-secondary">
+        <div className="flex gap-2 w-full sm:w-auto">
+          <button onClick={() => setShowExpenseModal(true)} className="flex-1 sm:flex-none btn-secondary justify-center">
             <Minus className="w-4 h-4" />
             Novo Gasto
           </button>
-          <button onClick={() => setShowIncomeModal(true)} className="btn-primary">
+          <button onClick={() => setShowIncomeModal(true)} className="flex-1 sm:flex-none btn-primary justify-center">
             <Plus className="w-4 h-4" />
             Nova Receita
           </button>
@@ -180,11 +180,11 @@ export default function Transactions() {
           {transactions.map((transaction) => (
             <div
               key={transaction.id}
-              className="card flex items-center justify-between"
+              className="card flex flex-col sm:flex-row sm:items-center justify-between gap-4"
             >
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-4 w-full sm:w-auto">
                 <div
-                  className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+                  className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${
                     transaction.type === 'income'
                       ? 'bg-green-100 dark:bg-green-900/30 text-green-600'
                       : 'bg-red-100 dark:bg-red-900/30 text-red-600'
@@ -196,15 +196,15 @@ export default function Transactions() {
                     <ArrowDown className="w-6 h-6" />
                   )}
                 </div>
-                <div>
-                  <p className="font-semibold text-gray-900 dark:text-white">
+                <div className="min-w-0">
+                  <p className="font-semibold text-gray-900 dark:text-white truncate">
                     {transaction.description}
                   </p>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                  <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
                     {formatDate(transaction.date)} - {transaction.category}
                   </p>
                   {transaction.tags && transaction.tags.length > 0 && (
-                    <div className="flex gap-2 mt-2">
+                    <div className="flex flex-wrap gap-2 mt-2">
                       {transaction.tags.map((tag) => (
                         <span
                           key={tag.idTag}
@@ -231,7 +231,7 @@ export default function Transactions() {
                   )}
                 </div>
               </div>
-              <div className="flex items-center gap-4">
+              <div className="flex items-center justify-between sm:justify-end gap-4 w-full sm:w-auto border-t sm:border-t-0 pt-4 sm:pt-0 border-gray-100 dark:border-gray-700">
                 <span
                   className={`text-lg font-bold ${
                     transaction.type === 'income'
@@ -244,7 +244,7 @@ export default function Transactions() {
                 </span>
                 <button
                   onClick={() => handleDelete(transaction.id, transaction.type)}
-                  className="btn-danger"
+                  className="btn-danger shrink-0"
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>
