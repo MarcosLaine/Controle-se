@@ -42,7 +42,7 @@ FROM eclipse-temurin:17-jre
 WORKDIR /app
 
 # Create non-root user for security
-RUN useradd -m -u 1000 appuser
+RUN useradd -m -u 1001 appuser
 USER appuser
 
 # Copy compiled backend classes
