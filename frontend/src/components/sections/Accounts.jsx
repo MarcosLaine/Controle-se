@@ -194,7 +194,7 @@ export default function Accounts() {
             >
               <option value="Corrente">Corrente</option>
               <option value="Poupança">Poupança</option>
-              <option value="Investimento">Investimento</option>
+              <option value="Investimento (Corretora)">Investimento (Corretora)</option>
               <option value="Dinheiro">Dinheiro</option>
               <option value="Cartão de Crédito">Cartão de Crédito</option>
             </select>
