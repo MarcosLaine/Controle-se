@@ -16,6 +16,7 @@ public class QuoteService {
     private static QuoteService instance;
     private Map<String, CachedQuote> cache;
     private static final long CACHE_DURATION_MS = 30 * 60 * 1000; // 30 minutos
+    private static final long CRYPTO_CACHE_DURATION_MS = 60 * 60 * 1000; // 1 hora
     private static final String EXCHANGE_RATE_API = "https://api.exchangerate-api.com/v4/latest/USD";
     
     static {
@@ -78,7 +79,11 @@ public class QuoteService {
         
         // Atualiza cache
         if (quote != null && quote.success) {
-            cache.put(cacheKey, new CachedQuote(quote, System.currentTimeMillis()));
+            long ttl = CACHE_DURATION_MS;
+            if ("CRYPTO".equalsIgnoreCase(category) && (date == null || date.equals(LocalDate.now()))) {
+                ttl = CRYPTO_CACHE_DURATION_MS;
+            }
+            cache.put(cacheKey, new CachedQuote(quote, System.currentTimeMillis(), ttl));
         }
         
         return quote;
@@ -1075,14 +1080,16 @@ public class QuoteService {
     private static class CachedQuote {
         QuoteResult quote;
         long timestamp;
+        long ttl;
         
-        CachedQuote(QuoteResult quote, long timestamp) {
+        CachedQuote(QuoteResult quote, long timestamp, long ttl) {
             this.quote = quote;
             this.timestamp = timestamp;
+            this.ttl = ttl;
         }
         
         boolean isExpired() {
-            return (System.currentTimeMillis() - timestamp) > CACHE_DURATION_MS;
+            return (System.currentTimeMillis() - timestamp) > ttl;
         }
     }
     

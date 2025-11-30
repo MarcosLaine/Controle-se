@@ -10,6 +10,7 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
   const [mode, setMode] = useState('VARIABLE'); // VARIABLE or FIXED
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [showPriceInfo, setShowPriceInfo] = useState(false);
   
   // Variable Income State
   const [variableForm, setVariableForm] = useState({
@@ -20,7 +21,8 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
     date: new Date().toISOString().split('T')[0],
     brokerage: '0',
     accountId: '',
-    currency: 'BRL'
+    currency: 'BRL',
+    price: ''
   });
 
   // Fixed Income State
@@ -49,6 +51,18 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
       }
     }
   }, [isOpen, user, investmentToEdit]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setShowPriceInfo(false);
+    }
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (mode !== 'VARIABLE' && showPriceInfo) {
+      setShowPriceInfo(false);
+    }
+  }, [mode, showPriceInfo]);
 
   const populateForm = (inv) => {
     if (inv.categoria === 'RENDA_FIXA') {
@@ -84,7 +98,8 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
         date: inv.dataAporte ? inv.dataAporte.split('T')[0] : '',
         brokerage: inv.corretagem ? inv.corretagem.toString() : '0',
         accountId: '', // Need to find a way to get account ID
-        currency: inv.moeda || 'BRL'
+        currency: inv.moeda || 'BRL',
+        price: inv.precoAporte ? inv.precoAporte.toString() : ''
       });
     }
   };
@@ -123,6 +138,17 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
         quantity = Math.abs(quantity);
       }
 
+      const manualPriceInput = (variableForm.price || '').toString().trim();
+      let manualPrice = null;
+      if (manualPriceInput) {
+        manualPrice = parseFloat(manualPriceInput.replace(',', '.'));
+        if (isNaN(manualPrice) || manualPrice <= 0) {
+          toast.error('Informe um preço válido maior que zero');
+          setLoading(false);
+          return;
+        }
+      }
+
       const data = {
         ...variableForm,
         quantity: quantity,
@@ -143,6 +169,10 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
         moeda: data.currency,
         userId: data.userId
       };
+
+      if (manualPrice !== null) {
+        payload.precoAporte = manualPrice;
+      }
 
       const method = investmentToEdit ? 'PUT' : 'POST';
       const response = await api[method.toLowerCase()]('/investments', payload);
@@ -240,7 +270,8 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
       date: new Date().toISOString().split('T')[0],
       brokerage: '0',
       accountId: '',
-      currency: 'BRL'
+      currency: 'BRL',
+      price: ''
     });
     setFixedForm({
       name: '',
@@ -310,8 +341,48 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
               required
             />
             <p className="text-xs text-gray-500 mt-1">
-              O preço será obtido automaticamente com base no fechamento do dia.
+              O preço será obtido automaticamente com base no fechamento do dia, mas você pode informá-lo manualmente abaixo se preferir.
             </p>
+          </div>
+
+          <div className="relative">
+            <div className="flex items-center gap-2">
+              <label className="label">Preço do Ativo</label>
+              <span className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
+                (Opcional)
+                <button
+                  type="button"
+                  onClick={() => setShowPriceInfo(prev => !prev)}
+                  className="p-1 rounded-full text-primary-600 hover:bg-primary-50 dark:hover:bg-gray-700 transition-colors"
+                  aria-label="Saiba como o preço do ativo é definido"
+                >
+                  <Info size={14} />
+                </button>
+              </span>
+            </div>
+            <input
+              type="number"
+              className="input"
+              step="0.00000001"
+              min="0"
+              value={variableForm.price}
+              onChange={e => setVariableForm({...variableForm, price: e.target.value})}
+              placeholder="Insira o preço pago por unidade"
+            />
+            {showPriceInfo && (
+              <div className="absolute top-full right-0 mt-2 w-64 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-3 text-xs text-gray-600 dark:text-gray-300 z-20">
+                <p>
+                  Caso você não informe o preço, ele será definido automaticamente pela base de dados com a cotação do dia do aporte.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setShowPriceInfo(false)}
+                  className="mt-2 text-primary-600 hover:underline text-xs font-medium"
+                >
+                  Entendi
+                </button>
+              </div>
+            )}
           </div>
 
           <div>

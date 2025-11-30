@@ -138,7 +138,11 @@ const buildEvolutionSeries = (transactions, startDate, endDate) => {
   if (!transactions.length) return null;
 
   const sorted = [...transactions].sort((a, b) => getTradeDate(a) - getTradeDate(b));
-  const interval = eachDayOfInterval({ start: startDate, end: endDate });
+  const msDiff = Math.abs(endDate.getTime() - startDate.getTime());
+  const isTwoHourSteps = msDiff <= 24 * 60 * 60 * 1000;
+  const interval = isTwoHourSteps
+    ? eachHourOfInterval({ start: startDate, end: endDate }, { step: 2 })
+    : eachDayOfInterval({ start: startDate, end: endDate });
   const assetState = new Map();
   const labels = [];
   const investedPoints = [];
@@ -201,7 +205,7 @@ const buildEvolutionSeries = (transactions, startDate, endDate) => {
       totalCurrent += quantity * price;
     });
 
-    labels.push(format(date, 'dd/MM', { locale: ptBR }));
+    labels.push(format(date, isTwoHourSteps ? 'HH:mm' : 'dd/MM', { locale: ptBR }));
     investedPoints.push(totalInvested);
     currentPoints.push(totalCurrent);
   });
@@ -230,6 +234,7 @@ const buildEvolutionSeries = (transactions, startDate, endDate) => {
         pointHoverRadius: 4,
       },
     ],
+    resolution: isTwoHourSteps ? '2h' : '1d',
   };
 };
 
@@ -1083,7 +1088,7 @@ const {
                 />
                 {evolutionError && (
                   <p className="mt-2 text-xs text-amber-500 dark:text-amber-400">
-                    Não conseguimos buscar todas as cotações históricas agora. Exibindo o cálculo local como fallback.
+                  {/* <!--  Não conseguimos buscar todas as cotações históricas agora. Exibindo o cálculo local como fallback. --> */}
                   </p>
                 )}
                 {!usingServerSeries && !evolutionError && (

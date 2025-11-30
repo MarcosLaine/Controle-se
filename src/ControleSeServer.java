@@ -2,6 +2,7 @@ import com.sun.net.httpserver.*;
 import java.io.*;
 import java.net.*;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
@@ -2609,6 +2610,7 @@ public class ControleSeServer {
     
     static class InvestmentEvolutionHandler implements HttpHandler {
         private static final DateTimeFormatter LABEL_FORMATTER = DateTimeFormatter.ofPattern("dd/MM");
+        private static final DateTimeFormatter HOURLY_LABEL_FORMATTER = DateTimeFormatter.ofPattern("HH:mm");
         private static final int MAX_DAYS = 3650; // ~10 anos
 
         @Override
@@ -2628,9 +2630,12 @@ public class ControleSeServer {
                 // Busca investimentos antes de determinar o período final
                 List<Investimento> transactions = bancoDados.buscarInvestimentosPorUsuario(userId);
 
+                String periodParam = getQueryParam(exchange, "period");
+                boolean twoHourResolution = "1D".equalsIgnoreCase(periodParam);
+
                 LocalDate startDate = resolveStartDate(
                     getQueryParam(exchange, "startDate"),
-                    getQueryParam(exchange, "period"),
+                    periodParam,
                     endDate,
                     transactions
                 );
@@ -2647,7 +2652,7 @@ public class ControleSeServer {
                     return;
                 }
 
-                Map<String, Object> data = buildEvolutionSeries(transactions, startDate, endDate);
+                Map<String, Object> data = buildEvolutionSeries(transactions, startDate, endDate, twoHourResolution);
 
                 Map<String, Object> response = new HashMap<>();
                 response.put("success", true);
@@ -2703,7 +2708,7 @@ public class ControleSeServer {
             return endDate.minusMonths(1);
         }
 
-        private Map<String, Object> buildEvolutionSeries(List<Investimento> transactions, LocalDate startDate, LocalDate endDate) {
+        private Map<String, Object> buildEvolutionSeries(List<Investimento> transactions, LocalDate startDate, LocalDate endDate, boolean useTwoHourSteps) {
             Map<String, Object> data = new HashMap<>();
             List<String> labels = new ArrayList<>();
             List<Double> investedPoints = new ArrayList<>();
@@ -2714,6 +2719,7 @@ public class ControleSeServer {
             data.put("current", currentPoints);
             data.put("startDate", startDate.toString());
             data.put("endDate", endDate.toString());
+            data.put("resolution", useTwoHourSteps ? "2h" : "1d");
 
             if (transactions == null || transactions.isEmpty()) {
                 data.put("points", 0);
@@ -2728,42 +2734,76 @@ public class ControleSeServer {
 
             int txIndex = 0;
 
-            for (LocalDate date = startDate; !date.isAfter(endDate); date = date.plusDays(1)) {
-                while (txIndex < transactions.size() && !transactions.get(txIndex).getDataAporte().isAfter(date)) {
-                    Investimento inv = transactions.get(txIndex);
-                    String key = buildAssetKey(inv);
-                    AssetState state = assetState.computeIfAbsent(key, k -> AssetState.fromInvestment(inv));
-                    state.updateMetadata(inv);
-                    state.applyTransaction(inv);
-
-                    if (state.isEmpty()) {
-                        assetState.remove(key);
-                    }
-                    txIndex++;
+            if (useTwoHourSteps) {
+                LocalDateTime cursor = startDate.atStartOfDay();
+                LocalDateTime endCursor = endDate.atStartOfDay();
+                if (endCursor.isBefore(cursor)) {
+                    endCursor = cursor;
                 }
 
-                double totalInvested = 0;
-                double totalCurrent = 0;
-
-                Iterator<Map.Entry<String, AssetState>> iterator = assetState.entrySet().iterator();
-                while (iterator.hasNext()) {
-                    AssetState state = iterator.next().getValue();
-                    if (state.isEmpty()) {
-                        iterator.remove();
-                        continue;
-                    }
-                    totalInvested += state.getTotalCostBasis();
-                    double price = resolvePriceForDate(state, date, quoteService, priceCache);
-                    totalCurrent += state.getTotalQuantity() * price;
+                while (!cursor.isAfter(endCursor)) {
+                    LocalDate currentDate = cursor.toLocalDate();
+                    txIndex = consumeTransactions(transactions, assetState, txIndex, currentDate);
+                    accumulatePoint(assetState, quoteService, priceCache, labels, investedPoints, currentPoints,
+                        cursor.format(HOURLY_LABEL_FORMATTER), currentDate);
+                    cursor = cursor.plusHours(2);
                 }
-
-                labels.add(date.format(LABEL_FORMATTER));
-                investedPoints.add(roundMoney(totalInvested));
-                currentPoints.add(roundMoney(totalCurrent));
+            } else {
+                for (LocalDate date = startDate; !date.isAfter(endDate); date = date.plusDays(1)) {
+                    txIndex = consumeTransactions(transactions, assetState, txIndex, date);
+                    accumulatePoint(assetState, quoteService, priceCache, labels, investedPoints, currentPoints,
+                        date.format(LABEL_FORMATTER), date);
+                }
             }
 
             data.put("points", labels.size());
             return data;
+        }
+
+        private int consumeTransactions(List<Investimento> transactions, Map<String, AssetState> assetState, int txIndex, LocalDate cutoffDate) {
+            while (txIndex < transactions.size() && !transactions.get(txIndex).getDataAporte().isAfter(cutoffDate)) {
+                Investimento inv = transactions.get(txIndex);
+                String key = buildAssetKey(inv);
+                AssetState state = assetState.computeIfAbsent(key, k -> AssetState.fromInvestment(inv));
+                state.updateMetadata(inv);
+                state.applyTransaction(inv);
+
+                if (state.isEmpty()) {
+                    assetState.remove(key);
+                }
+                txIndex++;
+            }
+            return txIndex;
+        }
+
+        private void accumulatePoint(
+            Map<String, AssetState> assetState,
+            QuoteService quoteService,
+            Map<String, Double> priceCache,
+            List<String> labels,
+            List<Double> investedPoints,
+            List<Double> currentPoints,
+            String label,
+            LocalDate dateForPricing
+        ) {
+            double totalInvested = 0;
+            double totalCurrent = 0;
+
+            Iterator<Map.Entry<String, AssetState>> iterator = assetState.entrySet().iterator();
+            while (iterator.hasNext()) {
+                AssetState state = iterator.next().getValue();
+                if (state.isEmpty()) {
+                    iterator.remove();
+                    continue;
+                }
+                totalInvested += state.getTotalCostBasis();
+                double price = resolvePriceForDate(state, dateForPricing, quoteService, priceCache);
+                totalCurrent += state.getTotalQuantity() * price;
+            }
+
+            labels.add(label);
+            investedPoints.add(roundMoney(totalInvested));
+            currentPoints.add(roundMoney(totalCurrent));
         }
 
         private String buildAssetKey(Investimento inv) {
