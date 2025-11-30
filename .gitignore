@@ -44,3 +44,6 @@ backups/
 tmp/
 temp/
 *.tmp
+
+dist/
+dist/assets/

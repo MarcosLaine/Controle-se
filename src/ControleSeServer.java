@@ -2,6 +2,8 @@ import com.sun.net.httpserver.*;
 import java.io.*;
 import java.net.*;
 import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.regex.*;
@@ -163,6 +165,7 @@ public class ControleSeServer {
         server.createContext("/api/tags", new TagsHandler());
         server.createContext("/api/reports", new ReportsHandler());
         server.createContext("/api/investments", new InvestmentsHandler());
+        server.createContext("/api/investments/evolution", new InvestmentEvolutionHandler());
         server.createContext("/api/investments/quote", new InvestmentQuoteHandler());
         
         // Servir arquivos estáticos (HTML, CSS, JS) - deve vir por último
@@ -718,7 +721,8 @@ public class ControleSeServer {
                             inv.getPercentualIndice(),
                             inv.getTaxaFixa(),
                             inv.getDataAporte(),
-                            inv.getDataVencimento()
+                            inv.getDataVencimento(),
+                            LocalDate.now()
                         );
                     } else {
                         // Renda variável
@@ -2265,7 +2269,8 @@ public class ControleSeServer {
                             inv.getPercentualIndice(),
                             inv.getTaxaFixa(),
                             inv.getDataAporte(),
-                            inv.getDataVencimento()
+                            inv.getDataVencimento(),
+                            LocalDate.now()
                         );
                         currentPrice = currentValue; // Para renda fixa, preço = valor atual
                     } else {
@@ -2599,6 +2604,326 @@ public class ControleSeServer {
                 response.put("message", e.getMessage());
                 sendJsonResponse(exchange, 400, response);
             }
+        }
+    }
+    
+    static class InvestmentEvolutionHandler implements HttpHandler {
+        private static final DateTimeFormatter LABEL_FORMATTER = DateTimeFormatter.ofPattern("dd/MM");
+        private static final int MAX_DAYS = 3650; // ~10 anos
+
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendErrorResponse(exchange, 405, "Método não permitido");
+                return;
+            }
+
+            try {
+                String userIdParam = getQueryParam(exchange, "userId");
+                int userId = userIdParam != null ? Integer.parseInt(userIdParam) : 1;
+
+                LocalDate today = LocalDate.now();
+                LocalDate endDate = parseDateOrDefault(getQueryParam(exchange, "endDate"), today);
+
+                // Busca investimentos antes de determinar o período final
+                List<Investimento> transactions = bancoDados.buscarInvestimentosPorUsuario(userId);
+
+                LocalDate startDate = resolveStartDate(
+                    getQueryParam(exchange, "startDate"),
+                    getQueryParam(exchange, "period"),
+                    endDate,
+                    transactions
+                );
+
+                if (startDate.isAfter(endDate)) {
+                    LocalDate tmp = startDate;
+                    startDate = endDate;
+                    endDate = tmp;
+                }
+
+                long totalDays = ChronoUnit.DAYS.between(startDate, endDate);
+                if (totalDays > MAX_DAYS) {
+                    sendErrorResponse(exchange, 400, "Período máximo de 10 anos excedido. Reduza o intervalo.");
+                    return;
+                }
+
+                Map<String, Object> data = buildEvolutionSeries(transactions, startDate, endDate);
+
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", true);
+                response.put("data", data);
+
+                sendJsonResponse(exchange, 200, response);
+            } catch (Exception e) {
+                e.printStackTrace();
+                sendErrorResponse(exchange, 500, "Erro ao calcular evolução: " + e.getMessage());
+            } finally {
+                bancoDados.closeConnection();
+            }
+        }
+
+        private LocalDate parseDateOrDefault(String value, LocalDate fallback) {
+            if (value == null || value.isEmpty()) {
+                return fallback;
+            }
+            return LocalDate.parse(value);
+        }
+
+        private LocalDate resolveStartDate(String startParam, String periodParam, LocalDate endDate, List<Investimento> transactions) {
+            if (startParam != null && !startParam.isEmpty()) {
+                return LocalDate.parse(startParam);
+            }
+
+            if (periodParam != null) {
+                switch (periodParam.toUpperCase()) {
+                    case "1D":
+                        return endDate.minusDays(1);
+                    case "1W":
+                        return endDate.minusWeeks(1);
+                    case "1M":
+                        return endDate.minusMonths(1);
+                    case "6M":
+                        return endDate.minusMonths(6);
+                    case "YTD":
+                        return LocalDate.of(endDate.getYear(), 1, 1);
+                    case "1Y":
+                        return endDate.minusYears(1);
+                    case "5Y":
+                        return endDate.minusYears(5);
+                    case "ALL":
+                        return transactions.stream()
+                            .map(Investimento::getDataAporte)
+                            .min(LocalDate::compareTo)
+                            .orElse(endDate.minusMonths(1));
+                    default:
+                        break;
+                }
+            }
+
+            return endDate.minusMonths(1);
+        }
+
+        private Map<String, Object> buildEvolutionSeries(List<Investimento> transactions, LocalDate startDate, LocalDate endDate) {
+            Map<String, Object> data = new HashMap<>();
+            List<String> labels = new ArrayList<>();
+            List<Double> investedPoints = new ArrayList<>();
+            List<Double> currentPoints = new ArrayList<>();
+
+            data.put("labels", labels);
+            data.put("invested", investedPoints);
+            data.put("current", currentPoints);
+            data.put("startDate", startDate.toString());
+            data.put("endDate", endDate.toString());
+
+            if (transactions == null || transactions.isEmpty()) {
+                data.put("points", 0);
+                return data;
+            }
+
+            transactions.sort(Comparator.comparing(Investimento::getDataAporte));
+
+            QuoteService quoteService = QuoteService.getInstance();
+            Map<String, AssetState> assetState = new LinkedHashMap<>();
+            Map<String, Double> priceCache = new HashMap<>();
+
+            int txIndex = 0;
+
+            for (LocalDate date = startDate; !date.isAfter(endDate); date = date.plusDays(1)) {
+                while (txIndex < transactions.size() && !transactions.get(txIndex).getDataAporte().isAfter(date)) {
+                    Investimento inv = transactions.get(txIndex);
+                    String key = buildAssetKey(inv);
+                    AssetState state = assetState.computeIfAbsent(key, k -> AssetState.fromInvestment(inv));
+                    state.updateMetadata(inv);
+                    state.applyTransaction(inv);
+
+                    if (state.isEmpty()) {
+                        assetState.remove(key);
+                    }
+                    txIndex++;
+                }
+
+                double totalInvested = 0;
+                double totalCurrent = 0;
+
+                Iterator<Map.Entry<String, AssetState>> iterator = assetState.entrySet().iterator();
+                while (iterator.hasNext()) {
+                    AssetState state = iterator.next().getValue();
+                    if (state.isEmpty()) {
+                        iterator.remove();
+                        continue;
+                    }
+                    totalInvested += state.getTotalCostBasis();
+                    double price = resolvePriceForDate(state, date, quoteService, priceCache);
+                    totalCurrent += state.getTotalQuantity() * price;
+                }
+
+                labels.add(date.format(LABEL_FORMATTER));
+                investedPoints.add(roundMoney(totalInvested));
+                currentPoints.add(roundMoney(totalCurrent));
+            }
+
+            data.put("points", labels.size());
+            return data;
+        }
+
+        private String buildAssetKey(Investimento inv) {
+            String category = inv.getCategoria() != null ? inv.getCategoria() : "OUTROS";
+            String symbol = inv.getNome() != null ? inv.getNome() : "DESCONHECIDO";
+
+            if ("RENDA_FIXA".equalsIgnoreCase(category)) {
+                return category + "_" + inv.getIdInvestimento();
+            }
+
+            return category + "_" + symbol;
+        }
+
+        private double resolvePriceForDate(AssetState state, LocalDate date, QuoteService quoteService, Map<String, Double> priceCache) {
+            if ("RENDA_FIXA".equalsIgnoreCase(state.category)) {
+                double totalValue = 0.0;
+                for (PositionLayer layer : state.layers) {
+                    totalValue += quoteService.calculateFixedIncomeValue(
+                        layer.originalAmount,
+                        state.tipoInvestimento,
+                        state.tipoRentabilidade,
+                        state.indice,
+                        state.percentualIndice,
+                        state.taxaFixa,
+                        layer.aporteDate,
+                        state.dataVencimento,
+                        date
+                    );
+                }
+                double qty = state.getTotalQuantity();
+                double price = qty > 0 ? totalValue / qty : 0.0;
+                if (price <= 0) {
+                    price = state.lastKnownPrice > 0 ? state.lastKnownPrice : state.getAverageCost();
+                }
+                state.lastKnownPrice = price;
+                return price;
+            }
+
+            String cacheKey = state.symbol + "|" + state.category + "|" + date;
+            if (priceCache.containsKey(cacheKey)) {
+                return priceCache.get(cacheKey);
+            }
+
+            double price = 0.0;
+            QuoteService.QuoteResult quote = quoteService.getQuote(state.symbol, state.category, date);
+            if (quote != null && quote.success && quote.price > 0) {
+                price = quote.price;
+                String currency = quote.currency != null ? quote.currency : state.currency;
+                if (currency != null && !"BRL".equalsIgnoreCase(currency)) {
+                    double exchangeRate = quoteService.getExchangeRate(currency, "BRL");
+                    price *= exchangeRate;
+                }
+            }
+
+            if (price <= 0) {
+                price = state.lastKnownPrice > 0 ? state.lastKnownPrice : state.getAverageCost();
+            }
+
+            state.lastKnownPrice = price;
+            priceCache.put(cacheKey, price);
+            return price;
+        }
+
+        private double roundMoney(double value) {
+            return Math.round(value * 100.0) / 100.0;
+        }
+
+        private static class AssetState {
+            final String symbol;
+            final String category;
+            String currency;
+            String tipoInvestimento;
+            String tipoRentabilidade;
+            String indice;
+            Double percentualIndice;
+            Double taxaFixa;
+            LocalDate dataVencimento;
+            final List<PositionLayer> layers = new ArrayList<>();
+            double lastKnownPrice;
+
+            private AssetState(String symbol, String category) {
+                this.symbol = symbol;
+                this.category = category;
+            }
+
+            static AssetState fromInvestment(Investimento inv) {
+                AssetState state = new AssetState(
+                    inv.getNome() != null ? inv.getNome() : "DESCONHECIDO",
+                    inv.getCategoria() != null ? inv.getCategoria() : "OUTROS"
+                );
+                state.updateMetadata(inv);
+                return state;
+            }
+
+            void updateMetadata(Investimento inv) {
+                if (inv.getMoeda() != null) {
+                    this.currency = inv.getMoeda();
+                }
+                this.tipoInvestimento = inv.getTipoInvestimento();
+                this.tipoRentabilidade = inv.getTipoRentabilidade();
+                this.indice = inv.getIndice();
+                this.percentualIndice = inv.getPercentualIndice();
+                this.taxaFixa = inv.getTaxaFixa();
+                if (inv.getDataVencimento() != null) {
+                    this.dataVencimento = inv.getDataVencimento();
+                }
+            }
+
+            void applyTransaction(Investimento inv) {
+                double qty = inv.getQuantidade();
+                double unitCost = (qty != 0) ? Math.abs(inv.getValorAporte()) / Math.abs(qty) : 0.0;
+
+                if (qty > 0) {
+                    PositionLayer layer = new PositionLayer();
+                    layer.qty = qty;
+                    layer.unitCost = unitCost;
+                    layer.aporteDate = inv.getDataAporte();
+                    layer.originalAmount = Math.abs(inv.getValorAporte());
+                    layers.add(layer);
+                } else if (qty < 0) {
+                    double remaining = Math.abs(qty);
+                    Iterator<PositionLayer> iterator = layers.iterator();
+                    while (iterator.hasNext() && remaining > 0) {
+                        PositionLayer layer = iterator.next();
+                        double qtyToUse = Math.min(remaining, layer.qty);
+                        layer.qty -= qtyToUse;
+                        remaining -= qtyToUse;
+                        if (layer.qty <= 0.000001) {
+                            iterator.remove();
+                        }
+                    }
+                }
+            }
+
+            boolean isEmpty() {
+                return layers.isEmpty();
+            }
+
+            double getTotalQuantity() {
+                return layers.stream().mapToDouble(layer -> layer.qty).sum();
+            }
+
+            double getTotalCostBasis() {
+                return layers.stream().mapToDouble(layer -> layer.qty * layer.unitCost).sum();
+            }
+
+            double getAverageCost() {
+                double qty = getTotalQuantity();
+                if (qty <= 0) {
+                    return 0.0;
+                }
+                return getTotalCostBasis() / qty;
+            }
+        }
+
+        private static class PositionLayer {
+            double qty;
+            double unitCost;
+            LocalDate aporteDate;
+            double originalAmount;
         }
     }
     

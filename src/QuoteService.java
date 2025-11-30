@@ -872,13 +872,13 @@ public class QuoteService {
      */
     public double calculateFixedIncomeValue(double valorAporte, String tipoInvestimento,
                                            String tipoRentabilidade, String indice, Double percentualIndice, Double taxaFixa, 
-                                           LocalDate dataAporte, LocalDate dataVencimento) {
+                                           LocalDate dataAporte, LocalDate dataVencimento, LocalDate referenceDate) {
         if (dataVencimento == null || dataAporte == null) {
             return valorAporte; // Se não tem vencimento, retorna o valor original
         }
         
-        LocalDate hoje = LocalDate.now();
-        LocalDate dataFinal = hoje.isBefore(dataVencimento) ? hoje : dataVencimento;
+        LocalDate effectiveDate = referenceDate != null ? referenceDate : LocalDate.now();
+        LocalDate dataFinal = effectiveDate.isBefore(dataVencimento) ? effectiveDate : dataVencimento;
         
         long diasTotais = java.time.temporal.ChronoUnit.DAYS.between(dataAporte, dataVencimento);
         long diasDecorridos = java.time.temporal.ChronoUnit.DAYS.between(dataAporte, dataFinal);

@@ -24,7 +24,7 @@ import { ptBR } from 'date-fns/locale';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { ChevronDown, ChevronUp, Download, File, FileSpreadsheet, FileText, Info, PieChart, Plus, TrendingUp, Wallet } from 'lucide-react';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Doughnut, Line } from 'react-chartjs-2';
 import toast from 'react-hot-toast';
 import * as XLSX from 'xlsx';
@@ -233,6 +233,38 @@ const buildEvolutionSeries = (transactions, startDate, endDate) => {
   };
 };
 
+const buildChartDataFromSeries = (series) => {
+  if (!series || !series.labels || !series.current || !series.current.length) {
+    return null;
+  }
+
+  return {
+    labels: series.labels,
+    datasets: [
+      {
+        label: 'Valor Patrimonial',
+        data: series.current,
+        borderColor: '#3b82f6',
+        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+        fill: true,
+        tension: 0.4,
+        pointRadius: 0,
+        pointHoverRadius: 4,
+      },
+      {
+        label: 'Valor Investido',
+        data: series.invested || [],
+        borderColor: '#9ca3af',
+        borderDash: [5, 5],
+        fill: false,
+        tension: 0.4,
+        pointRadius: 0,
+        pointHoverRadius: 4,
+      },
+    ],
+  };
+};
+
 export default function Investments() {
   const { user } = useAuth();
   const [investments, setInvestments] = useState([]);
@@ -245,7 +277,40 @@ export default function Investments() {
   const [showStatementModal, setShowStatementModal] = useState(false);
   const [accounts, setAccounts] = useState([]);
   const [chartPeriod, setChartPeriod] = useState('1M');
+  const [evolutionSeries, setEvolutionSeries] = useState(null);
+  const [evolutionLoading, setEvolutionLoading] = useState(false);
+  const [evolutionError, setEvolutionError] = useState(null);
   const [showReturnInfo, setShowReturnInfo] = useState(false);
+
+  const fetchEvolutionData = useCallback(async (periodOverride = chartPeriod) => {
+    if (!user || !investments.length) {
+      setEvolutionSeries(null);
+      return;
+    }
+
+    setEvolutionLoading(true);
+    setEvolutionError(null);
+
+    try {
+      const params = new URLSearchParams({
+        userId: user.id,
+        period: periodOverride,
+      });
+
+      const response = await api.get(`/investments/evolution?${params.toString()}`);
+      if (response.success) {
+        setEvolutionSeries(response.data || null);
+      } else {
+        setEvolutionSeries(null);
+        setEvolutionError(response.message || 'Não foi possível atualizar o gráfico.');
+      }
+    } catch (error) {
+      setEvolutionSeries(null);
+      setEvolutionError(error.message || 'Não foi possível atualizar o gráfico.');
+    } finally {
+      setEvolutionLoading(false);
+    }
+  }, [chartPeriod, investments.length, user]);
 
   useEffect(() => {
     if (user) {
@@ -253,6 +318,15 @@ export default function Investments() {
       loadAccounts();
     }
   }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    if (!investments.length) {
+      setEvolutionSeries(null);
+      return;
+    }
+    fetchEvolutionData(chartPeriod);
+  }, [user, investments.length, chartPeriod, fetchEvolutionData]);
 
   const loadInvestments = async () => {
     setLoading(true);
@@ -323,6 +397,10 @@ export default function Investments() {
 
   // Chart Data Generation
   const evolutionChartData = useMemo(() => {
+    if (evolutionSeries?.labels?.length && evolutionSeries?.current?.length) {
+      return buildChartDataFromSeries(evolutionSeries);
+    }
+
     if (!investments.length) return null;
 
     const today = startOfDay(new Date());
@@ -350,7 +428,11 @@ export default function Investments() {
     if (startDate > today) startDate = today;
 
     return buildEvolutionSeries(investments, startDate, today);
-  }, [investments, chartPeriod]);
+  }, [evolutionSeries, investments, chartPeriod]);
+
+  const usingServerSeries = useMemo(() => (
+    Boolean(evolutionSeries?.labels?.length && evolutionSeries?.current?.length)
+  ), [evolutionSeries]);
 
   const chartPeriods = [
     { id: '1D', label: '1D' },
@@ -944,59 +1026,75 @@ const {
             </div>
           </div>
           <div className="h-64 w-full">
-            {evolutionChartData ? (
-              <Line
-                data={evolutionChartData}
-                options={{
-                  responsive: true,
-                  maintainAspectRatio: false,
-                  interaction: {
-                    mode: 'index',
-                    intersect: false,
-                  },
-                  plugins: {
-                    legend: {
-                      position: 'top',
-                      align: 'end',
-                      labels: { boxWidth: 10, usePointStyle: true }
+            {evolutionLoading ? (
+              <div className="h-full flex items-center justify-center text-gray-500 dark:text-gray-400 text-sm">
+                Atualizando cotações históricas...
+              </div>
+            ) : evolutionChartData ? (
+              <>
+                <Line
+                  data={evolutionChartData}
+                  options={{
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                      mode: 'index',
+                      intersect: false,
                     },
-                    tooltip: {
-                      callbacks: {
-                        label: function(context) {
-                          let label = context.dataset.label || '';
-                          if (label) {
-                            label += ': ';
+                    plugins: {
+                      legend: {
+                        position: 'top',
+                        align: 'end',
+                        labels: { boxWidth: 10, usePointStyle: true }
+                      },
+                      tooltip: {
+                        callbacks: {
+                          label: function(context) {
+                            let label = context.dataset.label || '';
+                            if (label) {
+                              label += ': ';
+                            }
+                            if (context.parsed.y !== null) {
+                              label += new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(context.parsed.y);
+                            }
+                            return label;
                           }
-                          if (context.parsed.y !== null) {
-                            label += new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(context.parsed.y);
-                          }
-                          return label;
+                        }
+                      }
+                    },
+                    scales: {
+                      x: {
+                        grid: { display: false },
+                        ticks: { maxTicksLimit: 8 }
+                      },
+                      y: {
+                        grid: { color: 'rgba(0, 0, 0, 0.05)' },
+                        ticks: {
+                          callback: (value) => new Intl.NumberFormat('pt-BR', {
+                            notation: 'compact',
+                            compactDisplay: 'short',
+                            style: 'currency',
+                            currency: 'BRL'
+                          }).format(value)
                         }
                       }
                     }
-                  },
-                  scales: {
-                    x: {
-                      grid: { display: false },
-                      ticks: { maxTicksLimit: 8 }
-                    },
-                    y: {
-                      grid: { color: 'rgba(0, 0, 0, 0.05)' },
-                      ticks: {
-                        callback: (value) => new Intl.NumberFormat('pt-BR', {
-                          notation: 'compact',
-                          compactDisplay: 'short',
-                          style: 'currency',
-                          currency: 'BRL'
-                        }).format(value)
-                      }
-                    }
-                  }
-                }}
-              />
+                  }}
+                />
+                {evolutionError && (
+                  <p className="mt-2 text-xs text-amber-500 dark:text-amber-400">
+                    Não conseguimos buscar todas as cotações históricas agora. Exibindo o cálculo local como fallback.
+                  </p>
+                )}
+                {!usingServerSeries && !evolutionError && (
+                  <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                    Dados calculados apenas com base nos aportes registrados.
+                  </p>
+                )}
+              </>
             ) : (
-              <div className="h-full flex items-center justify-center text-gray-500">
-                Carregando gráfico...
+              <div className="h-full flex items-center justify-center text-gray-500 dark:text-gray-400 text-sm">
+                Cadastre seus investimentos para visualizar o gráfico.
               </div>
             )}
           </div>
