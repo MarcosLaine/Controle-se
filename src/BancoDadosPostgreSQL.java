@@ -940,6 +940,45 @@ public class BancoDadosPostgreSQL {
         return obsList.toArray(new String[0]);
     }
     
+    private void inserirObservacoesReceita(int idReceita, String[] observacoes) throws SQLException {
+        if (observacoes == null || observacoes.length == 0) {
+            return;
+        }
+        
+        String sqlObs = "INSERT INTO receita_observacoes (id_receita, observacao, ordem) VALUES (?, ?, ?)";
+        try (PreparedStatement pstmt = getConnection().prepareStatement(sqlObs)) {
+            for (int i = 0; i < observacoes.length; i++) {
+                String obs = observacoes[i];
+                if (obs == null || obs.trim().isEmpty()) {
+                    continue;
+                }
+                pstmt.setInt(1, idReceita);
+                pstmt.setString(2, obs.trim());
+                pstmt.setInt(3, i);
+                pstmt.addBatch();
+            }
+            pstmt.executeBatch();
+        }
+    }
+    
+    private String[] buscarObservacoesReceita(int idReceita) {
+        String sql = "SELECT observacao FROM receita_observacoes WHERE id_receita = ? ORDER BY ordem";
+        List<String> obsList = new ArrayList<>();
+        
+        try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
+            pstmt.setInt(1, idReceita);
+            ResultSet rs = pstmt.executeQuery();
+            
+            while (rs.next()) {
+                obsList.add(rs.getString("observacao"));
+            }
+        } catch (SQLException e) {
+            // Ignora erro e retorna array vazio
+        }
+        
+        return obsList.toArray(new String[0]);
+    }
+    
     public List<Gasto> buscarGastosPorUsuario(int idUsuario) {
         String sql = "SELECT id_gasto, descricao, valor, data, frequencia, id_usuario, id_conta, " +
                     "proxima_recorrencia, id_gasto_original, ativo " +
@@ -1132,6 +1171,10 @@ public class BancoDadosPostgreSQL {
     // ========== OPERAÇÕES DE RECEITA ==========
     
     public int cadastrarReceita(String descricao, double valor, LocalDate data, int idUsuario, int idConta) {
+        return cadastrarReceita(descricao, valor, data, idUsuario, idConta, null);
+    }
+    
+    public int cadastrarReceita(String descricao, double valor, LocalDate data, int idUsuario, int idConta, String[] observacoes) {
         // Validações de entrada
         validateInput("Descrição da receita", descricao, 500);
         validateAmount("Valor da receita", valor);
@@ -1173,6 +1216,10 @@ public class BancoDadosPostgreSQL {
                     throw new RuntimeException("Erro ao cadastrar receita");
                 }
                 idReceita = rs.getInt(1);
+            }
+            
+            if (observacoes != null && observacoes.length > 0) {
+                inserirObservacoesReceita(idReceita, observacoes);
             }
             
             // Atualiza saldo da conta (adiciona a receita)
@@ -1345,6 +1392,7 @@ public class BancoDadosPostgreSQL {
         }
         
         receita.setAtivo(rs.getBoolean("ativo"));
+        receita.setObservacoes(buscarObservacoesReceita(receita.getIdReceita()));
         return receita;
     }
     
@@ -2265,7 +2313,8 @@ public class BancoDadosPostgreSQL {
                     receitaOriginal.getValor(),
                     receitaOriginal.getProximaRecorrencia(),
                     receitaOriginal.getIdUsuario(),
-                    receitaOriginal.getIdConta()
+                    receitaOriginal.getIdConta(),
+                    receitaOriginal.getObservacoes()
                 );
                 
                 // Marca a nova receita como recorrência da original

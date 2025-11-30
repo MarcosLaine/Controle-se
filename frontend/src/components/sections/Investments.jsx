@@ -11,10 +11,8 @@ import {
   Tooltip
 } from 'chart.js';
 import {
-  differenceInDays,
   eachDayOfInterval,
   format,
-  isAfter,
   parseISO, startOfDay,
   startOfYear,
   subDays,
@@ -23,21 +21,21 @@ import {
   subYears
 } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { ChevronDown, ChevronUp, PieChart, Plus, TrendingUp, Wallet, FileText, Download, FileSpreadsheet, File } from 'lucide-react';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { ChevronDown, ChevronUp, Download, File, FileSpreadsheet, FileText, Info, PieChart, Plus, TrendingUp, Wallet } from 'lucide-react';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Doughnut, Line } from 'react-chartjs-2';
 import toast from 'react-hot-toast';
+import * as XLSX from 'xlsx';
 import { useAuth } from '../../contexts/AuthContext';
 import api from '../../services/api';
 import { formatCurrency, formatDate } from '../../utils/formatters';
+import Modal from '../common/Modal';
 import SummaryCard from '../common/SummaryCard';
 import InvestmentModal from './InvestmentModal';
 import AssetDetailsModal from './Investments/AssetDetailsModal';
 import InvestmentStatementModal from './Investments/InvestmentStatementModal';
-import jsPDF from 'jspdf';
-import 'jspdf-autotable';
-import * as XLSX from 'xlsx';
-import html2canvas from 'html2canvas';
 
 ChartJS.register(
   CategoryScale,
@@ -51,6 +49,190 @@ ChartJS.register(
   Filler
 );
 
+const getTradeDate = (trade) => {
+  const raw = trade.dataAporte || trade.data || trade.date;
+  return raw ? startOfDay(parseISO(raw)) : startOfDay(new Date());
+};
+
+const getTradePrice = (trade) => {
+  if (trade.precoAtual && trade.precoAtual > 0) return trade.precoAtual;
+  if (trade.valorAtual && trade.quantidade) {
+    const derived = trade.valorAtual / Math.abs(trade.quantidade);
+    if (derived > 0) return derived;
+  }
+  if (trade.precoAporte && trade.precoAporte > 0) return trade.precoAporte;
+  return null;
+};
+
+const computeHoldingStats = (transactions = []) => {
+  if (!transactions.length) {
+    return {
+      realizedProfit: 0,
+      remainingQty: 0,
+      remainingCost: 0,
+      investedCapital: 0,
+      realizedCostBasis: 0,
+    };
+  }
+
+  const sorted = [...transactions].sort((a, b) => {
+    const dateA = new Date(a.dataAporte || a.data || 0).getTime();
+    const dateB = new Date(b.dataAporte || b.data || 0).getTime();
+    return (isNaN(dateA) ? 0 : dateA) - (isNaN(dateB) ? 0 : dateB);
+  });
+
+  const buyLayers = [];
+  let realizedProfit = 0;
+  let realizedCostBasis = 0;
+
+  sorted.forEach((trade) => {
+    const qty = trade.quantidade || 0;
+    if (qty === 0) {
+      return;
+    }
+
+    if (qty > 0) {
+      const unitCost = qty !== 0 ? (trade.valorAporte || 0) / qty : 0;
+      buyLayers.push({ qty, unitCost });
+    } else {
+      let remaining = Math.abs(qty);
+      let costBasis = 0;
+      let matchedQty = 0;
+
+      while (remaining > 0 && buyLayers.length > 0) {
+        const layer = buyLayers[0];
+        const qtyToUse = Math.min(remaining, layer.qty);
+        costBasis += qtyToUse * layer.unitCost;
+        matchedQty += qtyToUse;
+        layer.qty -= qtyToUse;
+        remaining -= qtyToUse;
+        if (layer.qty === 0) {
+          buyLayers.shift();
+        }
+      }
+
+      if (matchedQty > 0) {
+        const grossRevenue = Math.abs(trade.valorAporte || 0);
+        const revenuePortion = grossRevenue * (matchedQty / Math.abs(qty));
+        const netRevenuePortion = revenuePortion - (trade.corretagem || 0);
+        realizedProfit += netRevenuePortion - costBasis;
+        realizedCostBasis += costBasis;
+      }
+    }
+  });
+
+  const remainingQty = buyLayers.reduce((sum, layer) => sum + layer.qty, 0);
+  const remainingCost = buyLayers.reduce((sum, layer) => sum + (layer.qty * layer.unitCost), 0);
+  const investedCapital = remainingCost + realizedCostBasis;
+
+  return {
+    realizedProfit,
+    remainingQty,
+    remainingCost,
+    investedCapital,
+    realizedCostBasis,
+  };
+};
+
+const buildEvolutionSeries = (transactions, startDate, endDate) => {
+  if (!transactions.length) return null;
+
+  const sorted = [...transactions].sort((a, b) => getTradeDate(a) - getTradeDate(b));
+  const interval = eachDayOfInterval({ start: startDate, end: endDate });
+  const assetState = new Map();
+  const labels = [];
+  const investedPoints = [];
+  const currentPoints = [];
+  let txIndex = 0;
+
+  interval.forEach((date) => {
+    while (
+      txIndex < sorted.length &&
+      getTradeDate(sorted[txIndex]) <= date
+    ) {
+      const trade = sorted[txIndex];
+      const key = `${trade.categoria || 'OUTROS'}_${trade.nome}`;
+      if (!assetState.has(key)) {
+        assetState.set(key, {
+          layers: [],
+          currentPrice: getTradePrice(trade),
+        });
+      }
+      const state = assetState.get(key);
+      const qty = trade.quantidade || 0;
+      const amount = trade.valorAporte || 0;
+      const brokerage = trade.corretagem || 0;
+      const unitCost = qty !== 0 ? Math.abs(amount) / Math.abs(qty) : 0;
+      const price = getTradePrice(trade);
+      if (price) {
+        state.currentPrice = price;
+      }
+
+      if (qty > 0) {
+        state.layers.push({ qty, unitCost });
+      } else if (qty < 0) {
+        let remaining = Math.abs(qty);
+        while (remaining > 0 && state.layers.length > 0) {
+          const layer = state.layers[0];
+          const qtyToUse = Math.min(remaining, layer.qty);
+          layer.qty -= qtyToUse;
+          remaining -= qtyToUse;
+          if (layer.qty === 0) {
+            state.layers.shift();
+          }
+        }
+      }
+
+      if (state.layers.length === 0) {
+        assetState.delete(key);
+      }
+
+      txIndex++;
+    }
+
+    let totalInvested = 0;
+    let totalCurrent = 0;
+    assetState.forEach((state) => {
+      const quantity = state.layers.reduce((sum, layer) => sum + layer.qty, 0);
+      if (quantity <= 0) return;
+      const costBasis = state.layers.reduce((sum, layer) => sum + layer.qty * layer.unitCost, 0);
+      totalInvested += costBasis;
+      const price = state.currentPrice || (costBasis > 0 ? costBasis / quantity : 0);
+      totalCurrent += quantity * price;
+    });
+
+    labels.push(format(date, 'dd/MM', { locale: ptBR }));
+    investedPoints.push(totalInvested);
+    currentPoints.push(totalCurrent);
+  });
+
+  return {
+    labels,
+    datasets: [
+      {
+        label: 'Valor Patrimonial',
+        data: currentPoints,
+        borderColor: '#3b82f6',
+        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+        fill: true,
+        tension: 0.4,
+        pointRadius: 0,
+        pointHoverRadius: 4,
+      },
+      {
+        label: 'Valor Investido',
+        data: investedPoints,
+        borderColor: '#9ca3af',
+        borderDash: [5, 5],
+        fill: false,
+        tension: 0.4,
+        pointRadius: 0,
+        pointHoverRadius: 4,
+      },
+    ],
+  };
+};
+
 export default function Investments() {
   const { user } = useAuth();
   const [investments, setInvestments] = useState([]);
@@ -63,6 +245,7 @@ export default function Investments() {
   const [showStatementModal, setShowStatementModal] = useState(false);
   const [accounts, setAccounts] = useState([]);
   const [chartPeriod, setChartPeriod] = useState('1M');
+  const [showReturnInfo, setShowReturnInfo] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -153,76 +336,20 @@ export default function Investments() {
       case 'YTD': startDate = startOfYear(today); break;
       case '1Y': startDate = subYears(today, 1); break;
       case '5Y': startDate = subYears(today, 5); break;
-      case 'ALL': 
-        const dates = investments.map(i => parseISO(i.dataAporte));
-        startDate = dates.reduce((min, d) => d < min ? d : min, today);
+      case 'ALL': {
+        const earliest = investments.reduce((min, inv) => {
+          const d = getTradeDate(inv);
+          return d < min ? d : min;
+        }, today);
+        startDate = earliest;
         break;
+      }
       default: startDate = subMonths(today, 1);
     }
 
-    const interval = eachDayOfInterval({ start: startDate, end: today });
-    
-    const dataPoints = interval.map(date => {
-      let invested = 0;
-      let current = 0;
+    if (startDate > today) startDate = today;
 
-      investments.forEach(inv => {
-        const aporteDate = startOfDay(parseISO(inv.dataAporte));
-        
-        if (isAfter(aporteDate, date)) return;
-
-        // Valor Investido: soma simples se a data do aporte for anterior ou igual à data atual do loop
-        invested += (inv.valorAporte || 0);
-
-        // Valor Atual: Interpolação linear
-        const valorAporte = inv.valorAporte || 0;
-        const valorAtualFinal = inv.valorAtual || 0;
-        
-        const totalDays = differenceInDays(today, aporteDate);
-        const daysPassed = differenceInDays(date, aporteDate);
-        
-        if (totalDays <= 0) {
-          current += valorAtualFinal;
-        } else {
-          const growth = valorAtualFinal - valorAporte;
-          const currentGrowth = (growth * daysPassed) / totalDays;
-          current += (valorAporte + currentGrowth);
-        }
-      });
-
-      return {
-        date: format(date, 'dd/MM', { locale: ptBR }),
-        fullDate: format(date, 'dd/MM/yyyy', { locale: ptBR }),
-        invested,
-        current
-      };
-    });
-
-    return {
-      labels: dataPoints.map(d => d.date),
-      datasets: [
-        {
-          label: 'Valor Patrimonial',
-          data: dataPoints.map(d => d.current),
-          borderColor: '#3b82f6',
-          backgroundColor: 'rgba(59, 130, 246, 0.1)',
-          fill: true,
-          tension: 0.4,
-          pointRadius: 0,
-          pointHoverRadius: 4
-        },
-        {
-          label: 'Valor Investido',
-          data: dataPoints.map(d => d.invested),
-          borderColor: '#9ca3af',
-          borderDash: [5, 5],
-          fill: false,
-          tension: 0.4,
-          pointRadius: 0,
-          pointHoverRadius: 4
-        }
-      ]
-    };
+    return buildEvolutionSeries(investments, startDate, today);
   }, [investments, chartPeriod]);
 
   const chartPeriods = [
@@ -237,7 +364,10 @@ export default function Investments() {
   ];
 
   // Group investments by category AND asset name
-  const groupedInvestments = useMemo(() => {
+const {
+    groupedByCategory: groupedInvestments,
+    totalRealizedProfit,
+  } = useMemo(() => {
     const grouped = investments.reduce((acc, inv) => {
     const category = inv.categoria || 'OUTROS';
     if (!acc[category]) acc[category] = {};
@@ -287,57 +417,60 @@ export default function Investments() {
     return acc;
   }, {});
 
-  // Calculate averages and totals for groups
-  Object.keys(grouped).forEach(cat => {
-    Object.values(grouped[cat]).forEach(group => {
-        // Recalculate totals based on final quantity and current price
-        // We need the current price.
-        // Since we don't have a direct "current price" field in the group, we infer it from the latest update or recalculate.
-        // Actually, `inv.valorAtual` from backend is `qty * currentPrice`.
-        // So `currentPrice` = `inv.valorAtual / inv.quantidade` (if qty != 0).
-        
-        let currentPrice = 0;
-        // Find a valid current price from any active holding or valid quote
-        const validAporte = group.aportes.find(a => a.precoAtual > 0);
-        if (validAporte) {
-            currentPrice = validAporte.precoAtual;
-        }
+    let totalRealizedProfit = 0;
+    const activeGroups = {};
 
-        // Total Current Value = Current Quantity * Current Price
-        group.valorAtualTotal = group.quantidadeTotal * currentPrice;
+    Object.keys(grouped).forEach(cat => {
+      Object.entries(grouped[cat]).forEach(([assetName, group]) => {
+          const {
+            realizedProfit,
+            remainingQty,
+            remainingCost,
+            investedCapital,
+            realizedCostBasis,
+          } = computeHoldingStats(group.aportes);
 
-        // Total Invested (Cost Basis) = Current Quantity * Average Price
-        // This represents the cost of the shares we CURRENTLY own.
-        group.valorAporteTotal = group.quantidadeTotal * group.precoMedio;
-
-        // Total Return = Current Value - Cost Basis
-        group.retornoTotal = group.valorAtualTotal - group.valorAporteTotal;
-
-        group.retornoPercent = group.valorAporteTotal > 0 
-            ? (group.retornoTotal / group.valorAporteTotal) * 100 
+          group.quantidadeTotal = remainingQty;
+          group.valorAporteTotal = remainingCost;
+          group.precoMedio = remainingQty > 0
+            ? remainingCost / remainingQty
             : 0;
-    });
-  });
 
-  // Filter out investments with zero total quantity (completely sold)
-  Object.keys(grouped).forEach(cat => {
-    Object.keys(grouped[cat]).forEach(assetName => {
-      if (grouped[cat][assetName].quantidadeTotal === 0) {
-        delete grouped[cat][assetName];
-      }
-    });
-    // Remove empty categories
-    if (Object.keys(grouped[cat]).length === 0) {
-      delete grouped[cat];
-    }
-  });
+          let currentPrice = 0;
+          const validAporte = group.aportes.find(a => a.precoAtual > 0);
+          if (validAporte) {
+              currentPrice = validAporte.precoAtual;
+          }
 
-  return grouped;
+          group.valorAtualTotal = group.quantidadeTotal * currentPrice;
+
+          const unrealizedReturn = group.valorAtualTotal - group.valorAporteTotal;
+          group.realizedProfit = realizedProfit;
+          group.retornoTotal = realizedProfit + unrealizedReturn;
+
+          const roiBase = investedCapital > 0 ? investedCapital : group.valorAporteTotal;
+          group.retornoPercent = roiBase > 0
+              ? (group.retornoTotal / roiBase) * 100
+              : 0;
+
+          totalRealizedProfit += realizedProfit;
+
+          if (group.quantidadeTotal > 0) {
+            if (!activeGroups[cat]) activeGroups[cat] = {};
+            activeGroups[cat][assetName] = group;
+          }
+      });
+    });
+
+    return {
+      groupedByCategory: activeGroups,
+      totalRealizedProfit,
+    };
   }, [investments]);
 
   const categoryNames = {
     'ACAO': 'Ações (B3)',
-    'STOCK': 'Stocks (NYSE/NASDAQ)',
+    'STOCK': 'Stocks (Ações Internacionais)',
     'CRYPTO': 'Criptomoedas',
     'FII': 'Fundos Imobiliários',
     'RENDA_FIXA': 'Renda Fixa',
@@ -367,174 +500,227 @@ export default function Investments() {
   const calculatedSummary = useMemo(() => {
     let totalInvested = 0;
     let totalCurrent = 0;
-    let realizedProfitLoss = 0; // Lucros/prejuízos realizados de investimentos completamente vendidos
     
-    // Calculate for active investments (quantity > 0)
     Object.keys(groupedInvestments).forEach(cat => {
       Object.values(groupedInvestments[cat]).forEach(group => {
-        if (group.quantidadeTotal !== 0) {
-          totalInvested += group.valorAporteTotal;
-          totalCurrent += group.valorAtualTotal;
-        }
+        totalInvested += group.valorAporteTotal;
+        totalCurrent += group.valorAtualTotal;
       });
     });
     
-    // Calculate realized profit/loss from completely sold investments using FIFO method
-    const assetTransactions = {};
-    investments.forEach(inv => {
-      const key = `${inv.categoria || 'OUTROS'}_${inv.nome}`;
-      if (!assetTransactions[key]) {
-        assetTransactions[key] = { buys: [], sells: [], totalQty: 0 };
-      }
-      
-      if (inv.quantidade > 0) {
-        assetTransactions[key].buys.push({
-          qty: inv.quantidade,
-          cost: inv.valorAporte || 0,
-          date: inv.dataAporte
-        });
-        assetTransactions[key].totalQty += inv.quantidade;
-      } else if (inv.quantidade < 0) {
-        assetTransactions[key].sells.push({
-          qty: Math.abs(inv.quantidade),
-          revenue: (inv.valorAporte || 0) - (inv.corretagem || 0),
-          date: inv.dataAporte
-        });
-        assetTransactions[key].totalQty += inv.quantidade;
-      }
-    });
-    
-    // Calculate realized P&L using FIFO method for completely sold assets
-    Object.values(assetTransactions).forEach(asset => {
-      if (asset.totalQty === 0 && asset.sells.length > 0) {
-        // Asset completely sold, calculate realized P&L
-        let remainingBuys = [...asset.buys].sort((a, b) => new Date(a.date) - new Date(b.date));
-        
-        asset.sells.forEach(sell => {
-          let remainingSellQty = sell.qty;
-          let sellCostBasis = 0;
-          
-          while (remainingSellQty > 0 && remainingBuys.length > 0) {
-            const buy = remainingBuys[0];
-            const qtyToUse = Math.min(remainingSellQty, buy.qty);
-            const buyPricePerUnit = buy.qty > 0 ? buy.cost / buy.qty : 0;
-            sellCostBasis += buyPricePerUnit * qtyToUse;
-            
-            buy.qty -= qtyToUse;
-            remainingSellQty -= qtyToUse;
-            
-            if (buy.qty === 0) {
-              remainingBuys.shift();
-            }
-          }
-          
-          const realizedPL = sell.revenue - sellCostBasis;
-          realizedProfitLoss += realizedPL;
-        });
-      }
-    });
-    
-    const totalReturn = totalCurrent - totalInvested + realizedProfitLoss;
-    const totalReturnPercent = totalInvested > 0 ? (totalReturn / totalInvested) * 100 : 0;
+    const unrealizedReturn = totalCurrent - totalInvested;
+    const totalReturn = totalRealizedProfit + unrealizedReturn;
+    const totalReturnPercent = totalInvested > 0
+      ? (totalReturn / totalInvested) * 100
+      : 0;
     
     return { 
       totalInvested, 
       totalCurrent, 
       totalReturn, 
       totalReturnPercent,
-      realizedProfitLoss 
+      realizedProfitLoss: totalRealizedProfit 
     };
-  }, [groupedInvestments, investments]);
+  }, [groupedInvestments, totalRealizedProfit]);
 
-  // Use calculated summary if available, otherwise use state
-  const displaySummary = Object.keys(groupedInvestments).length > 0 ? calculatedSummary : summary;
+  // Sempre usar o resumo calculado para refletir lucros realizados mesmo sem posições ativas
+  const displaySummary = calculatedSummary;
 
   const exportInvestmentReport = async (format = 'xlsx') => {
     try {
       if (format === 'pdf') {
-        // Export as PDF with charts
         const doc = new jsPDF();
-        
-        // Title
-        doc.setFontSize(18);
-        doc.text('Relatório de Investimentos', 14, 20);
-        doc.setFontSize(10);
-        doc.text(`Gerado em: ${new Date().toLocaleDateString('pt-BR')}`, 14, 30);
-        
-        // Summary
-        let yPos = 40;
-        doc.setFontSize(12);
-        doc.text('Resumo', 14, yPos);
-        doc.setFontSize(10);
-        yPos += 10;
-        doc.text(`Total Investido: ${formatCurrency(displaySummary.totalInvested)}`, 14, yPos);
-        yPos += 7;
-        doc.text(`Valor Atual: ${formatCurrency(displaySummary.totalCurrent)}`, 14, yPos);
-        yPos += 7;
-        doc.text(`Retorno Total: ${formatCurrency(displaySummary.totalReturn)}`, 14, yPos);
-        yPos += 7;
-        doc.text(`Retorno %: ${displaySummary.totalReturnPercent.toFixed(2)}%`, 14, yPos);
-        yPos += 15;
+        const pageWidth = doc.internal.pageSize.getWidth();
+        const margin = 14;
+        const palette = {
+          primary: [59, 130, 246],
+          emerald: [16, 185, 129],
+          amber: [245, 158, 11],
+          purple: [99, 102, 241],
+          slate: [15, 23, 42],
+          gray: [55, 65, 81]
+        };
 
-        // Charts - we'll capture them as images
-        const chartElements = document.querySelectorAll('canvas');
-        if (chartElements.length > 0) {
-          for (let i = 0; i < Math.min(chartElements.length, 2); i++) {
-            const canvas = chartElements[i];
-            try {
-              const imgData = await html2canvas(canvas.parentElement, { 
-                backgroundColor: '#ffffff',
-                scale: 2 
-              }).then(canvas => canvas.toDataURL('image/png'));
-              
-              if (yPos > 250) {
-                doc.addPage();
-                yPos = 20;
-              }
-              
-              const imgWidth = 180;
-              const imgHeight = (canvas.height / canvas.width) * imgWidth;
-              doc.addImage(imgData, 'PNG', 14, yPos, imgWidth, imgHeight);
-              yPos += imgHeight + 10;
-            } catch (err) {
-              console.error('Erro ao capturar gráfico:', err);
-            }
+        const ensureSpace = (space = 20) => {
+          if (yPos + space > doc.internal.pageSize.getHeight() - 20) {
+            doc.addPage();
+            yPos = 20;
           }
-        }
+        };
 
-        // Investments by category
-        if (yPos > 250) {
-          doc.addPage();
-          yPos = 20;
-        }
-        doc.setFontSize(12);
-        doc.text('Investimentos por Categoria', 14, yPos);
-        yPos += 10;
+        const drawSectionTitle = (title, color = palette.primary) => {
+          ensureSpace(16);
+          doc.setFillColor(...color);
+          doc.setTextColor(255, 255, 255);
+          doc.roundedRect(margin, yPos, pageWidth - margin * 2, 10, 2, 2, 'F');
+          doc.setFontSize(11);
+          doc.text(title, margin + 4, yPos + 7);
+          yPos += 16;
+          doc.setTextColor(...palette.slate);
+        };
 
-        const categoryData = [];
+        const drawSummaryCard = (label, value, subtitle, x, y, width, color) => {
+          doc.setFillColor(...color);
+          doc.roundedRect(x, y, width, 28, 3, 3, 'F');
+          doc.setTextColor(255, 255, 255);
+          doc.setFontSize(9);
+          doc.text(label.toUpperCase(), x + 4, y + 8);
+          doc.setFontSize(12);
+          doc.text(value, x + 4, y + 17);
+          if (subtitle) {
+            doc.setFontSize(9);
+            doc.text(subtitle, x + 4, y + 24);
+          }
+        };
+
+        // Hero header
+        doc.setFillColor(...palette.primary);
+        doc.rect(0, 0, pageWidth, 38, 'F');
+        doc.setFontSize(20);
+        doc.setTextColor(255, 255, 255);
+        doc.text('Relatório de Investimentos', margin, 20);
+        doc.setFontSize(10);
+        doc.text(`Gerado em: ${new Date().toLocaleDateString('pt-BR')}`, margin, 30);
+
+        // Summary cards
+        let yPos = 48;
+        const cardWidth = (pageWidth - margin * 2 - 8) / 3;
+        drawSummaryCard(
+          'Total Investido',
+          formatCurrency(displaySummary.totalInvested),
+          'Capital ainda aplicado',
+          margin,
+          yPos,
+          cardWidth,
+          [6, 78, 59]
+        );
+        drawSummaryCard(
+          'Valor Atual',
+          formatCurrency(displaySummary.totalCurrent),
+          'Posições vivas no dia',
+          margin + cardWidth + 4,
+          yPos,
+          cardWidth,
+          palette.primary
+        );
+        drawSummaryCard(
+          'Retorno Total',
+          formatCurrency(displaySummary.totalReturn),
+          `${displaySummary.totalReturnPercent.toFixed(2)}% (inclui valores realizados)`,
+          margin + (cardWidth + 4) * 2,
+          yPos,
+          cardWidth,
+          palette.emerald
+        );
+        yPos += 42;
+
+        // Nota
+        ensureSpace(18);
+        doc.setFontSize(9);
+        doc.setTextColor(120, 113, 108);
+        doc.text(
+          'O retorno mostra a soma dos ganhos/perdas já realizados e o que ainda está em carteira – por isso pode diferir de Valor Atual - Investido.',
+          margin,
+          yPos,
+          { maxWidth: pageWidth - margin * 2 }
+        );
+        doc.setTextColor(...palette.slate);
+        yPos += 14;
+
+        // Seções principais
+        drawSectionTitle('Posições Ativas', palette.purple);
+        const positions = [];
         Object.keys(groupedInvestments).forEach(cat => {
           Object.values(groupedInvestments[cat]).forEach(group => {
             if (group.quantidadeTotal > 0) {
-              categoryData.push([
+              positions.push([
                 categoryNames[cat] || cat,
                 group.nome,
                 group.quantidadeTotal.toFixed(6),
                 formatCurrency(group.precoMedio),
                 formatCurrency(group.valorAtualTotal),
-                formatCurrency(group.retornoTotal),
+                formatCurrency(group.valorAporteTotal),
                 `${group.retornoPercent.toFixed(2)}%`
               ]);
             }
           });
         });
+        if (positions.length > 0) {
+          autoTable(doc, {
+            startY: yPos,
+            head: [['Categoria', 'Ativo', 'Qtd.', 'Preço Médio', 'Valor Atual', 'Valor Investido', 'Retorno %']],
+            body: positions.sort((a, b) => parseFloat(b[4].replace(/[^\d,-]/g, '').replace(',', '.')) - parseFloat(a[4].replace(/[^\d,-]/g, '').replace(',', '.'))).slice(0, 18),
+            styles: { fontSize: 8 },
+            headStyles: { fillColor: palette.purple },
+          });
+          yPos = doc.lastAutoTable.finalY + 12;
+        } else {
+          doc.setFontSize(10);
+          doc.text('Nenhuma posição ativa no momento.', margin, yPos);
+          yPos += 10;
+        }
 
-        doc.autoTable({
-          startY: yPos,
-          head: [['Categoria', 'Ativo', 'Quantidade', 'Preço Médio', 'Valor Atual', 'Retorno', 'Retorno %']],
-          body: categoryData,
-          styles: { fontSize: 8 },
-          headStyles: { fillColor: [59, 130, 246] }
+        drawSectionTitle('Distribuição por Categoria', palette.amber);
+        const allocationRows = allocationData.map(item => {
+          const percent = displaySummary.totalCurrent > 0
+            ? (item.value / displaySummary.totalCurrent) * 100
+            : 0;
+          return [
+            item.category,
+            formatCurrency(item.value),
+            `${percent.toFixed(2)}%`,
+          ];
         });
+        if (allocationRows.length > 0) {
+          autoTable(doc, {
+            startY: yPos,
+            head: [['Categoria', 'Valor', 'Participação']],
+            body: allocationRows.slice(0, 10),
+            styles: { fontSize: 8 },
+            headStyles: { fillColor: palette.amber },
+          });
+          yPos = doc.lastAutoTable.finalY + 12;
+        } else {
+          doc.setFontSize(10);
+          doc.text('Não há distribuição para exibir.', margin, yPos);
+          yPos += 10;
+        }
+
+        drawSectionTitle('Operações Recentes', palette.primary);
+        const recentOperations = investments
+          .slice()
+          .sort((a, b) => new Date(b.dataAporte) - new Date(a.dataAporte))
+          .slice(0, 20)
+          .map(inv => [
+            formatDate(inv.dataAporte),
+            inv.quantidade > 0 ? 'Compra' : 'Venda',
+            inv.nome,
+            Math.abs(inv.quantidade).toFixed(4),
+            formatCurrency(inv.precoAporte || 0),
+            formatCurrency((inv.valorAporte || 0) + (inv.corretagem || 0)),
+          ]);
+        if (recentOperations.length > 0) {
+          autoTable(doc, {
+            startY: yPos,
+            head: [['Data', 'Tipo', 'Ativo', 'Qtd.', 'Preço', 'Valor Total']],
+            body: recentOperations,
+            styles: { fontSize: 8 },
+            headStyles: { fillColor: palette.primary },
+          });
+          yPos = doc.lastAutoTable.finalY + 12;
+        } else {
+          doc.setFontSize(10);
+          doc.text('Nenhuma operação registrada recentemente.', margin, yPos);
+          yPos += 10;
+        }
+
+        drawSectionTitle('Detalhes Adicionais', palette.gray);
+        doc.setFontSize(10);
+        doc.text(`Lucro/Prejuízo Realizado acumulado: ${formatCurrency(calculatedSummary.realizedProfitLoss || 0)}`, margin, yPos);
+        yPos += 6;
+        doc.text(`Total de operações registradas: ${investments.length}`, margin, yPos);
+        yPos += 6;
+        doc.text('Este relatório foi gerado automaticamente pelo Controle-se.', margin, yPos);
 
         doc.save(`relatorio_investimentos_${new Date().toISOString().split('T')[0]}.pdf`);
         toast.success('Relatório exportado como PDF!');
@@ -719,6 +905,20 @@ export default function Investments() {
           icon={PieChart}
           type={displaySummary.totalReturn >= 0 ? 'income' : 'expense'}
           subtitle={`${displaySummary.totalReturnPercent.toFixed(2)}%`}
+          action={
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowReturnInfo(true);
+              }}
+              className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
+              aria-label="Informações sobre o retorno total"
+            >
+              <Info className="w-4 h-4" />
+              <span>Entenda</span>
+            </button>
+          }
         />
       </div>
 
@@ -949,6 +1149,25 @@ export default function Investments() {
         investments={investments}
         accounts={accounts}
       />
+
+      <Modal
+        isOpen={showReturnInfo}
+        onClose={() => setShowReturnInfo(false)}
+        title="Como calculamos o retorno?"
+      >
+        <div className="space-y-3 text-sm text-gray-600 dark:text-gray-300">
+          <p>
+            O <strong>Retorno Total</strong> considera tanto o que ainda está aplicado quanto tudo o que já foi vendido.
+          </p>
+          <p>
+            Por isso, ele soma os ganhos e perdas realizados às variações dos investimentos atuais. Assim, ele pode ser diferente de um cálculo simples de
+            <em> valor atual - total investido</em>.
+          </p>
+          <p>
+            Em resumo: se você já resgatou parte dos investimentos, o retorno continua exibindo esse histórico para que você saiba exatamente quanto acumulou.
+          </p>
+        </div>
+      </Modal>
     </div>
   );
 }

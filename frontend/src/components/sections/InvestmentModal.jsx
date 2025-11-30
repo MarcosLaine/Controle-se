@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { X, AlertCircle, Info } from 'lucide-react';
-import Modal from '../common/Modal';
-import api from '../../services/api';
+import { Info } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../contexts/AuthContext';
+import api from '../../services/api';
+import Modal from '../common/Modal';
 
 export default function InvestmentModal({ isOpen, onClose, onSuccess, investmentToEdit }) {
   const { user } = useAuth();
@@ -324,7 +324,7 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
             >
               <option value="">Selecione...</option>
               <option value="ACAO">Ação (B3)</option>
-              <option value="STOCK">Stock (NYSE/NASDAQ)</option>
+              <option value="STOCK">Stock (Ações Internacionais)</option>
               <option value="CRYPTO">Criptomoeda</option>
               <option value="FII">FII</option>
               <option value="RENDA_FIXA">Renda Fixa</option>

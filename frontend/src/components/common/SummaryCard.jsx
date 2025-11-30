@@ -7,7 +7,8 @@ export default function SummaryCard({
   type = 'default',
   subtitle,
   onClick,
-  className = ''
+  className = '',
+  action,
 }) {
   const typeClasses = {
     income: 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800',
@@ -38,10 +39,11 @@ export default function SummaryCard({
           <p className="text-2xl font-bold text-gray-900 dark:text-white mb-1">
             {amount}
           </p>
-          {subtitle && (
-            <p className="text-xs text-gray-500 dark:text-gray-400">
-              {subtitle}
-            </p>
+          {(subtitle || action) && (
+            <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+              {subtitle && <span>{subtitle}</span>}
+              {action}
+            </div>
           )}
         </div>
         {Icon && (

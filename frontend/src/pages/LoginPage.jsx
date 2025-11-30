@@ -36,10 +36,8 @@ export default function LoginPage() {
     const result = await register(registerName, registerEmail, registerPassword);
     setLoading(false);
     if (result.success) {
-      setActiveTab('login');
-      setRegisterName('');
-      setRegisterEmail('');
-      setRegisterPassword('');
+      // Navega para o dashboard após cadastro bem-sucedido
+      navigate('/dashboard');
     }
   };
 

@@ -52,6 +52,11 @@ export const AuthProvider = ({ children }) => {
     try {
       const response = await api.post('/auth/register', { name, email, password });
       if (response.success) {
+        // Faz login automático após cadastro bem-sucedido
+        if (response.user) {
+          setUser(response.user);
+          localStorage.setItem('controle-se-user', JSON.stringify(response.user));
+        }
         toast.success('Cadastro realizado com sucesso!');
         return { success: true };
       } else {

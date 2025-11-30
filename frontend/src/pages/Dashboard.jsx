@@ -1,14 +1,29 @@
-import React, { useState } from 'react';
+import React, { useState, lazy, Suspense, useCallback } from 'react';
 import Header from '../components/layout/Header';
 import Sidebar from '../components/layout/Sidebar';
-import Overview from '../components/sections/Overview';
-import Categories from '../components/sections/Categories';
-import Accounts from '../components/sections/Accounts';
-import Transactions from '../components/sections/Transactions';
-import Budgets from '../components/sections/Budgets';
-import Tags from '../components/sections/Tags';
-import Reports from '../components/sections/Reports';
-import Investments from '../components/sections/Investments';
+
+const lazyWithPreload = (loader) => {
+  const Component = lazy(loader);
+  Component.preload = loader;
+  return Component;
+};
+
+const sectionComponents = {
+  overview: lazyWithPreload(() => import('../components/sections/Overview')),
+  categories: lazyWithPreload(() => import('../components/sections/Categories')),
+  accounts: lazyWithPreload(() => import('../components/sections/Accounts')),
+  transactions: lazyWithPreload(() => import('../components/sections/Transactions')),
+  budgets: lazyWithPreload(() => import('../components/sections/Budgets')),
+  tags: lazyWithPreload(() => import('../components/sections/Tags')),
+  reports: lazyWithPreload(() => import('../components/sections/Reports')),
+  investments: lazyWithPreload(() => import('../components/sections/Investments')),
+};
+
+const SectionFallback = () => (
+  <div className="flex items-center justify-center h-64">
+    <div className="animate-spin rounded-full h-12 w-12 border-4 border-primary-600 border-t-transparent"></div>
+  </div>
+);
 
 export default function Dashboard() {
   const [activeSection, setActiveSection] = useState(() => {
@@ -16,28 +31,23 @@ export default function Dashboard() {
   });
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
-  const renderSection = () => {
-    switch (activeSection) {
-      case 'overview':
-        return <Overview />;
-      case 'categories':
-        return <Categories />;
-      case 'accounts':
-        return <Accounts />;
-      case 'transactions':
-        return <Transactions />;
-      case 'budgets':
-        return <Budgets />;
-      case 'tags':
-        return <Tags />;
-      case 'reports':
-        return <Reports />;
-      case 'investments':
-        return <Investments />;
-      default:
-        return <Overview />;
+  const prefetchSection = useCallback((sectionId) => {
+    sectionComponents[sectionId]?.preload?.();
+  }, []);
+
+  const handleSectionChange = useCallback((section) => {
+    if (section === activeSection) {
+      setIsMobileMenuOpen(false);
+      return;
     }
-  };
+
+    prefetchSection(section);
+    setActiveSection(section);
+    localStorage.setItem('controle-se-active-section', section);
+    setIsMobileMenuOpen(false);
+  }, [activeSection, prefetchSection]);
+
+  const ActiveSection = sectionComponents[activeSection] || sectionComponents.overview;
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
@@ -45,17 +55,16 @@ export default function Dashboard() {
       <div className="flex">
         <Sidebar 
           activeSection={activeSection} 
-          onSectionChange={(section) => {
-            setActiveSection(section);
-            localStorage.setItem('controle-se-active-section', section);
-            setIsMobileMenuOpen(false);
-          }}
+          onSectionChange={handleSectionChange}
+          onSectionHover={prefetchSection}
           isOpen={isMobileMenuOpen}
           onClose={() => setIsMobileMenuOpen(false)}
         />
         <main className="flex-1 p-4 lg:p-6 overflow-y-auto h-[calc(100vh-73px)] w-full">
           <div className="max-w-7xl mx-auto">
-            {renderSection()}
+            <Suspense fallback={<SectionFallback />}>
+              <ActiveSection />
+            </Suspense>
           </div>
         </main>
       </div>

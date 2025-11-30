@@ -3,8 +3,8 @@ import java.io.*;
 import java.net.*;
 import java.time.LocalDate;
 import java.util.*;
-import java.util.regex.*;
 import java.util.concurrent.*;
+import java.util.regex.*;
 
 /**
  * Servidor HTTP simplificado para conectar Frontend com Backend Java
@@ -361,10 +361,18 @@ public class ControleSeServer {
                 
                 int userId = bancoDados.cadastrarUsuario(name, email, password);
                 
+                // Busca o usuário recém-cadastrado para retornar os dados completos
+                Usuario usuario = bancoDados.buscarUsuario(userId);
+                
                 Map<String, Object> response = new HashMap<>();
                 response.put("success", true);
                 response.put("message", "Usuário cadastrado com sucesso");
-                response.put("userId", userId);
+                response.put("user", Map.of(
+                    "id", usuario.getIdUsuario(),
+                    "name", usuario.getNome(),
+                    "email", usuario.getEmail(),
+                    "token", "fake-token-" + usuario.getIdUsuario()
+                ));
                 
                 sendJsonResponse(exchange, 201, response);
             } catch (Exception e) {
@@ -977,6 +985,13 @@ public class ControleSeServer {
                     transaction.put("value", receita.getValor());
                     transaction.put("date", receita.getData().toString());
                     transaction.put("category", "Receita");
+                    if (receita.getObservacoes() != null && receita.getObservacoes().length > 0) {
+                        List<String> observacoesList = new ArrayList<>();
+                        for (String obs : receita.getObservacoes()) {
+                            observacoesList.add(obs);
+                        }
+                        transaction.put("observacoes", observacoesList);
+                    }
                     transactions.add(transaction);
                 }
                 
@@ -1097,6 +1112,13 @@ public class ControleSeServer {
                     transaction.put("category", "Receita");
                     transaction.put("categoryId", null);
                     transaction.put("tags", tagsList);
+                    List<String> observacoesList = new ArrayList<>();
+                    if (receita.getObservacoes() != null) {
+                        for (String obs : receita.getObservacoes()) {
+                            observacoesList.add(obs);
+                        }
+                    }
+                    transaction.put("observacoes", observacoesList);
                     transactions.add(transaction);
                 }
                 
@@ -1437,6 +1459,41 @@ public class ControleSeServer {
                     }
                 }
                 
+                // Parse observações (opcional)
+                String[] observacoes = null;
+                Object observacoesObj = data.get("observacoes");
+                if (observacoesObj != null) {
+                    if (observacoesObj instanceof String) {
+                        String observacoesStr = (String) observacoesObj;
+                        if (!observacoesStr.trim().isEmpty()) {
+                            observacoesStr = observacoesStr.replace("\\n", "\n");
+                            String[] obsArray = observacoesStr.split("[\\r\\n]+");
+                            List<String> obsList = new ArrayList<>();
+                            for (String obs : obsArray) {
+                                String trimmed = obs.trim();
+                                if (!trimmed.isEmpty()) {
+                                    obsList.add(trimmed);
+                                }
+                            }
+                            if (!obsList.isEmpty()) {
+                                observacoes = obsList.toArray(new String[0]);
+                            }
+                        }
+                    } else if (observacoesObj instanceof List) {
+                        @SuppressWarnings("unchecked")
+                        List<Object> obsList = (List<Object>) observacoesObj;
+                        List<String> obsStringList = new ArrayList<>();
+                        for (Object obs : obsList) {
+                            if (obs != null) {
+                                obsStringList.add(obs.toString().trim());
+                            }
+                        }
+                        if (!obsStringList.isEmpty()) {
+                            observacoes = obsStringList.toArray(new String[0]);
+                        }
+                    }
+                }
+                
                 // Valida se a conta não é do tipo "Investimento"
                 Conta conta = bancoDados.buscarConta(accountId);
                 if (conta == null) {
@@ -1454,7 +1511,7 @@ public class ControleSeServer {
                     return;
                 }
                 
-                int incomeId = bancoDados.cadastrarReceita(description, value, date, userId, accountId);
+                int incomeId = bancoDados.cadastrarReceita(description, value, date, userId, accountId, observacoes);
                 
                 // Associa tags se houver
                 for (int tagId : tagIds) {

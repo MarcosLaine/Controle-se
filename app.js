@@ -2921,7 +2921,7 @@ class ControleSeApp {
         // Nomes amigáveis para as categorias
         const categoryNames = {
             'ACAO': 'Ações (B3)',
-            'STOCK': 'Stocks (NYSE/NASDAQ)',
+            'STOCK': 'Stocks (Ações Internacionais)',
             'CRYPTO': 'Criptomoedas',
             'FII': 'Fundos Imobiliários',
             'RENDA_FIXA': 'Renda Fixa',
@@ -3475,7 +3475,7 @@ class ControleSeApp {
         // Nomes amigáveis para as categorias
         const categoryNames = {
             'ACAO': 'Ações (B3)',
-            'STOCK': 'Stocks (NYSE/NASDAQ)',
+            'STOCK': 'Stocks (Ações Internacionais)',
             'CRYPTO': 'Criptomoedas',
             'FII': 'Fundos Imobiliários',
             'RENDA_FIXA': 'Renda Fixa',
@@ -3609,7 +3609,7 @@ class ControleSeApp {
                     <select id="investment-category" required>
                         <option value="">Selecione...</option>
                         <option value="ACAO">Ação (B3)</option>
-                        <option value="STOCK">Stock (NYSE/NASDAQ)</option>
+                        <option value="STOCK">Stock (Ações Internacionais)</option>
                         <option value="CRYPTO">Criptomoeda</option>
                         <option value="FII">FII</option>
                         <option value="RENDA_FIXA">Renda Fixa</option>
@@ -4362,7 +4362,7 @@ class ControleSeApp {
                         <select id="edit-investment-category" required>
                             <option value="">Selecione...</option>
                             <option value="ACAO" ${investment.categoria === 'ACAO' ? 'selected' : ''}>Ação (B3)</option>
-                            <option value="STOCK" ${investment.categoria === 'STOCK' ? 'selected' : ''}>Stock (NYSE/NASDAQ)</option>
+                            <option value="STOCK" ${investment.categoria === 'STOCK' ? 'selected' : ''}>Stock (Ações Internacionais)</option>
                             <option value="CRYPTO" ${investment.categoria === 'CRYPTO' ? 'selected' : ''}>Criptomoeda</option>
                             <option value="FII" ${investment.categoria === 'FII' ? 'selected' : ''}>FII</option>
                             <option value="RENDA_FIXA" ${investment.categoria === 'RENDA_FIXA' ? 'selected' : ''}>Renda Fixa</option>

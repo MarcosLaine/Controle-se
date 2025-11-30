@@ -10,7 +10,6 @@ import {
   BarChart3,
   X
 } from 'lucide-react';
-import { useLocation, useNavigate } from 'react-router-dom';
 
 const menuItems = [
   { id: 'overview', label: 'Visão Geral', icon: LayoutDashboard },
@@ -23,14 +22,9 @@ const menuItems = [
   { id: 'investments', label: 'Investimentos', icon: PieChart },
 ];
 
-export default function Sidebar({ activeSection, onSectionChange, isOpen, onClose }) {
-  const location = useLocation();
-  const navigate = useNavigate();
-
+export default function Sidebar({ activeSection, onSectionChange, onSectionHover, isOpen, onClose }) {
   const handleClick = (sectionId) => {
     onSectionChange(sectionId);
-    // Salva a seção ativa no localStorage
-    localStorage.setItem('controle-se-active-section', sectionId);
   };
 
   return (
@@ -70,6 +64,7 @@ export default function Sidebar({ activeSection, onSectionChange, isOpen, onClos
               <button
                 key={item.id}
                 onClick={() => handleClick(item.id)}
+                onMouseEnter={() => onSectionHover?.(item.id)}
                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 ${
                   isActive
                     ? 'bg-primary-600 text-white shadow-md'

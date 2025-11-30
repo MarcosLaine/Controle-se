@@ -234,6 +234,7 @@ class Receita implements Serializable {
     private boolean ativo;
     private LocalDate proximaRecorrencia; // Próxima data para gerar recorrência automática
     private int idReceitaOriginal; // ID da receita original (0 se for a original)
+    private String[] observacoes;
     
     // Construtor compatível com versões antigas (sem frequência)
     public Receita(int idReceita, String descricao, double valor, LocalDate data, int idUsuario, int idConta) {
@@ -252,6 +253,7 @@ class Receita implements Serializable {
         this.ativo = true;
         this.idReceitaOriginal = 0; // Esta é a original
         this.proximaRecorrencia = calcularProximaRecorrencia(data, frequencia);
+        this.observacoes = new String[0];
     }
     
     // Getters e Setters
@@ -285,6 +287,29 @@ class Receita implements Serializable {
     public int getIdReceitaOriginal() { return idReceitaOriginal; }
     public void setIdReceitaOriginal(int idReceitaOriginal) { this.idReceitaOriginal = idReceitaOriginal; }
     
+    public String[] getObservacoes() { return observacoes; }
+    public void setObservacoes(String[] observacoes) { this.observacoes = observacoes != null ? observacoes : new String[0]; }
+    
+    public void adicionarObservacao(String observacao) {
+        if (observacao == null || observacao.trim().isEmpty()) {
+            return;
+        }
+        if (this.observacoes == null) {
+            this.observacoes = new String[0];
+        }
+        String[] novasObservacoes = new String[this.observacoes.length + 1];
+        System.arraycopy(this.observacoes, 0, novasObservacoes, 0, this.observacoes.length);
+        novasObservacoes[this.observacoes.length] = observacao.trim();
+        this.observacoes = novasObservacoes;
+    }
+    
+    public String getObservacoesConcatenadas() {
+        if (observacoes == null || observacoes.length == 0) {
+            return "";
+        }
+        return String.join("; ", observacoes);
+    }
+    
     /**
      * Calcula a próxima data de recorrência baseada na frequência
      */
@@ -317,7 +342,8 @@ class Receita implements Serializable {
     @Override
     public String toString() {
         return "Receita{id=" + idReceita + ", descricao='" + descricao + "', valor=" + valor + 
-               ", data=" + data + ", frequencia='" + frequencia + "', conta=" + idConta + ", usuario=" + idUsuario + "}";
+               ", data=" + data + ", frequencia='" + frequencia + "', conta=" + idConta + ", usuario=" + idUsuario +
+               ", observacoes=" + (observacoes != null ? Arrays.toString(observacoes) : "[]") + "}";
     }
 }
 
