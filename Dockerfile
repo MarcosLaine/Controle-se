@@ -59,5 +59,6 @@ COPY --from=frontend-build /app/dist ./dist
 EXPOSE 8080
 
 # Start the server
-# Modificado para priorizar variáveis de ambiente do sistema, usando .env apenas se existir e variáveis não estiverem definidas
-CMD ["sh", "-c", "if [ -f .env ]; then echo 'Carregando .env...'; export $(cat .env | grep -v '^#' | xargs); fi; java -cp bin:lib/postgresql.jar ControleSeServer"]
+# 1) Se existir um keystore em Base64, decodifica antes de subir o servidor
+# 2) Continua priorizando variáveis de ambiente, usando .env apenas se estiver disponível
+CMD ["sh", "-c", "if [ -f /etc/secrets/server.p12.b64 ]; then echo 'Decodificando server.p12...'; base64 -d /etc/secrets/server.p12.b64 > /etc/secrets/server.p12; fi; if [ -f .env ]; then echo 'Carregando .env...'; export $(cat .env | grep -v '^#' | xargs); fi; java -cp bin:lib/postgresql.jar ControleSeServer"]
