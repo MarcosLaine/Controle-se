@@ -1,12 +1,10 @@
 import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.security.cert.X509Certificate;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import javax.net.ssl.*;
 
 /**
  * Serviço para buscar cotações de investimentos de APIs públicas
@@ -19,38 +17,6 @@ public class QuoteService {
     private static final long CRYPTO_CACHE_DURATION_MS = 60 * 60 * 1000; // 1 hora
     private static final String EXCHANGE_RATE_API = "https://api.exchangerate-api.com/v4/latest/USD";
     
-    static {
-        disableSSLVerification();
-    }
-
-    private static void disableSSLVerification() {
-        try {
-            // Create a trust manager that does not validate certificate chains
-            TrustManager[] trustAllCerts = new TrustManager[] {
-                new X509TrustManager() {
-                    public java.security.cert.X509Certificate[] getAcceptedIssuers() { return null; }
-                    public void checkClientTrusted(X509Certificate[] certs, String authType) { }
-                    public void checkServerTrusted(X509Certificate[] certs, String authType) { }
-                }
-            };
-
-            // Install the all-trusting trust manager
-            SSLContext sc = SSLContext.getInstance("SSL");
-            sc.init(null, trustAllCerts, new java.security.SecureRandom());
-            HttpsURLConnection.setDefaultSSLSocketFactory(sc.getSocketFactory());
-
-            // Create all-trusting host name verifier
-            HostnameVerifier allHostsValid = new HostnameVerifier() {
-                public boolean verify(String hostname, SSLSession session) { return true; }
-            };
-
-            // Install the all-trusting host verifier
-            HttpsURLConnection.setDefaultHostnameVerifier(allHostsValid);
-        } catch (Exception e) {
-            System.err.println("Erro ao desabilitar verificação SSL: " + e.getMessage());
-        }
-    }
-
     private QuoteService() {
         this.cache = new ConcurrentHashMap<>();
     }

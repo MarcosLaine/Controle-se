@@ -75,8 +75,19 @@ export const AuthProvider = ({ children }) => {
     toast.success('Logout realizado com sucesso!');
   };
 
+  const changePassword = async (currentPassword, newPassword) => {
+    try {
+      const response = await api.post('/auth/change-password', { currentPassword, newPassword });
+      toast.success(response.message || 'Senha atualizada com sucesso!');
+      return { success: true };
+    } catch (error) {
+      toast.error(error.message || 'Erro ao atualizar senha');
+      return { success: false, message: error.message };
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, register, logout, changePassword }}>
       {children}
     </AuthContext.Provider>
   );

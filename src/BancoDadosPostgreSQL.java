@@ -188,36 +188,9 @@ public class BancoDadosPostgreSQL {
             synchronized (connectionLock) {
                 activeConnections--;
             }
-            // Se falhou, não deve decrementar se a conexão nem foi criada, mas activeConnections++ foi chamado antes
-            // O problema é que se falha aqui, connectionThreadLocal fica null/velho
-            
             System.err.println("Erro ao conectar ao PostgreSQL: " + e.getMessage());
             System.err.println("URL: " + jdbcUrl.replace(password != null ? password : "", "***"));
-            
-            // Tenta sem validação de certificado (menos seguro, mas funciona)
-            if (e.getMessage().contains("SSL") || e.getMessage().contains("certificate")) {
-                try {
-                    String fallbackUrl = jdbcUrl.replace("sslmode=require", "sslmode=require&sslfactory=org.postgresql.ssl.NonValidatingFactory");
-                    Properties fallbackProps = new Properties();
-                    fallbackProps.setProperty("user", username != null ? username : "postgres");
-                    fallbackProps.setProperty("password", password != null ? password : "");
-                    fallbackProps.setProperty("connectTimeout", "10");
-                    fallbackProps.setProperty("socketTimeout", "30");
-                    
-                    Connection conn = DriverManager.getConnection(fallbackUrl, fallbackProps);
-                    conn.setAutoCommit(false);
-                    connectionThreadLocal.set(conn);
-                    this.jdbcUrl = fallbackUrl;
-                    return conn;
-                } catch (SQLException e2) {
-                    synchronized (connectionLock) {
-                        activeConnections--;
-                    }
-                    throw new RuntimeException("Erro ao conectar ao banco de dados: " + e2.getMessage(), e2);
-                }
-            } else {
-                throw new RuntimeException("Erro ao conectar ao banco de dados", e);
-            }
+            throw new RuntimeException("Erro ao conectar ao banco de dados", e);
         }
     }
     
@@ -453,40 +426,29 @@ public class BancoDadosPostgreSQL {
     }
     
     public int cadastrarUsuario(String nome, String email, String senha) {
-        // Validações de entrada
         validateInput("Nome", nome, 100);
         validateEmail(email);
-        validateInput("Senha", senha, 500); // Senha pode ser longa após criptografia
-        
-        // Verifica se email já existe (com lock para evitar race condition)
+        validateInput("Senha", senha, 200);
+
         synchronized (this) {
             if (buscarUsuarioPorEmail(email) != null) {
                 throw new RuntimeException("Email já cadastrado!");
             }
-            
-            // Criptografa a senha usando RSA antes de salvar
-            RSAEncryption rsa = RSAKeyManager.obterInstancia();
-            String senhaCriptografada = rsa.criptografar(senha);
-            
-            return cadastrarUsuarioComSenhaCriptografada(nome, email, senhaCriptografada);
+            String senhaHash = PasswordHasher.hashPassword(senha);
+            return salvarUsuario(nome, email, senhaHash);
         }
     }
-    
-    /**
-     * Cadastra usuário com senha já criptografada (usado na migração)
-     * ATENÇÃO: Este método assume que a senha já está criptografada!
-     */
-    public int cadastrarUsuarioComSenhaCriptografada(String nome, String email, String senhaCriptografada) {
-        // Validações básicas (não valida senha pois já está criptografada)
+
+    private int salvarUsuario(String nome, String email, String senhaArmazenada) {
         validateInput("Nome", nome, 100);
         validateEmail(email);
-        
+
         String sql = "INSERT INTO usuarios (nome, email, senha) VALUES (?, ?, ?) RETURNING id_usuario";
         
         try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
             pstmt.setString(1, nome.trim());
             pstmt.setString(2, email.toLowerCase().trim()); // Normaliza email
-            pstmt.setString(3, senhaCriptografada); // Senha já criptografada
+            pstmt.setString(3, senhaArmazenada);
             
             ResultSet rs = pstmt.executeQuery();
             if (rs.next()) {
@@ -544,11 +506,41 @@ public class BancoDadosPostgreSQL {
         if (usuario == null) {
             return false;
         }
-        
-        // Descriptografa a senha armazenada e compara com a senha fornecida
-        RSAEncryption rsa = RSAKeyManager.obterInstancia();
-        String senhaDescriptografada = rsa.descriptografar(usuario.getSenha());
-        return senhaDescriptografada.equals(senha);
+        return PasswordHasher.verifyPassword(senha, usuario.getSenha());
+    }
+
+    public void atualizarSenhaUsuario(int idUsuario, String senhaAtual, String novaSenha) {
+        validateInput("Nova senha", novaSenha, 200);
+        if (novaSenha.length() < 8) {
+            throw new IllegalArgumentException("A nova senha deve ter pelo menos 8 caracteres");
+        }
+
+        Usuario usuario = buscarUsuario(idUsuario);
+        if (usuario == null) {
+            throw new IllegalArgumentException("Usuário não encontrado");
+        }
+
+        if (!PasswordHasher.verifyPassword(senhaAtual, usuario.getSenha())) {
+            throw new IllegalArgumentException("Senha atual incorreta");
+        }
+
+        String novaSenhaHash = PasswordHasher.hashPassword(novaSenha);
+        String sql = "UPDATE usuarios SET senha = ? WHERE id_usuario = ?";
+
+        try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
+            pstmt.setString(1, novaSenhaHash);
+            pstmt.setInt(2, idUsuario);
+            int updated = pstmt.executeUpdate();
+            if (updated == 0) {
+                throw new RuntimeException("Não foi possível atualizar a senha");
+            }
+            getConnection().commit();
+        } catch (SQLException e) {
+            try {
+                getConnection().rollback();
+            } catch (SQLException ex) {}
+            throw new RuntimeException("Erro ao atualizar senha: " + e.getMessage(), e);
+        }
     }
     
     private Usuario mapUsuario(ResultSet rs) throws SQLException {

@@ -1,22 +1,40 @@
 import com.sun.net.httpserver.*;
 import java.io.*;
 import java.net.*;
+import java.security.KeyStore;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.logging.ConsoleHandler;
+import java.util.logging.Formatter;
+import java.util.logging.Level;
+import java.util.logging.LogRecord;
+import java.util.logging.Logger;
 import java.util.regex.*;
+import javax.net.ssl.KeyManagerFactory;
+import javax.net.ssl.SSLContext;
 
 /**
  * Servidor HTTP simplificado para conectar Frontend com Backend Java
  * Implementa uma API REST básica para o sistema Controle-se
  */
 public class ControleSeServer {
+    private static final Logger LOGGER = Logger.getLogger(ControleSeServer.class.getName());
     private static BancoDadosPostgreSQL bancoDados;
     private static HttpServer server;
     private static final int PORT = 8080;
+    
+    static {
+        ConsoleHandler handler = new ConsoleHandler();
+        handler.setFormatter(new PlainLogFormatter());
+        handler.setLevel(Level.INFO);
+        LOGGER.setUseParentHandlers(false);
+        LOGGER.addHandler(handler);
+        LOGGER.setLevel(Level.INFO);
+    }
     
     public static void main(String[] args) {
         try {
@@ -24,7 +42,7 @@ public class ControleSeServer {
             bancoDados = new BancoDadosPostgreSQL();
             
             // Cria o servidor HTTP
-            server = HttpServer.create(new InetSocketAddress(PORT), 0);
+            server = createServer();
             
             // Configura as rotas da API
             setupRoutes();
@@ -42,20 +60,59 @@ public class ControleSeServer {
             exibirInformacoesServidor();
             
         } catch (IOException e) {
-            System.err.println("Erro ao iniciar servidor: " + e.getMessage());
+            LOGGER.log(Level.SEVERE, "Erro ao iniciar servidor", e);
         }
+    }
+    
+    private static HttpServer createServer() throws IOException {
+        String keystorePath = System.getenv("TLS_KEYSTORE_PATH");
+        String keystorePassword = System.getenv("TLS_KEYSTORE_PASSWORD");
+        String keystoreType = System.getenv("TLS_KEYSTORE_TYPE");
+        if (keystoreType == null || keystoreType.isBlank()) {
+            keystoreType = "PKCS12";
+        }
+        
+        if (keystorePath != null && !keystorePath.isBlank() &&
+            keystorePassword != null && !keystorePassword.isBlank()) {
+            try (FileInputStream fis = new FileInputStream(keystorePath)) {
+                KeyStore keyStore = KeyStore.getInstance(keystoreType);
+                char[] passwordChars = keystorePassword.toCharArray();
+                keyStore.load(fis, passwordChars);
+                
+                KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
+                kmf.init(keyStore, passwordChars);
+                
+                SSLContext sslContext = SSLContext.getInstance("TLS");
+                sslContext.init(kmf.getKeyManagers(), null, null);
+                
+                HttpsServer httpsServer = HttpsServer.create(new InetSocketAddress(PORT), 0);
+                httpsServer.setHttpsConfigurator(new HttpsConfigurator(sslContext) {
+                    @Override
+                    public void configure(HttpsParameters params) {
+                        params.setSSLParameters(sslContext.getDefaultSSLParameters());
+                    }
+                });
+                LOGGER.info("HTTPS habilitado com certificado fornecido");
+                return httpsServer;
+            } catch (Exception e) {
+                LOGGER.log(Level.SEVERE, "Falha ao configurar HTTPS", e);
+                throw new IOException("Não foi possível iniciar servidor HTTPS", e);
+            }
+        }
+        
+        LOGGER.warning("Variáveis TLS não configuradas. Servidor rodando em HTTP (somente para desenvolvimento).");
+        return HttpServer.create(new InetSocketAddress(PORT), 0);
     }
     
     /**
      * Exibe informações do servidor
      */
     private static void exibirInformacoesServidor() {
-        System.out.println("\n=== SERVIDOR CONTROLE-SE INICIADO ===");
-        System.out.println("Servidor rodando em: http://localhost:" + PORT);
-        System.out.println("Frontend disponível em: http://localhost:" + PORT + "/");
-        System.out.println("API disponível em: http://localhost:" + PORT + "/api/");
-        // System.out.println("Scheduler de recorrências: ATIVO (verifica diariamente às 00:05)");
-        System.out.println("Pressione Ctrl+C para parar o servidor");
+        LOGGER.info("=== SERVIDOR CONTROLE-SE INICIADO ===");
+        LOGGER.info("Servidor rodando em: http" + (server instanceof HttpsServer ? "s" : "") + "://localhost:" + PORT);
+        LOGGER.info("Frontend disponível em: http" + (server instanceof HttpsServer ? "s" : "") + "://localhost:" + PORT + "/");
+        LOGGER.info("API disponível em: http" + (server instanceof HttpsServer ? "s" : "") + "://localhost:" + PORT + "/api/");
+        LOGGER.info("Pressione Ctrl+C para parar o servidor");
     }
     
     /**
@@ -85,11 +142,9 @@ public class ControleSeServer {
             @Override
             public void run() {
                 try {
-                    System.out.println("\n=== SCHEDULER DE RECORRÊNCIAS ===");
-                    System.out.println("Executando processamento automático...");
+                    LOGGER.info("=== SCHEDULER DE RECORRÊNCIAS === Executando processamento automático...");
                     int criados = bancoDados.processarRecorrencias();
-                    System.out.println("Total de transações recorrentes criadas: " + criados);
-                    System.out.println("=====================================\n");
+                    LOGGER.info("Total de transações recorrentes criadas: " + criados);
                 } catch (Exception e) {
                     System.err.println("Erro ao processar recorrências: " + e.getMessage());
                     e.printStackTrace();
@@ -103,13 +158,13 @@ public class ControleSeServer {
         }, delay, periodo);
         
         // Para fins de DEBUG/TESTE: executa imediatamente na inicialização também
-        System.out.println("\n[INICIALIZAÇÃO] Processando recorrências pendentes...");
+        LOGGER.info("[INICIALIZAÇÃO] Processando recorrências pendentes...");
         try {
             int criados = bancoDados.processarRecorrencias();
             if (criados > 0) {
-                System.out.println("[INICIALIZAÇÃO] " + criados + " transações recorrentes criadas");
+                LOGGER.info("[INICIALIZAÇÃO] " + criados + " transações recorrentes criadas");
             } else {
-                System.out.println("[INICIALIZAÇÃO] Nenhuma recorrência pendente");
+                LOGGER.info("[INICIALIZAÇÃO] Nenhuma recorrência pendente");
             }
         } catch (Exception e) {
             System.err.println("[INICIALIZAÇÃO] Erro ao processar recorrências: " + e.getMessage());
@@ -119,7 +174,7 @@ public class ControleSeServer {
                 bancoDados.closeConnection();
             }
         }
-        System.out.println();
+        LOGGER.fine("Scheduler de recorrências inicializado");
     }
     
     /**
@@ -136,11 +191,10 @@ public class ControleSeServer {
             @Override
             public void run() {
                 try {
-                    System.out.println("\n=== ATUALIZAÇÃO DE COTAÇÕES ===");
+                    LOGGER.info("=== ATUALIZAÇÃO DE COTAÇÕES ===");
                     QuoteService quoteService = QuoteService.getInstance();
                     quoteService.cleanExpiredCache();
-                    System.out.println("Cache de cotações limpo e atualizado");
-                    System.out.println("=====================================\n");
+                    LOGGER.info("Cache de cotações limpo e atualizado");
                 } catch (Exception e) {
                     System.err.println("Erro ao atualizar cotações: " + e.getMessage());
                     e.printStackTrace();
@@ -148,26 +202,30 @@ public class ControleSeServer {
             }
         }, 0, periodo);
         
-        System.out.println("[INICIALIZAÇÃO] Scheduler de cotações iniciado (atualiza a cada 30 minutos)");
+        LOGGER.info("[INICIALIZAÇÃO] Scheduler de cotações iniciado (atualiza a cada 30 minutos)");
     }
     
     private static void setupRoutes() {
         // API Routes básicas (devem vir antes do StaticFileHandler)
         server.createContext("/api/auth/login", new LoginHandler());
         server.createContext("/api/auth/register", new RegisterHandler());
-        server.createContext("/api/dashboard/overview", new OverviewHandler());
-        server.createContext("/api/categories", new CategoriesHandler());
-        server.createContext("/api/accounts", new AccountsHandler());
-        server.createContext("/api/transactions/recent", new RecentTransactionsHandler());
-        server.createContext("/api/transactions", new TransactionsHandler());
-        server.createContext("/api/expenses", new ExpensesHandler());
-        server.createContext("/api/incomes", new IncomesHandler());
-        server.createContext("/api/budgets", new BudgetsHandler());
-        server.createContext("/api/tags", new TagsHandler());
-        server.createContext("/api/reports", new ReportsHandler());
-        server.createContext("/api/investments", new InvestmentsHandler());
-        server.createContext("/api/investments/evolution", new InvestmentEvolutionHandler());
-        server.createContext("/api/investments/quote", new InvestmentQuoteHandler());
+        server.createContext("/api/auth/change-password", secure(new ChangePasswordHandler()));
+        server.createContext("/api/dashboard/overview", secure(new OverviewHandler()));
+        server.createContext("/api/categories", secure(new CategoriesHandler()));
+        server.createContext("/api/accounts", secure(new AccountsHandler()));
+        server.createContext("/api/transactions/recent", secure(new RecentTransactionsHandler()));
+        server.createContext("/api/transactions", secure(new TransactionsHandler()));
+        server.createContext("/api/expenses", secure(new ExpensesHandler()));
+        server.createContext("/api/incomes", secure(new IncomesHandler()));
+        server.createContext("/api/budgets", secure(new BudgetsHandler()));
+        server.createContext("/api/tags", secure(new TagsHandler()));
+        server.createContext("/api/reports", secure(new ReportsHandler()));
+        server.createContext("/api/investments", secure(new InvestmentsHandler()));
+        server.createContext("/api/investments/evolution", secure(new InvestmentEvolutionHandler()));
+        server.createContext("/api/investments/quote", secure(new InvestmentQuoteHandler()));
+        
+        // Health check
+        server.createContext("/health", new HealthHandler());
         
         // Servir arquivos estáticos (HTML, CSS, JS) - deve vir por último
         server.createContext("/", new StaticFileHandler());
@@ -320,13 +378,14 @@ public class ControleSeServer {
                 
                 if (bancoDados.autenticarUsuario(email, password)) {
                     Usuario usuario = bancoDados.buscarUsuarioPorEmail(email);
+                    String token = JwtUtil.generateToken(usuario);
                     Map<String, Object> response = new HashMap<>();
                     response.put("success", true);
                     response.put("user", Map.of(
                         "id", usuario.getIdUsuario(),
                         "name", usuario.getNome(),
                         "email", usuario.getEmail(),
-                        "token", "fake-token-" + usuario.getIdUsuario()
+                        "token", token
                     ));
                     
                     sendJsonResponse(exchange, 200, response);
@@ -375,7 +434,7 @@ public class ControleSeServer {
                     "id", usuario.getIdUsuario(),
                     "name", usuario.getNome(),
                     "email", usuario.getEmail(),
-                    "token", "fake-token-" + usuario.getIdUsuario()
+                    "token", JwtUtil.generateToken(usuario)
                 ));
                 
                 sendJsonResponse(exchange, 201, response);
@@ -391,6 +450,50 @@ public class ControleSeServer {
             }
         }
     }
+
+    static class ChangePasswordHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            if (!"POST".equals(exchange.getRequestMethod())) {
+                sendErrorResponse(exchange, 405, "Método não permitido");
+                return;
+            }
+
+            try {
+                int userId = requireUserId(exchange);
+                String requestBody = readRequestBody(exchange);
+                Map<String, String> data = parseJson(requestBody);
+
+                String currentPassword = data.get("currentPassword");
+                String newPassword = data.get("newPassword");
+
+                if (currentPassword == null || currentPassword.isBlank()) {
+                    sendErrorResponse(exchange, 400, "Senha atual é obrigatória");
+                    return;
+                }
+                if (newPassword == null || newPassword.isBlank()) {
+                    sendErrorResponse(exchange, 400, "Nova senha é obrigatória");
+                    return;
+                }
+
+                bancoDados.atualizarSenhaUsuario(userId, currentPassword, newPassword);
+
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", true);
+                response.put("message", "Senha atualizada com sucesso");
+                sendJsonResponse(exchange, 200, response);
+            } catch (UnauthorizedException e) {
+                handleUnauthorized(exchange, e);
+            } catch (IllegalArgumentException e) {
+                sendErrorResponse(exchange, 400, e.getMessage());
+            } catch (Exception e) {
+                LOGGER.log(Level.SEVERE, "Erro ao atualizar senha", e);
+                sendErrorResponse(exchange, 500, "Erro interno do servidor");
+            } finally {
+                bancoDados.closeConnection();
+            }
+        }
+    }
     
     static class OverviewHandler implements HttpHandler {
         @Override
@@ -401,9 +504,7 @@ public class ControleSeServer {
             }
             
             try {
-                // Get user ID from query parameter (in real app, from token)
-                String userIdParam = getQueryParam(exchange, "userId");
-                int userId = userIdParam != null ? Integer.parseInt(userIdParam) : 1;
+                int userId = requireUserId(exchange);
                 
                 double totalIncome = bancoDados.calcularTotalReceitasUsuario(userId);
                 double totalExpense = bancoDados.calcularTotalGastosUsuario(userId);
@@ -467,6 +568,8 @@ public class ControleSeServer {
                 ));
                 
                 sendJsonResponse(exchange, 200, response);
+            } catch (UnauthorizedException e) {
+                handleUnauthorized(exchange, e);
             } catch (Exception e) {
                 e.printStackTrace(); // Log do erro para debug
                 sendErrorResponse(exchange, 500, "Erro interno do servidor");
@@ -480,25 +583,28 @@ public class ControleSeServer {
     static class CategoriesHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
-            String method = exchange.getRequestMethod();
-            
-            if ("GET".equals(method)) {
-                handleGetCategories(exchange);
-            } else if ("POST".equals(method)) {
-                handleCreateCategory(exchange);
-            } else if ("PUT".equals(method)) {
-                handleUpdateCategory(exchange);
-            } else if ("DELETE".equals(method)) {
-                handleDeleteCategory(exchange);
-            } else {
-                sendErrorResponse(exchange, 405, "Método não permitido");
+            try {
+                String method = exchange.getRequestMethod();
+                
+                if ("GET".equals(method)) {
+                    handleGetCategories(exchange);
+                } else if ("POST".equals(method)) {
+                    handleCreateCategory(exchange);
+                } else if ("PUT".equals(method)) {
+                    handleUpdateCategory(exchange);
+                } else if ("DELETE".equals(method)) {
+                    handleDeleteCategory(exchange);
+                } else {
+                    sendErrorResponse(exchange, 405, "Método não permitido");
+                }
+            } catch (UnauthorizedException e) {
+                handleUnauthorized(exchange, e);
             }
         }
         
         private void handleGetCategories(HttpExchange exchange) throws IOException {
             try {
-                String userIdParam = getQueryParam(exchange, "userId");
-                int userId = userIdParam != null ? Integer.parseInt(userIdParam) : 1;
+                int userId = requireUserId(exchange);
                 
                 List<Categoria> categories = bancoDados.buscarCategoriasPorUsuario(userId);
                 List<Map<String, Object>> categoryList = new ArrayList<>();
@@ -516,6 +622,8 @@ public class ControleSeServer {
                 response.put("data", categoryList);
                 
                 sendJsonResponse(exchange, 200, response);
+            } catch (UnauthorizedException e) {
+                handleUnauthorized(exchange, e);
             } catch (Exception e) {
                 e.printStackTrace(); // Log do erro para debug
                 sendErrorResponse(exchange, 500, "Erro interno do servidor");
@@ -527,19 +635,13 @@ public class ControleSeServer {
         
         private void handleCreateCategory(HttpExchange exchange) throws IOException {
             try {
+                int userId = requireUserId(exchange);
                 String requestBody = readRequestBody(exchange);
                 Map<String, Object> data = parseJsonWithNested(requestBody);
                 
                 String name = (String) data.get("name");
                 if (name == null) {
                     name = (String) data.get("nome");
-                }
-                Object userIdObj = data.get("userId");
-                int userId = 1;
-                if (userIdObj instanceof Number) {
-                    userId = ((Number) userIdObj).intValue();
-                } else if (userIdObj instanceof String) {
-                    userId = Integer.parseInt((String) userIdObj);
                 }
                 
                 int categoryId = bancoDados.cadastrarCategoria(name, userId);
@@ -576,7 +678,7 @@ public class ControleSeServer {
                     }
                     
                     if (value > 0 && period != null && !period.isEmpty()) {
-                        System.out.println("Criando orçamento automático para categoria " + categoryId + ": " + value);
+                        LOGGER.info("Criando orçamento automático para categoria " + categoryId + ": " + value);
                         budgetId = bancoDados.cadastrarOrcamento(value, period, categoryId, userId);
                     }
                 }
@@ -592,6 +694,8 @@ public class ControleSeServer {
                 response.put("categoryId", categoryId);
                 
                 sendJsonResponse(exchange, 201, response);
+            } catch (UnauthorizedException e) {
+                handleUnauthorized(exchange, e);
             } catch (Exception e) {
                 Map<String, Object> response = new HashMap<>();
                 response.put("success", false);
@@ -672,18 +776,22 @@ public class ControleSeServer {
     static class AccountsHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
-            String method = exchange.getRequestMethod();
-            
-            if ("GET".equals(method)) {
-                handleGetAccounts(exchange);
-            } else if ("POST".equals(method)) {
-                handleCreateAccount(exchange);
-            } else if ("PUT".equals(method)) {
-                handleUpdateAccount(exchange);
-            } else if ("DELETE".equals(method)) {
-                handleDeleteAccount(exchange);
-            } else {
-                sendErrorResponse(exchange, 405, "Método não permitido");
+            try {
+                String method = exchange.getRequestMethod();
+                
+                if ("GET".equals(method)) {
+                    handleGetAccounts(exchange);
+                } else if ("POST".equals(method)) {
+                    handleCreateAccount(exchange);
+                } else if ("PUT".equals(method)) {
+                    handleUpdateAccount(exchange);
+                } else if ("DELETE".equals(method)) {
+                    handleDeleteAccount(exchange);
+                } else {
+                    sendErrorResponse(exchange, 405, "Método não permitido");
+                }
+            } catch (UnauthorizedException e) {
+                handleUnauthorized(exchange, e);
             }
         }
         
@@ -790,6 +898,7 @@ public class ControleSeServer {
         
         private void handleCreateAccount(HttpExchange exchange) throws IOException {
             try {
+                int userId = requireUserId(exchange);
                 String requestBody = readRequestBody(exchange);
                 Map<String, String> data = parseJson(requestBody);
                 
@@ -808,13 +917,6 @@ public class ControleSeServer {
                 }
                 double balance = Double.parseDouble(balanceStr);
                 
-                // Obtém userId do request
-                String userIdStr = data.get("userId");
-                int userId = 1; // Default para compatibilidade
-                if (userIdStr != null && !userIdStr.isEmpty()) {
-                    userId = Integer.parseInt(userIdStr);
-                }
-                
                 int accountId = bancoDados.cadastrarConta(name, type, balance, userId);
                 
                 Map<String, Object> response = new HashMap<>();
@@ -823,6 +925,8 @@ public class ControleSeServer {
                 response.put("accountId", accountId);
                 
                 sendJsonResponse(exchange, 201, response);
+            } catch (UnauthorizedException e) {
+                handleUnauthorized(exchange, e);
             } catch (Exception e) {
                 Map<String, Object> response = new HashMap<>();
                 response.put("success", false);
@@ -836,6 +940,7 @@ public class ControleSeServer {
         
         private void handleUpdateAccount(HttpExchange exchange) throws IOException {
             try {
+                requireUserId(exchange);
                 String requestBody = readRequestBody(exchange);
                 Map<String, String> data = parseJson(requestBody);
                 
@@ -874,6 +979,8 @@ public class ControleSeServer {
                 response.put("message", "Conta atualizada com sucesso");
                 
                 sendJsonResponse(exchange, 200, response);
+            } catch (UnauthorizedException e) {
+                handleUnauthorized(exchange, e);
             } catch (Exception e) {
                 Map<String, Object> response = new HashMap<>();
                 response.put("success", false);
@@ -887,6 +994,7 @@ public class ControleSeServer {
         
         private void handleDeleteAccount(HttpExchange exchange) throws IOException {
             try {
+                requireUserId(exchange);
                 String idParam = getQueryParam(exchange, "id");
                 
                 // Se não encontrou no query param, tenta pegar da URL
@@ -912,6 +1020,8 @@ public class ControleSeServer {
                 response.put("message", "Conta excluída com sucesso");
                 
                 sendJsonResponse(exchange, 200, response);
+            } catch (UnauthorizedException e) {
+                handleUnauthorized(exchange, e);
             } catch (Exception e) {
                 Map<String, Object> response = new HashMap<>();
                 response.put("success", false);
@@ -1147,30 +1257,22 @@ public class ControleSeServer {
     static class ExpensesHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
-            String method = exchange.getRequestMethod();
-            if (method != null) {
-                method = method.toUpperCase().trim();
-            }
-            String path = exchange.getRequestURI().getPath();
-            String query = exchange.getRequestURI().getQuery();
-            
-            // Debug log
-            System.out.println("ExpensesHandler - Method: '" + method + "', Path: " + path + ", Query: " + query);
-            System.out.println("ExpensesHandler - Method length: " + (method != null ? method.length() : 0));
-            System.out.println("ExpensesHandler - Method equals DELETE: " + "DELETE".equals(method));
-            
-            if ("OPTIONS".equals(method)) {
-                System.out.println("ExpensesHandler - Chamando handleOptions");
-                handleOptions(exchange);
-            } else if ("POST".equals(method)) {
-                System.out.println("ExpensesHandler - Chamando handlePost");
-                handlePost(exchange);
-            } else if ("DELETE".equals(method)) {
-                System.out.println("ExpensesHandler - Chamando handleDelete");
-                handleDelete(exchange);
-            } else {
-                System.out.println("ExpensesHandler - Método não permitido: '" + method + "'");
-                sendErrorResponse(exchange, 405, "Método não permitido: " + method);
+            try {
+                String method = exchange.getRequestMethod();
+                if (method != null) {
+                    method = method.toUpperCase().trim();
+                }
+                if ("OPTIONS".equals(method)) {
+                    handleOptions(exchange);
+                } else if ("POST".equals(method)) {
+                    handlePost(exchange);
+                } else if ("DELETE".equals(method)) {
+                    handleDelete(exchange);
+                } else {
+                    sendErrorResponse(exchange, 405, "Método não permitido: " + method);
+                }
+            } catch (UnauthorizedException e) {
+                handleUnauthorized(exchange, e);
             }
         }
         
@@ -1185,25 +1287,16 @@ public class ControleSeServer {
         private void handlePost(HttpExchange exchange) throws IOException {
             
             try {
+                int userId = requireUserId(exchange);
                 String requestBody = readRequestBody(exchange);
                 Map<String, Object> data = parseJsonWithNested(requestBody);
+                data.put("userId", userId);
                 
                 String description = (String) data.get("description");
                 double value = ((Number) data.get("value")).doubleValue();
                 LocalDate date = LocalDate.parse((String) data.get("date"));
                 int accountId = ((Number) data.get("accountId")).intValue();
                 String frequency = (String) data.get("frequency");
-                
-                // Obtém userId do request
-                Object userIdObj = data.get("userId");
-                int userId = 1; // Default para compatibilidade
-                if (userIdObj != null) {
-                    if (userIdObj instanceof Number) {
-                        userId = ((Number) userIdObj).intValue();
-                    } else if (userIdObj instanceof String) {
-                        userId = Integer.parseInt((String) userIdObj);
-                    }
-                }
                 
                 // Parse categoryIds - pode ser array ou valor único
                 List<Integer> categoryIds = new ArrayList<>();
@@ -1335,6 +1428,8 @@ public class ControleSeServer {
                 response.put("expenseId", expenseId);
                 
                 sendJsonResponse(exchange, 201, response);
+            } catch (UnauthorizedException e) {
+                handleUnauthorized(exchange, e);
             } catch (Exception e) {
                 e.printStackTrace();
                 Map<String, Object> response = new HashMap<>();
@@ -1348,10 +1443,9 @@ public class ControleSeServer {
         }
         
         private void handleDelete(HttpExchange exchange) throws IOException {
-            System.out.println("ExpensesHandler.handleDelete - Iniciando exclusão");
             try {
+                requireUserId(exchange);
                 String idParam = getQueryParam(exchange, "id");
-                System.out.println("ExpensesHandler.handleDelete - ID recebido: " + idParam);
                 
                 if (idParam == null) {
                     Map<String, Object> response = new HashMap<>();
@@ -1362,18 +1456,17 @@ public class ControleSeServer {
                 }
                 
                 int expenseId = Integer.parseInt(idParam);
-                System.out.println("ExpensesHandler.handleDelete - Excluindo gasto ID: " + expenseId);
                 bancoDados.excluirGasto(expenseId);
                 
                 Map<String, Object> response = new HashMap<>();
                 response.put("success", true);
                 response.put("message", "Gasto excluído com sucesso");
                 
-                System.out.println("ExpensesHandler.handleDelete - Gasto excluído com sucesso");
                 sendJsonResponse(exchange, 200, response);
+            } catch (UnauthorizedException e) {
+                handleUnauthorized(exchange, e);
             } catch (Exception e) {
                 e.printStackTrace();
-                System.out.println("ExpensesHandler.handleDelete - Erro: " + e.getMessage());
                 Map<String, Object> response = new HashMap<>();
                 response.put("success", false);
                 response.put("message", "Erro: " + e.getMessage());
@@ -1418,24 +1511,15 @@ public class ControleSeServer {
         private void handlePost(HttpExchange exchange) throws IOException {
             
             try {
+                int userId = requireUserId(exchange);
                 String requestBody = readRequestBody(exchange);
                 Map<String, Object> data = parseJsonWithNested(requestBody);
+                data.put("userId", userId);
                 
                 String description = (String) data.getOrDefault("description", "Receita");
                 double value = ((Number) data.get("value")).doubleValue();
                 LocalDate date = LocalDate.parse((String) data.get("date"));
                 int accountId = ((Number) data.get("accountId")).intValue();
-                
-                // Obtém userId do request
-                Object userIdObj = data.get("userId");
-                int userId = 1; // Default para compatibilidade
-                if (userIdObj != null) {
-                    if (userIdObj instanceof Number) {
-                        userId = ((Number) userIdObj).intValue();
-                    } else if (userIdObj instanceof String) {
-                        userId = Integer.parseInt((String) userIdObj);
-                    }
-                }
                 
                 // Parse tagIds (opcional) - pode ser array
                 List<Integer> tagIds = new ArrayList<>();
@@ -1529,6 +1613,8 @@ public class ControleSeServer {
                 response.put("incomeId", incomeId);
                 
                 sendJsonResponse(exchange, 201, response);
+            } catch (UnauthorizedException e) {
+                handleUnauthorized(exchange, e);
             } catch (Exception e) {
                 Map<String, Object> response = new HashMap<>();
                 response.put("success", false);
@@ -1543,6 +1629,7 @@ public class ControleSeServer {
         
         private void handleDelete(HttpExchange exchange) throws IOException {
             try {
+                requireUserId(exchange);
                 String idParam = getQueryParam(exchange, "id");
                 if (idParam == null) {
                     Map<String, Object> response = new HashMap<>();
@@ -1560,6 +1647,8 @@ public class ControleSeServer {
                 response.put("message", "Receita excluída com sucesso");
                 
                 sendJsonResponse(exchange, 200, response);
+            } catch (UnauthorizedException e) {
+                handleUnauthorized(exchange, e);
             } catch (Exception e) {
                 e.printStackTrace();
                 Map<String, Object> response = new HashMap<>();
@@ -1645,6 +1734,7 @@ public class ControleSeServer {
         
         private void handleCreateBudget(HttpExchange exchange) throws IOException {
             try {
+                int userId = requireUserId(exchange);
                 String requestBody = readRequestBody(exchange);
                 Map<String, String> data = parseJson(requestBody);
                 
@@ -1656,13 +1746,6 @@ public class ControleSeServer {
                 
                 String period = data.get("period");
                 
-                // Obtém userId do request
-                String userIdStr = data.get("userId");
-                int userId = 1; // Default para compatibilidade
-                if (userIdStr != null && !userIdStr.isEmpty()) {
-                    userId = Integer.parseInt(userIdStr);
-                }
-                
                 int budgetId = bancoDados.cadastrarOrcamento(value, period, categoryId, userId);
                 
                 Map<String, Object> response = new HashMap<>();
@@ -1671,6 +1754,8 @@ public class ControleSeServer {
                 response.put("budgetId", budgetId);
                 
                 sendJsonResponse(exchange, 201, response);
+            } catch (UnauthorizedException e) {
+                handleUnauthorized(exchange, e);
             } catch (Exception e) {
                 Map<String, Object> response = new HashMap<>();
                 response.put("success", false);
@@ -1684,6 +1769,7 @@ public class ControleSeServer {
         
         private void handleUpdateBudget(HttpExchange exchange) throws IOException {
             try {
+                requireUserId(exchange);
                 String requestBody = readRequestBody(exchange);
                 Map<String, String> data = parseJson(requestBody);
                 
@@ -1702,6 +1788,8 @@ public class ControleSeServer {
                 response.put("message", "Orçamento atualizado com sucesso");
                 
                 sendJsonResponse(exchange, 200, response);
+            } catch (UnauthorizedException e) {
+                handleUnauthorized(exchange, e);
             } catch (Exception e) {
                 Map<String, Object> response = new HashMap<>();
                 response.put("success", false);
@@ -1805,6 +1893,7 @@ public class ControleSeServer {
         
         private void handleCreateTag(HttpExchange exchange) throws IOException {
             try {
+                int userId = requireUserId(exchange);
                 String requestBody = readRequestBody(exchange);
                 Map<String, String> data = parseJson(requestBody);
                 
@@ -1813,9 +1902,6 @@ public class ControleSeServer {
                 if (cor == null || cor.isEmpty()) {
                     cor = "#6B7280"; // Cor padrão cinza
                 }
-                String userIdStr = data.get("userId");
-                int userId = (userIdStr != null && !userIdStr.isEmpty()) ? Integer.parseInt(userIdStr) : 1;
-                
                 int tagId = bancoDados.cadastrarTag(nome, cor, userId);
                 
                 Map<String, Object> response = new HashMap<>();
@@ -1824,6 +1910,8 @@ public class ControleSeServer {
                 response.put("tagId", tagId);
                 
                 sendJsonResponse(exchange, 201, response);
+            } catch (UnauthorizedException e) {
+                handleUnauthorized(exchange, e);
             } catch (Exception e) {
                 Map<String, Object> response = new HashMap<>();
                 response.put("success", false);
@@ -1838,6 +1926,7 @@ public class ControleSeServer {
         
         private void handleUpdateTag(HttpExchange exchange) throws IOException {
             try {
+                requireUserId(exchange);
                 String requestBody = readRequestBody(exchange);
                 Map<String, String> data = parseJson(requestBody);
                 
@@ -1852,6 +1941,8 @@ public class ControleSeServer {
                 response.put("message", "Tag atualizada com sucesso");
                 
                 sendJsonResponse(exchange, 200, response);
+            } catch (UnauthorizedException e) {
+                handleUnauthorized(exchange, e);
             } catch (Exception e) {
                 Map<String, Object> response = new HashMap<>();
                 response.put("success", false);
@@ -2041,16 +2132,14 @@ public class ControleSeServer {
         
         private void handleExportReport(HttpExchange exchange) throws IOException {
             try {
+                int userId = requireUserId(exchange);
                 String requestBody = readRequestBody(exchange);
                 Map<String, String> data = parseJson(requestBody);
                 
-                String userIdParam = data.get("userId");
                 String format = data.get("format"); // "csv" ou "xlsx"
                 String period = data.get("period");
                 String startDateParam = data.get("startDate");
                 String endDateParam = data.get("endDate");
-                
-                int userId = userIdParam != null ? Integer.parseInt(userIdParam) : 1;
                 
                 // Calcula datas
                 LocalDate startDate, endDate;
@@ -2079,6 +2168,8 @@ public class ControleSeServer {
                     sendErrorResponse(exchange, 400, "Formato não suportado. Use 'csv' ou 'xlsx'");
                 }
                 
+            } catch (UnauthorizedException e) {
+                handleUnauthorized(exchange, e);
             } catch (Exception e) {
                 e.printStackTrace();
                 sendErrorResponse(exchange, 500, "Erro interno do servidor");
@@ -2338,6 +2429,8 @@ public class ControleSeServer {
                 response.put("summary", summary);
                 
                 sendJsonResponse(exchange, 200, response);
+            } catch (UnauthorizedException e) {
+                handleUnauthorized(exchange, e);
             } catch (Exception e) {
                 e.printStackTrace();
                 sendErrorResponse(exchange, 500, "Erro interno do servidor: " + e.getMessage());
@@ -2346,8 +2439,10 @@ public class ControleSeServer {
         
         private void handleCreateInvestment(HttpExchange exchange) throws IOException {
             try {
+                int userId = requireUserId(exchange);
                 String requestBody = readRequestBody(exchange);
                 Map<String, Object> data = parseJsonWithNested(requestBody);
+                data.put("userId", userId);
                 
                 String nome = (String) data.get("nome");
                 String categoria = (String) data.get("categoria");
@@ -2365,14 +2460,6 @@ public class ControleSeServer {
                 }
                 String dataAporteStr = (String) data.get("dataAporte");
                 LocalDate dataAporte = dataAporteStr != null ? LocalDate.parse(dataAporteStr) : LocalDate.now();
-                
-                Object userIdObj = data.get("userId");
-                int userId = 1;
-                if (userIdObj instanceof Number) {
-                    userId = ((Number) userIdObj).intValue();
-                } else if (userIdObj instanceof String) {
-                    userId = Integer.parseInt((String) userIdObj);
-                }
                 
                 int accountId = ((Number) data.get("accountId")).intValue();
                 String moeda = (String) data.getOrDefault("moeda", "BRL");
@@ -3004,6 +3091,78 @@ public class ControleSeServer {
         }
     }
     
+    static class HealthHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendErrorResponse(exchange, 405, "Método não permitido");
+                return;
+            }
+            Map<String, Object> response = new HashMap<>();
+            response.put("status", "ok");
+            response.put("timestamp", System.currentTimeMillis());
+            sendJsonResponse(exchange, 200, response);
+        }
+    }
+    
+    private static int requireUserId(HttpExchange exchange) {
+        Object attr = exchange.getAttribute("userId");
+        if (attr instanceof Integer) {
+            return (Integer) attr;
+        }
+        String authHeader = exchange.getRequestHeaders().getFirst("Authorization");
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            throw new UnauthorizedException("Token de autenticação ausente");
+        }
+        String token = authHeader.substring("Bearer ".length()).trim();
+        JwtUtil.JwtValidationResult result = JwtUtil.validateToken(token);
+        if (!result.isValid()) {
+            throw new UnauthorizedException(result.getMessage());
+        }
+        exchange.setAttribute("userId", result.getUserId());
+        return result.getUserId();
+    }
+    
+    private static void handleUnauthorized(HttpExchange exchange, UnauthorizedException e) throws IOException {
+        LOGGER.warning("Requisição não autorizada: " + e.getMessage());
+        sendErrorResponse(exchange, 401, e.getMessage());
+    }
+    
+    private static HttpHandler secure(HttpHandler delegate) {
+        return exchange -> {
+            try {
+                int userId = requireUserId(exchange);
+                exchange.setAttribute("userId", userId);
+                delegate.handle(exchange);
+            } catch (UnauthorizedException e) {
+                handleUnauthorized(exchange, e);
+            }
+        };
+    }
+    
+    private static final class PlainLogFormatter extends Formatter {
+        @Override
+        public String format(LogRecord record) {
+            StringBuilder sb = new StringBuilder();
+            sb.append("[").append(record.getLevel().getLocalizedName()).append("] ")
+              .append(formatMessage(record)).append(System.lineSeparator());
+            if (record.getThrown() != null) {
+                StringWriter sw = new StringWriter();
+                PrintWriter pw = new PrintWriter(sw);
+                record.getThrown().printStackTrace(pw);
+                pw.flush();
+                sb.append(sw);
+            }
+            return sb.toString();
+        }
+    }
+    
+    private static class UnauthorizedException extends RuntimeException {
+        UnauthorizedException(String message) {
+            super(message);
+        }
+    }
+    
     // ===== UTILITY METHODS =====
     
     private static String readRequestBody(HttpExchange exchange) throws IOException {
@@ -3321,6 +3480,9 @@ public class ControleSeServer {
     }
     
     private static String getQueryParam(HttpExchange exchange, String paramName) {
+        if ("userId".equals(paramName)) {
+            return String.valueOf(requireUserId(exchange));
+        }
         String query = exchange.getRequestURI().getQuery();
         if (query == null) return null;
         

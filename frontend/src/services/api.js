@@ -16,7 +16,7 @@ api.interceptors.request.use(
   (config) => {
     const user = JSON.parse(localStorage.getItem('controle-se-user') || 'null');
     if (user) {
-      // Se houver token no futuro, adicionar aqui
+      config.headers.Authorization = `Bearer ${user.token}`;
     }
     return config;
   },

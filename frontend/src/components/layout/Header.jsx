@@ -1,13 +1,15 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Wallet, LogOut, Moon, Sun, User, Menu } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useNavigate } from 'react-router-dom';
+import ChangePasswordModal from '../common/ChangePasswordModal';
 
 export default function Header({ onMenuClick }) {
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
+  const [isPasswordModalOpen, setPasswordModalOpen] = useState(false);
 
   const handleLogout = () => {
     logout();
@@ -46,14 +48,19 @@ export default function Header({ onMenuClick }) {
             )}
           </button>
 
-          <div className="flex items-center gap-3 px-3 py-2 bg-gray-50 dark:bg-gray-700 rounded-lg">
+          <button
+            type="button"
+            onClick={() => setPasswordModalOpen(true)}
+            className="flex items-center gap-3 px-3 py-2 bg-gray-50 dark:bg-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+            title="Alterar senha"
+          >
             <div className="w-8 h-8 bg-primary-600 rounded-full flex items-center justify-center shrink-0">
               <User className="w-4 h-4 text-white" />
             </div>
             <span className="text-sm font-medium text-gray-900 dark:text-white hidden sm:block">
               {user?.name || 'Usuário'}
             </span>
-          </div>
+          </button>
 
           <button
             onClick={handleLogout}
@@ -64,6 +71,11 @@ export default function Header({ onMenuClick }) {
           </button>
         </div>
       </div>
+
+      <ChangePasswordModal
+        isOpen={isPasswordModalOpen}
+        onClose={() => setPasswordModalOpen(false)}
+      />
     </header>
   );
 }
