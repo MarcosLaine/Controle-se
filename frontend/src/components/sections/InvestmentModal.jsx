@@ -337,7 +337,7 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
               <input
                 type="number"
                 className="input"
-                step="0.000001"
+                step="0.00000001"
                 min="0"
                 value={variableForm.quantity}
                 onChange={e => setVariableForm({...variableForm, quantity: e.target.value})}

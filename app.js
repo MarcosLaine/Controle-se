@@ -787,9 +787,9 @@ class ControleSeApp {
                         <option value="Corrente">Conta Corrente</option>
                         <option value="Poupança">Poupança</option>
                         <option value="Cartão">Cartão de Crédito</option>
-                        <option value="Investimento" ${preselectedType === 'Investimento' ? 'selected' : ''}>Investimento (Corretora)</option>
+                        <option value="Investimento (Corretora)" ${preselectedType === 'Investimento (Corretora)' ? 'selected' : ''}>Investimento (Corretora)</option>
                     </select>
-                    <small id="account-type-help" style="color: var(--neutral-600); margin-top: 4px; display: ${preselectedType === 'Investimento' ? 'block' : 'none'};">
+                    <small id="account-type-help" style="color: var(--neutral-600); margin-top: 4px; display: ${preselectedType === 'Investimento (Corretora)' ? 'block' : 'none'};">
                         <i class="fas fa-info-circle"></i> Esta conta será usada como corretora ao criar investimentos
                     </small>
                 </div>
@@ -811,7 +811,7 @@ class ControleSeApp {
         
         if (accountTypeSelect && accountTypeHelp) {
             accountTypeSelect.addEventListener('change', () => {
-                if (accountTypeSelect.value === 'Investimento') {
+                if (accountTypeSelect.value === 'Investimento (Corretora)') {
                     accountTypeHelp.style.display = 'block';
                 } else {
                     accountTypeHelp.style.display = 'none';
@@ -832,7 +832,7 @@ class ControleSeApp {
                         
                         // Recarrega as contas do cache atualizado
                         const investmentAccounts = this.accountsCache.filter(acc => 
-                            acc.tipo && acc.tipo.toLowerCase() === 'investimento'
+                            acc.tipo && acc.tipo.toLowerCase() === 'investimento (corretora)'
                         );
                         
                         investmentAccounts.forEach(account => {
@@ -3617,7 +3617,7 @@ class ControleSeApp {
                 </div>
                 <div class="form-group">
                     <label for="investment-quantity">Quantidade</label>
-                    <input type="number" id="investment-quantity" min="0.000001" step="0.000001" required>
+                    <input type="number" id="investment-quantity" min="0.00000001" step="0.00000001" required>
                     <small style="color: var(--neutral-600); margin-top: 4px; display: block;">
                        <!-- Você pode inserir quantidades fracionadas (ex: 0.003 BTC, 1.4 ações) -->
                     </small>
@@ -4179,7 +4179,7 @@ class ControleSeApp {
                 </div>
                 <div class="form-group">
                     <label for="manual-investment-quantity">Quantidade</label>
-                    <input type="number" id="manual-investment-quantity" value="${quantity}" min="0.000001" step="0.000001" required readonly style="background: var(--neutral-200);">
+                    <input type="number" id="manual-investment-quantity" value="${quantity}" min="0.00000001" step="0.00000001" required readonly style="background: var(--neutral-200);">
                 </div>
                 <div class="form-group">
                     <label for="manual-investment-date">Data do Aporte</label>
@@ -4370,7 +4370,7 @@ class ControleSeApp {
                     </div>
                     <div class="form-group">
                         <label for="edit-investment-quantity">Quantidade</label>
-                        <input type="number" id="edit-investment-quantity" value="${investment.quantidade}" min="0.000001" step="0.000001" required>
+                        <input type="number" id="edit-investment-quantity" value="${investment.quantidade}" min="0.00000001" step="0.00000001" required>
                     </div>
                     <div class="form-group">
                         <label for="edit-investment-date">Data do Aporte</label>

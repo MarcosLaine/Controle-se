@@ -1,12 +1,12 @@
 import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.security.cert.X509Certificate;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import javax.net.ssl.*;
-import java.security.cert.X509Certificate;
 
 /**
  * Serviço para buscar cotações de investimentos de APIs públicas
