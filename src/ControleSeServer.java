@@ -210,6 +210,7 @@ public class ControleSeServer {
         server.createContext("/api/auth/login", new LoginHandler());
         server.createContext("/api/auth/register", new RegisterHandler());
         server.createContext("/api/auth/change-password", secure(new ChangePasswordHandler()));
+        server.createContext("/api/auth/user", secure(new DeleteUserHandler()));
         server.createContext("/api/dashboard/overview", secure(new OverviewHandler()));
         server.createContext("/api/categories", secure(new CategoriesHandler()));
         server.createContext("/api/accounts", secure(new AccountsHandler()));
@@ -488,6 +489,37 @@ public class ControleSeServer {
                 sendErrorResponse(exchange, 400, e.getMessage());
             } catch (Exception e) {
                 LOGGER.log(Level.SEVERE, "Erro ao atualizar senha", e);
+                sendErrorResponse(exchange, 500, "Erro interno do servidor");
+            } finally {
+                bancoDados.closeConnection();
+            }
+        }
+    }
+
+    static class DeleteUserHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            if (!"DELETE".equals(exchange.getRequestMethod())) {
+                sendErrorResponse(exchange, 405, "Método não permitido");
+                return;
+            }
+
+            try {
+                int userId = requireUserId(exchange);
+                bancoDados.excluirUsuario(userId);
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", true);
+                response.put("message", "Usuário excluído com sucesso");
+                sendJsonResponse(exchange, 200, response);
+            } catch (UnauthorizedException e) {
+                handleUnauthorized(exchange, e);
+            } catch (IllegalArgumentException e) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", true);
+                response.put("message", "Usuário já havia sido removido");
+                sendJsonResponse(exchange, 200, response);
+            } catch (Exception e) {
+                LOGGER.log(Level.SEVERE, "Erro ao excluir usuário", e);
                 sendErrorResponse(exchange, 500, "Erro interno do servidor");
             } finally {
                 bancoDados.closeConnection();
@@ -1631,11 +1663,8 @@ public class ControleSeServer {
             try {
                 requireUserId(exchange);
                 String idParam = getQueryParam(exchange, "id");
-                if (idParam == null) {
-                    Map<String, Object> response = new HashMap<>();
-                    response.put("success", false);
-                    response.put("message", "ID da receita não fornecido");
-                    sendJsonResponse(exchange, 400, response);
+                if (idParam == null || !idParam.matches("\\d+")) {
+                    sendErrorResponse(exchange, 400, "ID da receita inválido");
                     return;
                 }
                 

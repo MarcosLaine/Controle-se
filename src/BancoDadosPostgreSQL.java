@@ -99,6 +99,7 @@ public class BancoDadosPostgreSQL {
         // Não conecta aqui - conexão será criada por thread quando necessário
         // Apenas inicializa o schema uma vez (usando conexão temporária)
         initializeSchemaOnce();
+        ensureObservationTables();
     }
     
     /**
@@ -267,6 +268,58 @@ public class BancoDadosPostgreSQL {
                 try {
                     tempConn.close();
                 } catch (SQLException e) {}
+                connectionThreadLocal.remove();
+                synchronized (connectionLock) {
+                    activeConnections--;
+                }
+            }
+        }
+    }
+
+    /**
+     * Garante que tabelas de observações existam (usadas em despesas e receitas)
+     * Necessário quando schema inicial não foi executado automaticamente
+     */
+    private void ensureObservationTables() {
+        Connection tempConn = null;
+        try {
+            tempConn = connect();
+            try (Statement stmt = tempConn.createStatement()) {
+                stmt.execute(
+                    "CREATE TABLE IF NOT EXISTS gasto_observacoes (" +
+                        "id_observacao SERIAL PRIMARY KEY," +
+                        "id_gasto INTEGER NOT NULL," +
+                        "observacao TEXT NOT NULL," +
+                        "ordem INTEGER DEFAULT 0," +
+                        "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP," +
+                        "FOREIGN KEY (id_gasto) REFERENCES gastos(id_gasto) ON DELETE CASCADE" +
+                    ")"
+                );
+
+                stmt.execute(
+                    "CREATE TABLE IF NOT EXISTS receita_observacoes (" +
+                        "id_observacao SERIAL PRIMARY KEY," +
+                        "id_receita INTEGER NOT NULL," +
+                        "observacao TEXT NOT NULL," +
+                        "ordem INTEGER DEFAULT 0," +
+                        "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP," +
+                        "FOREIGN KEY (id_receita) REFERENCES receitas(id_receita) ON DELETE CASCADE" +
+                    ")"
+                );
+            }
+            tempConn.commit();
+        } catch (Exception e) {
+            System.err.println("Aviso: não foi possível garantir tabelas de observações: " + e.getMessage());
+            try {
+                if (tempConn != null) {
+                    tempConn.rollback();
+                }
+            } catch (SQLException ignored) {}
+        } finally {
+            if (tempConn != null) {
+                try {
+                    tempConn.close();
+                } catch (SQLException ignored) {}
                 connectionThreadLocal.remove();
                 synchronized (connectionLock) {
                     activeConnections--;
@@ -540,6 +593,25 @@ public class BancoDadosPostgreSQL {
                 getConnection().rollback();
             } catch (SQLException ex) {}
             throw new RuntimeException("Erro ao atualizar senha: " + e.getMessage(), e);
+        }
+    }
+
+    public void excluirUsuario(int idUsuario) {
+        validateId("ID do usuário", idUsuario);
+        String sql = "DELETE FROM usuarios WHERE id_usuario = ?";
+
+        try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
+            pstmt.setInt(1, idUsuario);
+            int deleted = pstmt.executeUpdate();
+            if (deleted == 0) {
+                throw new IllegalArgumentException("Usuário não encontrado");
+            }
+            getConnection().commit();
+        } catch (SQLException e) {
+            try {
+                getConnection().rollback();
+            } catch (SQLException ex) {}
+            throw new RuntimeException("Erro ao excluir usuário: " + e.getMessage(), e);
         }
     }
     
