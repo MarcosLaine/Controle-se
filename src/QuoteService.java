@@ -2,9 +2,12 @@ import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import javax.net.ssl.SSLException;
 
 /**
  * Serviço para buscar cotações de investimentos de APIs públicas
@@ -13,12 +16,44 @@ import java.util.concurrent.ConcurrentHashMap;
 public class QuoteService {
     private static QuoteService instance;
     private Map<String, CachedQuote> cache;
+    private Map<String, CachedExchangeRate> exchangeRateCache; // Cache de taxas de câmbio
+    private Set<String> sslFailureCache; // Cache de falhas SSL para evitar múltiplas tentativas
+    private Set<String> generalFailureCache; // Cache de falhas gerais para evitar spam de logs
+    private Set<String> rateLimitCache; // Cache de rate limit (429) para evitar requisições
     private static final long CACHE_DURATION_MS = 30 * 60 * 1000; // 30 minutos
     private static final long CRYPTO_CACHE_DURATION_MS = 60 * 60 * 1000; // 1 hora
+    private static final long HISTORICAL_CACHE_DURATION_MS = 24 * 60 * 60 * 1000; // 24 horas para dados históricos (aumentado drasticamente para otimizar primeira carga)
+    private static final long EXCHANGE_RATE_CACHE_DURATION_MS = 60 * 60 * 1000; // 1 hora para taxa de câmbio
+    private static final long SSL_FAILURE_CACHE_DURATION_MS = 5 * 60 * 1000; // 5 minutos para falhas SSL
+    private static final long GENERAL_FAILURE_CACHE_DURATION_MS = 2 * 60 * 1000; // 2 minutos para falhas gerais
+    private static final long RATE_LIMIT_CACHE_DURATION_MS = 10 * 60 * 1000; // 10 minutos para rate limit
     private static final String EXCHANGE_RATE_API = "https://api.exchangerate-api.com/v4/latest/USD";
     
     private QuoteService() {
         this.cache = new ConcurrentHashMap<>();
+        this.exchangeRateCache = new ConcurrentHashMap<>();
+        this.sslFailureCache = ConcurrentHashMap.newKeySet();
+        this.generalFailureCache = ConcurrentHashMap.newKeySet();
+        this.rateLimitCache = ConcurrentHashMap.newKeySet();
+    }
+    
+    /**
+     * Classe interna para cache de taxa de câmbio
+     */
+    private static class CachedExchangeRate {
+        final double rate;
+        final long timestamp;
+        final long ttl;
+        
+        CachedExchangeRate(double rate, long timestamp, long ttl) {
+            this.rate = rate;
+            this.timestamp = timestamp;
+            this.ttl = ttl;
+        }
+        
+        boolean isExpired() {
+            return (System.currentTimeMillis() - timestamp) > ttl;
+        }
     }
     
     public static synchronized QuoteService getInstance() {
@@ -30,24 +65,56 @@ public class QuoteService {
     
     /**
      * Busca cotação atual ou histórica de um investimento
+     * @param date Data da cotação. Se for null ou hoje, retorna cotação atual (sem cache para mostrar variação em tempo real)
      */
     public QuoteResult getQuote(String symbol, String category, LocalDate date) {
-        String cacheKey = symbol + "_" + category + "_" + (date != null ? date.toString() : "current");
+        return getQuote(symbol, category, date, null);
+    }
+    
+    /**
+     * Busca cotação atual ou histórica de um investimento com horário específico
+     * @param date Data da cotação
+     * @param dateTime Data e hora específica (usado para buscar preços intraday). Se null, usa apenas a data
+     */
+    public QuoteResult getQuote(String symbol, String category, LocalDate date, LocalDateTime dateTime) {
+        LocalDate today = LocalDate.now();
+        boolean isToday = date == null || date.equals(today);
+        boolean isIntraday = dateTime != null && dateTime.toLocalDate().equals(today);
+        boolean isFuture = date != null && date.isAfter(today);
         
-        // Verifica cache
-        CachedQuote cached = cache.get(cacheKey);
-        if (cached != null && !cached.isExpired()) {
-            return cached.quote;
+        // Para datas futuras, retorna a cotação atual (mais recente disponível)
+        if (isFuture) {
+            // Busca cotação atual para datas futuras
+            return getQuote(symbol, category, null, null);
+        }
+        
+        // Para dados intraday do dia atual, usa cache mais curto (5 minutos) para mostrar variação
+        // Para datas históricas, usa cache de 30 minutos
+        if (!isToday || isIntraday) {
+            String cacheKey = symbol + "_" + category + "_" + 
+                (dateTime != null ? dateTime.toString() : date.toString());
+            CachedQuote cached = cache.get(cacheKey);
+            if (cached != null && !cached.isExpired()) {
+                return cached.quote;
+            }
         }
         
         // Busca nova cotação
-        QuoteResult quote = fetchQuote(symbol, category, date);
+        QuoteResult quote = fetchQuote(symbol, category, date, dateTime);
         
         // Atualiza cache
         if (quote != null && quote.success) {
+            String cacheKey = symbol + "_" + category + "_" + 
+                (dateTime != null ? dateTime.toString() : (date != null ? date.toString() : "current"));
             long ttl = CACHE_DURATION_MS;
-            if ("CRYPTO".equalsIgnoreCase(category) && (date == null || date.equals(LocalDate.now()))) {
-                ttl = CRYPTO_CACHE_DURATION_MS;
+            if ("CRYPTO".equalsIgnoreCase(category)) {
+                if (isIntraday) {
+                    ttl = 5 * 60 * 1000; // 5 minutos para dados intraday
+                } else if (!isToday) {
+                    ttl = HISTORICAL_CACHE_DURATION_MS; // 30 minutos para dados históricos
+                } else {
+                    ttl = CRYPTO_CACHE_DURATION_MS; // 1 hora para cotações atuais
+                }
             }
             cache.put(cacheKey, new CachedQuote(quote, System.currentTimeMillis(), ttl));
         }
@@ -59,6 +126,13 @@ public class QuoteService {
      * Busca cotação de uma API pública
      */
     private QuoteResult fetchQuote(String symbol, String category, LocalDate date) {
+        return fetchQuote(symbol, category, date, null);
+    }
+    
+    /**
+     * Busca cotação de uma API pública com horário específico
+     */
+    private QuoteResult fetchQuote(String symbol, String category, LocalDate date, LocalDateTime dateTime) {
         try {
             // Para ações brasileiras (B3)
             if ("ACAO".equals(category) && symbol.matches("^[A-Z]{4}\\d{1,2}$")) {
@@ -70,7 +144,7 @@ public class QuoteService {
             }
             // Para criptomoedas
             else if ("CRYPTO".equals(category)) {
-                return fetchCryptoQuote(symbol, date);
+                return fetchCryptoQuote(symbol, date, dateTime);
             }
             // Para FIIs
             else if ("FII".equals(category)) {
@@ -294,87 +368,460 @@ public class QuoteService {
     }
     
     /**
-     * Busca cotação de criptomoedas usando CoinGecko API
+     * Busca cotação de criptomoedas usando Binance (principal) e CoinGecko (fallback)
      */
-    private QuoteResult fetchCryptoQuote(String symbol, LocalDate date) {
+    private QuoteResult fetchCryptoQuote(String symbol, LocalDate date, LocalDateTime dateTime) {
+        // Tenta Binance primeiro
+        QuoteResult result = fetchCryptoQuoteFromBinance(symbol, date, dateTime);
+        
+        // Se Binance falhar, tenta CoinGecko como fallback
+        if (result == null || !result.success) {
+            result = fetchCryptoQuoteFromCoinGecko(symbol, date, dateTime);
+        }
+        
+        return result != null ? result : new QuoteResult(false, "Não foi possível obter a cotação. Por favor, insira o preço manualmente.", 0.0, "USD");
+    }
+    
+    /**
+     * Busca cotação de criptomoedas usando Binance API
+     */
+    private QuoteResult fetchCryptoQuoteFromBinance(String symbol, LocalDate date, LocalDateTime dateTime) {
         try {
-            // CoinGecko API (gratuita)
-            // Mapeamento de símbolos e nomes para IDs do CoinGecko
-            Map<String, String> coinGeckoIds = new HashMap<>();
-            // Símbolos
-            coinGeckoIds.put("BTC", "bitcoin");
-            coinGeckoIds.put("ETH", "ethereum");
-            coinGeckoIds.put("BNB", "binancecoin");
-            coinGeckoIds.put("ADA", "cardano");
-            coinGeckoIds.put("SOL", "solana");
-            coinGeckoIds.put("XRP", "ripple");
-            coinGeckoIds.put("DOGE", "dogecoin");
-            coinGeckoIds.put("DOT", "polkadot");
-            coinGeckoIds.put("MATIC", "matic-network");
-            coinGeckoIds.put("LTC", "litecoin");
-            // Nomes completos (normalizados para maiúsculas)
-            coinGeckoIds.put("BITCOIN", "bitcoin");
-            coinGeckoIds.put("ETHEREUM", "ethereum");
-            coinGeckoIds.put("BINANCECOIN", "binancecoin");
-            coinGeckoIds.put("BINANCE COIN", "binancecoin");
-            coinGeckoIds.put("CARDANO", "cardano");
-            coinGeckoIds.put("SOLANA", "solana");
-            coinGeckoIds.put("RIPPLE", "ripple");
-            coinGeckoIds.put("DOGECOIN", "dogecoin");
-            coinGeckoIds.put("POLKADOT", "polkadot");
-            coinGeckoIds.put("POLYGON", "matic-network");
-            coinGeckoIds.put("LITECOIN", "litecoin");
+            // Mapeamento de símbolos para pares Binance (formato: BTCUSDT, ETHUSDT, etc)
+            Map<String, String> binanceSymbols = getBinanceSymbolMap();
+            String normalizedSymbol = symbol.trim().replaceAll("\\s+", " ").toUpperCase();
+            String binancePair = binanceSymbols.get(normalizedSymbol);
             
-            // Normaliza o símbolo para busca (remove espaços extras, converte para maiúsculas)
+            if (binancePair == null) {
+                // Tenta criar par padrão: símbolo + USDT
+                binancePair = normalizedSymbol + "USDT";
+            }
+            
+            String urlStr;
+            LocalDate today = LocalDate.now();
+            boolean isIntraday = dateTime != null;
+            boolean isToday = date != null && date.equals(today);
+            
+            if (isIntraday && dateTime != null) {
+                // Para horário específico: busca candles horários do dia específico
+                LocalDate targetDate = dateTime.toLocalDate();
+                long timestampStart = targetDate.atStartOfDay().toEpochSecond(ZoneOffset.UTC) * 1000;
+                long timestampEnd = timestampStart + (24 * 60 * 60 * 1000) - 1;
+                // Limita o endTime ao tempo atual se for hoje
+                if (isToday) {
+                    long now = System.currentTimeMillis();
+                    if (timestampEnd > now) {
+                        timestampEnd = now;
+                    }
+                }
+                // Busca candles de 1 hora do dia específico (até 24 candles)
+                urlStr = String.format("https://api.binance.com/api/v3/klines?symbol=%s&interval=1h&startTime=%d&endTime=%d&limit=24", 
+                                     binancePair, timestampStart, timestampEnd);
+            } else if (date != null && !date.equals(today)) {
+                // Dados históricos de dias passados: busca o candle do dia específico (fechamento diário)
+                long timestampStart = date.atStartOfDay().toEpochSecond(ZoneOffset.UTC) * 1000;
+                long timestampEnd = timestampStart + (24 * 60 * 60 * 1000) - 1;
+                // Binance klines: retorna candles OHLCV com intervalo diário
+                urlStr = String.format("https://api.binance.com/api/v3/klines?symbol=%s&interval=1d&startTime=%d&endTime=%d&limit=1", 
+                                     binancePair, timestampStart, timestampEnd);
+            } else if (date != null && date.equals(today)) {
+                // Para o dia atual sem horário específico: busca dados horários das últimas 24h
+                long timestampEnd = System.currentTimeMillis();
+                long timestampStart = timestampEnd - (24 * 60 * 60 * 1000);
+                urlStr = String.format("https://api.binance.com/api/v3/klines?symbol=%s&interval=1h&startTime=%d&endTime=%d&limit=24", 
+                                     binancePair, timestampStart, timestampEnd);
+            } else {
+                // Cotação atual: usa endpoint de ticker
+                urlStr = String.format("https://api.binance.com/api/v3/ticker/price?symbol=%s", binancePair);
+            }
+            
+            String response = httpGet(urlStr);
+            
+            if (response == null || response.length() < 10) {
+                return null; // Retorna null para tentar fallback
+            }
+            
+            // Verifica se é erro da API
+            if (response.contains("\"code\"") || response.contains("\"msg\"")) {
+                return null; // Erro da API, tenta fallback
+            }
+            
+            double price = 0.0;
+            String assetName = symbol;
+            
+            if (isIntraday && dateTime != null) {
+                // Parse de dados intraday com horário específico - busca o candle mais próximo do horário
+                price = parseBinanceKlinesPrice(response, true, dateTime);
+            } else if (date != null && !date.equals(today)) {
+                // Parse de dados históricos (klines diários) - retorna o preço de fechamento
+                price = parseBinanceKlinesPrice(response, false, null);
+            } else if (date != null && date.equals(today)) {
+                // Parse de dados intraday (klines horários) - retorna o último preço disponível
+                price = parseBinanceKlinesPrice(response, true, null);
+            } else {
+                // Parse de cotação atual (ticker)
+                price = parseBinanceTickerPrice(response);
+            }
+            
+            if (price > 0) {
+                return new QuoteResult(true, "Cotação obtida com sucesso (Binance)", price, "USD", assetName);
+            }
+            
+            return null;
+        } catch (Exception e) {
+            System.err.println("Erro ao buscar cotação da Binance: " + e.getMessage());
+            return null; // Retorna null para tentar fallback
+        }
+    }
+    
+    /**
+     * Busca cotação de criptomoedas usando CoinGecko API (fallback)
+     */
+    private QuoteResult fetchCryptoQuoteFromCoinGecko(String symbol, LocalDate date, LocalDateTime dateTime) {
+        try {
+            // Mapeamento de símbolos para IDs CoinGecko
+            Map<String, String> coinGeckoIds = getCoinGeckoIdMap();
             String normalizedSymbol = symbol.trim().replaceAll("\\s+", " ").toUpperCase();
             String coinId = coinGeckoIds.get(normalizedSymbol);
             
-            // Se não encontrou no mapeamento, usa o símbolo em minúsculas diretamente
-            // CoinGecko aceita tanto IDs quanto nomes em minúsculas (ex: "bitcoin", "ethereum")
             if (coinId == null) {
+                // Tenta usar o símbolo em minúsculas como ID
                 coinId = symbol.trim().toLowerCase().replaceAll("\\s+", "-");
             }
-            String urlStr;
             
-            if (date != null && !date.equals(LocalDate.now())) {
-                urlStr = String.format("https://api.coingecko.com/api/v3/coins/%s/history?date=%s", 
-                                     coinId, date.format(DateTimeFormatter.ofPattern("dd-MM-yyyy")));
+            String urlStr;
+            LocalDate today = LocalDate.now();
+            boolean isIntraday = dateTime != null && dateTime.toLocalDate().equals(today);
+            
+            if (date != null && !date.equals(today)) {
+                // Dados históricos: usa market_chart e filtra pela data
+                // CoinGecko retorna muitos pontos, então buscamos um período maior e filtramos
+                long daysDiff = java.time.temporal.ChronoUnit.DAYS.between(date, today);
+                int days = (int) Math.min(Math.max(daysDiff, 1), 365); // Entre 1 e 365 dias
+                urlStr = String.format("https://api.coingecko.com/api/v3/coins/%s/market_chart?vs_currency=usd&days=%d", 
+                                     coinId, days);
+            } else if (isIntraday) {
+                // Para horário específico do dia atual: busca dados de 1 dia e filtra pelo horário
+                urlStr = String.format("https://api.coingecko.com/api/v3/coins/%s/market_chart?vs_currency=usd&days=1", coinId);
             } else {
+                // Cotação atual
                 urlStr = String.format("https://api.coingecko.com/api/v3/simple/price?ids=%s&vs_currencies=usd", coinId);
             }
             
             String response = httpGet(urlStr);
             
             if (response == null || response.length() < 10) {
-                System.err.println("Resposta vazia ou inválida do CoinGecko para " + symbol);
-                return new QuoteResult(false, "Investimento não encontrado na base de dados. Por favor, insira o preço manualmente.", 0.0, "USD");
+                return new QuoteResult(false, "Investimento não encontrado. Por favor, insira o preço manualmente.", 0.0, "USD");
             }
             
-            // Verifica se a resposta contém erro
+            // Verifica se é erro da API
             if (response.contains("\"error\"") || response.contains("Not Found")) {
-                System.err.println("Erro na resposta CoinGecko para " + symbol + ": " + response.substring(0, Math.min(200, response.length())));
-                return new QuoteResult(false, "Investimento não encontrado na base de dados. Por favor, insira o preço manualmente.", 0.0, "USD");
+                return new QuoteResult(false, "Investimento não encontrado. Por favor, insira o preço manualmente.", 0.0, "USD");
             }
             
-            double price = parseCryptoPrice(response, coinId);
-            String assetName = parseAssetNameFromCryptoResponse(response, symbol);
+            double price = 0.0;
+            String assetName = symbol;
+            
+            if (date != null && !date.equals(today)) {
+                // Parse de dados históricos (market_chart)
+                price = parseCoinGeckoHistoricalPrice(response, date, null);
+            } else if (isIntraday && dateTime != null) {
+                // Parse de dados intraday com horário específico
+                price = parseCoinGeckoHistoricalPrice(response, date, dateTime);
+            } else {
+                // Parse de cotação atual (simple/price)
+                price = parseCoinGeckoCurrentPrice(response, coinId);
+            }
             
             if (price > 0) {
-                return new QuoteResult(true, "Cotação obtida com sucesso", price, "USD", assetName);
-            } else {
-                // Se não conseguiu parsear o preço, verifica se há erro na resposta
-                if (response.contains("\"error\"") || response.contains("Not Found")) {
-                    return new QuoteResult(false, "Investimento não encontrado na base de dados. Por favor, insira o preço manualmente.", 0.0, "USD");
+                return new QuoteResult(true, "Cotação obtida com sucesso (CoinGecko)", price, "USD", assetName);
+            }
+            
+            return new QuoteResult(false, "Não foi possível obter a cotação. Por favor, insira o preço manualmente.", 0.0, "USD");
+        } catch (Exception e) {
+            System.err.println("Erro ao buscar cotação da CoinGecko: " + e.getMessage());
+            return new QuoteResult(false, "Erro ao buscar cotação. Por favor, insira o preço manualmente.", 0.0, "USD");
+        }
+    }
+    
+    /**
+     * Retorna mapeamento de símbolos para pares Binance
+     */
+    private Map<String, String> getBinanceSymbolMap() {
+        Map<String, String> map = new HashMap<>();
+        // Símbolos principais
+        map.put("BTC", "BTCUSDT");
+        map.put("ETH", "ETHUSDT");
+        map.put("BNB", "BNBUSDT");
+        map.put("ADA", "ADAUSDT");
+        map.put("SOL", "SOLUSDT");
+        map.put("XRP", "XRPUSDT");
+        map.put("DOGE", "DOGEUSDT");
+        map.put("DOT", "DOTUSDT");
+        map.put("MATIC", "MATICUSDT");
+        map.put("LTC", "LTCUSDT");
+        // Nomes completos
+        map.put("BITCOIN", "BTCUSDT");
+        map.put("ETHEREUM", "ETHUSDT");
+        map.put("BINANCECOIN", "BNBUSDT");
+        map.put("BINANCE COIN", "BNBUSDT");
+        map.put("CARDANO", "ADAUSDT");
+        map.put("SOLANA", "SOLUSDT");
+        map.put("RIPPLE", "XRPUSDT");
+        map.put("DOGECOIN", "DOGEUSDT");
+        map.put("POLKADOT", "DOTUSDT");
+        map.put("POLYGON", "MATICUSDT");
+        map.put("LITECOIN", "LTCUSDT");
+        return map;
+    }
+    
+    /**
+     * Retorna mapeamento de símbolos para IDs CoinGecko
+     */
+    private Map<String, String> getCoinGeckoIdMap() {
+        Map<String, String> map = new HashMap<>();
+        // Símbolos principais
+        map.put("BTC", "bitcoin");
+        map.put("ETH", "ethereum");
+        map.put("BNB", "binancecoin");
+        map.put("ADA", "cardano");
+        map.put("SOL", "solana");
+        map.put("XRP", "ripple");
+        map.put("DOGE", "dogecoin");
+        map.put("DOT", "polkadot");
+        map.put("MATIC", "matic-network");
+        map.put("LTC", "litecoin");
+        // Nomes completos
+        map.put("BITCOIN", "bitcoin");
+        map.put("ETHEREUM", "ethereum");
+        map.put("BINANCECOIN", "binancecoin");
+        map.put("BINANCE COIN", "binancecoin");
+        map.put("CARDANO", "cardano");
+        map.put("SOLANA", "solana");
+        map.put("RIPPLE", "ripple");
+        map.put("DOGECOIN", "dogecoin");
+        map.put("POLKADOT", "polkadot");
+        map.put("POLYGON", "matic-network");
+        map.put("LITECOIN", "litecoin");
+        return map;
+    }
+    
+    /**
+     * Parse preço do ticker da Binance: {"symbol":"BTCUSDT","price":"91371.45000000"}
+     */
+    private double parseBinanceTickerPrice(String response) {
+        try {
+            int priceIdx = response.indexOf("\"price\"");
+            if (priceIdx > 0) {
+                int valueStart = response.indexOf(":", priceIdx) + 1;
+                // Pula espaços e aspas
+                while (valueStart < response.length() && 
+                       (Character.isWhitespace(response.charAt(valueStart)) || 
+                        response.charAt(valueStart) == '"')) {
+                    valueStart++;
                 }
-                // Se não há erro explícito mas não conseguiu parsear, retorna erro
-                System.err.println("Preço não encontrado na resposta CoinGecko: " + response.substring(0, Math.min(200, response.length())));
-                return new QuoteResult(false, "Não foi possível obter a cotação do investimento. Por favor, insira o preço manualmente.", 0.0, "USD");
+                int valueEnd = valueStart;
+                while (valueEnd < response.length() && 
+                       (Character.isDigit(response.charAt(valueEnd)) || 
+                        response.charAt(valueEnd) == '.')) {
+                    valueEnd++;
+                }
+                if (valueEnd > valueStart) {
+                    String priceStr = response.substring(valueStart, valueEnd).trim();
+                    return Double.parseDouble(priceStr);
+                }
             }
         } catch (Exception e) {
-            System.err.println("Erro ao buscar cotação crypto: " + e.getMessage());
-            e.printStackTrace();
-            return new QuoteResult(false, "Erro ao buscar cotação: " + e.getMessage() + ". Por favor, insira o preço manualmente.", 0.0, "USD");
+            System.err.println("Erro ao parsear preço Binance ticker: " + e.getMessage());
         }
+        return 0.0;
+    }
+    
+    /**
+     * Parse preço de klines da Binance: [[timestamp, open, high, low, close, volume, ...], ...]
+     * @param isIntraday Se true, busca em candles horários. Se false, retorna o primeiro (fechamento do dia).
+     * @param targetDateTime Se fornecido, busca o candle mais próximo deste horário. Se null, retorna o último.
+     */
+    private double parseBinanceKlinesPrice(String response, boolean isIntraday, LocalDateTime targetDateTime) {
+        try {
+            // Formato: [[timestamp, open, high, low, close, volume, ...], ...]
+            if (isIntraday && targetDateTime != null) {
+                // Para horário específico, encontra o candle mais próximo
+                // Arredonda o horário para o início da hora (candles são de 1h, começam no início de cada hora)
+                LocalDateTime roundedDateTime = targetDateTime.withMinute(0).withSecond(0).withNano(0);
+                long targetTimestamp = roundedDateTime.toEpochSecond(ZoneOffset.UTC) * 1000;
+                
+                double closestPrice = 0.0;
+                long minDiff = Long.MAX_VALUE;
+                
+                // Parse todos os candles e encontra o mais próximo
+                int pos = 0;
+                while (pos < response.length()) {
+                    int arrayStart = response.indexOf("[", pos);
+                    if (arrayStart < 0) break;
+                    int arrayEnd = response.indexOf("]", arrayStart);
+                    if (arrayEnd < 0) break;
+                    
+                    String candle = response.substring(arrayStart + 1, arrayEnd);
+                    String[] parts = candle.split(",");
+                    if (parts.length > 4) {
+                        try {
+                            long candleTimestamp = Long.parseLong(parts[0].trim());
+                            double closePrice = Double.parseDouble(parts[4].trim().replace("\"", ""));
+                            long diff = Math.abs(candleTimestamp - targetTimestamp);
+                            if (diff < minDiff) {
+                                minDiff = diff;
+                                closestPrice = closePrice;
+                            }
+                            // Se encontrou exatamente o candle do horário, retorna imediatamente
+                            if (diff == 0) {
+                                return closePrice;
+                            }
+                        } catch (NumberFormatException e) {
+                            // Ignora candles inválidos
+                        }
+                    }
+                    pos = arrayEnd + 1;
+                }
+                
+                if (closestPrice > 0) {
+                    return closestPrice;
+                }
+            } else if (isIntraday) {
+                // Para dados intraday sem horário específico, pega o último candle (mais recente)
+                int lastArrayStart = response.lastIndexOf("[");
+                if (lastArrayStart >= 0) {
+                    int lastArrayEnd = response.indexOf("]", lastArrayStart);
+                    if (lastArrayEnd > lastArrayStart) {
+                        String innerArray = response.substring(lastArrayStart + 1, lastArrayEnd);
+                        String[] parts = innerArray.split(",");
+                        if (parts.length > 4) {
+                            String closeStr = parts[4].trim().replace("\"", "");
+                            return Double.parseDouble(closeStr);
+                        }
+                    }
+                }
+            } else {
+                // Para dados históricos diários, pega o primeiro candle (fechamento do dia)
+                int arrayStart = response.indexOf("[[");
+                if (arrayStart >= 0) {
+                    int innerArrayStart = arrayStart + 1;
+                    int innerArrayEnd = response.indexOf("]", innerArrayStart);
+                    if (innerArrayEnd > innerArrayStart) {
+                        String innerArray = response.substring(innerArrayStart + 1, innerArrayEnd);
+                        String[] parts = innerArray.split(",");
+                        if (parts.length > 4) {
+                            String closeStr = parts[4].trim().replace("\"", "");
+                            return Double.parseDouble(closeStr);
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("Erro ao parsear preço Binance klines: " + e.getMessage());
+        }
+        return 0.0;
+    }
+    
+    /**
+     * Parse preço atual da CoinGecko: {"bitcoin":{"usd":91387}}
+     */
+    private double parseCoinGeckoCurrentPrice(String response, String coinId) {
+        try {
+            int usdIdx = response.indexOf("\"usd\"");
+            if (usdIdx > 0) {
+                int valueStart = response.indexOf(":", usdIdx) + 1;
+                // Pula espaços
+                while (valueStart < response.length() && Character.isWhitespace(response.charAt(valueStart))) {
+                    valueStart++;
+                }
+                int valueEnd = valueStart;
+                while (valueEnd < response.length() && 
+                       (Character.isDigit(response.charAt(valueEnd)) || 
+                        response.charAt(valueEnd) == '.')) {
+                    valueEnd++;
+                }
+                if (valueEnd > valueStart) {
+                    String priceStr = response.substring(valueStart, valueEnd).trim();
+                    return Double.parseDouble(priceStr);
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("Erro ao parsear preço CoinGecko atual: " + e.getMessage());
+        }
+        return 0.0;
+    }
+    
+    /**
+     * Parse preço histórico da CoinGecko: {"prices":[[timestamp, price], ...]}
+     * Encontra o preço mais próximo da data/hora solicitada
+     */
+    private double parseCoinGeckoHistoricalPrice(String response, LocalDate targetDate, LocalDateTime targetDateTime) {
+        try {
+            // Converte data/hora alvo para timestamp (milissegundos)
+            long targetTimestamp;
+            if (targetDateTime != null) {
+                targetTimestamp = targetDateTime.toEpochSecond(ZoneOffset.UTC) * 1000;
+            } else {
+                targetTimestamp = targetDate.atStartOfDay().toEpochSecond(ZoneOffset.UTC) * 1000;
+            }
+            
+            int pricesIdx = response.indexOf("\"prices\"");
+            if (pricesIdx > 0) {
+                int arrayStart = response.indexOf("[[", pricesIdx);
+                if (arrayStart > 0) {
+                    // Encontra o array completo de preços
+                    int bracketCount = 0;
+                    int arrayEnd = arrayStart;
+                    for (int i = arrayStart; i < response.length(); i++) {
+                        if (response.charAt(i) == '[') bracketCount++;
+                        if (response.charAt(i) == ']') bracketCount--;
+                        if (bracketCount == 0) {
+                            arrayEnd = i + 1;
+                            break;
+                        }
+                    }
+                    
+                    String pricesArray = response.substring(arrayStart + 1, arrayEnd - 1);
+                    // Procura o ponto mais próximo da data alvo
+                    double closestPrice = 0.0;
+                    long minDiff = Long.MAX_VALUE;
+                    
+                    // Parse manual do array: [[ts1, price1], [ts2, price2], ...]
+                    int pos = 0;
+                    while (pos < pricesArray.length()) {
+                        int entryStart = pricesArray.indexOf("[", pos);
+                        if (entryStart < 0) break;
+                        int entryEnd = pricesArray.indexOf("]", entryStart);
+                        if (entryEnd < 0) break;
+                        
+                        String entry = pricesArray.substring(entryStart + 1, entryEnd);
+                        String[] parts = entry.split(",");
+                        if (parts.length >= 2) {
+                            try {
+                                long ts = Long.parseLong(parts[0].trim());
+                                double price = Double.parseDouble(parts[1].trim());
+                                long diff = Math.abs(ts - targetTimestamp);
+                                if (diff < minDiff) {
+                                    minDiff = diff;
+                                    closestPrice = price;
+                                }
+                            } catch (NumberFormatException e) {
+                                // Ignora entradas inválidas
+                            }
+                        }
+                        pos = entryEnd + 1;
+                    }
+                    
+                    if (closestPrice > 0) {
+                        return closestPrice;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("Erro ao parsear preço histórico CoinGecko: " + e.getMessage());
+        }
+        return 0.0;
     }
     
     /**
@@ -479,21 +926,31 @@ public class QuoteService {
     }
     
     /**
-     * Extrai nome do ativo de resposta CoinGecko
+     * Extrai nome do ativo de resposta CoinCap
      */
     private String parseAssetNameFromCryptoResponse(String response, String symbol) {
         try {
-            // CoinGecko retorna o nome em "name" dentro do objeto do coin
-            // Para API simples, não retorna nome, então usa o mapeamento
-            // Para API de histórico, retorna em "name"
-            int nameIdx = response.indexOf("\"name\"");
-            if (nameIdx > 0) {
-                int valueStart = response.indexOf("\"", nameIdx + 7) + 1;
-                int valueEnd = response.indexOf("\"", valueStart);
-                if (valueEnd > valueStart) {
-                    String name = response.substring(valueStart, valueEnd);
-                    if (!name.isEmpty() && name.length() > 1) {
-                        return name;
+            // CoinCap retorna o nome em "name" dentro de "data"
+            // Para API atual: {"data": {"id": "...", "name": "Bitcoin", ...}}
+            // Para API histórico: {"data": [...]} - não tem nome, usa o símbolo
+            int dataIdx = response.indexOf("\"data\"");
+            if (dataIdx > 0) {
+                // Verifica se é objeto (cotação atual) ou array (histórico)
+                int objStart = response.indexOf("{", dataIdx);
+                int arrStart = response.indexOf("[", dataIdx);
+                
+                // Se é objeto (cotação atual), procura "name"
+                if (objStart > 0 && (arrStart < 0 || objStart < arrStart)) {
+                    int nameIdx = response.indexOf("\"name\"", objStart);
+                    if (nameIdx > 0) {
+                        int valueStart = response.indexOf("\"", nameIdx + 7) + 1;
+                        int valueEnd = response.indexOf("\"", valueStart);
+                        if (valueEnd > valueStart) {
+                            String name = response.substring(valueStart, valueEnd);
+                            if (!name.isEmpty() && name.length() > 1) {
+                                return name;
+                            }
+                        }
                     }
                 }
             }
@@ -507,17 +964,36 @@ public class QuoteService {
      * Faz requisição HTTP GET
      */
     private String httpGet(String urlStr) {
+        // Verifica se há falha SSL recente para esta URL
+        String domain = extractDomain(urlStr);
+        if (sslFailureCache.contains(domain)) {
+            // Log apenas uma vez por período para evitar spam
+            return null;
+        }
+        
+        // Verifica se está em rate limit
+        if (rateLimitCache.contains(domain)) {
+            return null;
+        }
+        
         try {
             URL url = new URL(urlStr);
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
             conn.setRequestMethod("GET");
-            conn.setConnectTimeout(10000); // Aumentado para 10 segundos
+            conn.setConnectTimeout(10000); // 10 segundos
             conn.setReadTimeout(10000);
             conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
             conn.setRequestProperty("Accept", "application/json");
             conn.setInstanceFollowRedirects(true);
             
-            int responseCode = conn.getResponseCode();
+            int responseCode;
+            try {
+                responseCode = conn.getResponseCode();
+            } catch (SSLException sslEx) {
+                // Re-lança como exceção SSL para ser tratada no catch geral
+                // SSLException é a classe pai de SSLHandshakeException e SSLPeerUnverifiedException
+                throw new SSLException("Erro SSL ao conectar: " + sslEx.getMessage(), sslEx);
+            }
             // Lê a resposta mesmo em caso de erro HTTP (para poder verificar erros no JSON)
             InputStream inputStream = null;
             if (responseCode == 200) {
@@ -545,26 +1021,240 @@ public class QuoteService {
                 in.close();
                 String result = response.toString();
                 
-                // Log para debug
-                if (responseCode != 200) {
-                    System.err.println("Erro HTTP " + responseCode + " para URL: " + urlStr);
-                    System.err.println("Mensagem de erro: " + result);
-                } else if (result.length() > 500) {
-                    System.out.println("Resposta API (primeiros 500 chars): " + result.substring(0, 500));
-                } else {
-                    System.out.println("Resposta API: " + result);
+                // Trata erro 429 (Too Many Requests) - Rate Limit
+                if (responseCode == 429) {
+                    // Adiciona ao cache de rate limit
+                    rateLimitCache.add(domain);
+                    new Thread(() -> {
+                        try {
+                            Thread.sleep(RATE_LIMIT_CACHE_DURATION_MS);
+                            rateLimitCache.remove(domain);
+                        } catch (InterruptedException ie) {
+                            Thread.currentThread().interrupt();
+                        }
+                    }).start();
+                    
+                    String failureKey = domain + "_429";
+                    if (!generalFailureCache.contains(failureKey)) {
+                        generalFailureCache.add(failureKey);
+                        new Thread(() -> {
+                            try {
+                                Thread.sleep(RATE_LIMIT_CACHE_DURATION_MS);
+                                generalFailureCache.remove(failureKey);
+                            } catch (InterruptedException ie) {
+                                Thread.currentThread().interrupt();
+                            }
+                        }).start();
+                        System.err.println("Rate limit (429) atingido para " + domain + ". Requisições serão ignoradas por 10 minutos.");
+                    }
+                    return null;
+                }
+                
+                // Log reduzido para debug
+                if (responseCode != 200 && responseCode != 404) {
+                    System.err.println("Erro HTTP " + responseCode + " para: " + domain);
                 }
                 return result;
             } else {
-                System.err.println("Erro HTTP " + responseCode + " para URL: " + urlStr + " - Não foi possível ler a resposta");
+                // Trata erro 429 também quando não há inputStream
+                if (responseCode == 429) {
+                    rateLimitCache.add(domain);
+                    new Thread(() -> {
+                        try {
+                            Thread.sleep(RATE_LIMIT_CACHE_DURATION_MS);
+                            rateLimitCache.remove(domain);
+                        } catch (InterruptedException ie) {
+                            Thread.currentThread().interrupt();
+                        }
+                    }).start();
+                    return null;
+                }
+                
+                if (responseCode != 404) {
+                    System.err.println("Erro HTTP " + responseCode + " para: " + domain + " - Não foi possível ler a resposta");
+                }
             }
         } catch (java.net.SocketTimeoutException e) {
-            System.err.println("Timeout na requisição HTTP para: " + urlStr);
+            // Usa cache geral para timeouts
+            String failureKey = domain + "_timeout";
+            if (!generalFailureCache.contains(failureKey)) {
+                generalFailureCache.add(failureKey);
+                new Thread(() -> {
+                    try {
+                        Thread.sleep(GENERAL_FAILURE_CACHE_DURATION_MS);
+                        generalFailureCache.remove(failureKey);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                    }
+                }).start();
+                System.err.println("Timeout na requisição HTTP para: " + domain);
+            }
+        } catch (java.net.SocketException e) {
+            // Trata erros SSL/TLS
+            if (e.getMessage() != null && 
+                (e.getMessage().contains("SSL") || 
+                 e.getMessage().contains("TLS") || 
+                 e.getMessage().contains("trust store") ||
+                 e.getMessage().contains("NoSuchAlgorithmException"))) {
+                // Adiciona ao cache de falhas SSL
+                sslFailureCache.add(domain);
+                // Remove após o período de cache
+                new Thread(() -> {
+                    try {
+                        Thread.sleep(SSL_FAILURE_CACHE_DURATION_MS);
+                        sslFailureCache.remove(domain);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                    }
+                }).start();
+                // Log apenas uma vez (usa um Set separado para logs)
+                String logKey = domain + "_ssl_logged";
+                if (!sslFailureCache.contains(logKey)) {
+                    System.err.println("Erro SSL/TLS ao conectar com " + domain + ". Requisições serão ignoradas por 5 minutos.");
+                    sslFailureCache.add(logKey);
+                    // Remove a flag de log após um tempo menor
+                    new Thread(() -> {
+                        try {
+                            Thread.sleep(SSL_FAILURE_CACHE_DURATION_MS);
+                            sslFailureCache.remove(logKey);
+                        } catch (InterruptedException ie) {
+                            Thread.currentThread().interrupt();
+                        }
+                    }).start();
+                }
+            } else {
+                // Para erros de conexão não-SSL, usa cache geral
+                String failureKey = domain + "_connection";
+                if (!generalFailureCache.contains(failureKey)) {
+                    generalFailureCache.add(failureKey);
+                    new Thread(() -> {
+                        try {
+                            Thread.sleep(GENERAL_FAILURE_CACHE_DURATION_MS);
+                            generalFailureCache.remove(failureKey);
+                        } catch (InterruptedException ie) {
+                            Thread.currentThread().interrupt();
+                        }
+                    }).start();
+                    System.err.println("Erro de conexão para " + domain + ": " + e.getMessage());
+                }
+            }
+        } catch (java.net.UnknownHostException e) {
+            // Erro de DNS - usa cache geral
+            String failureKey = domain + "_dns";
+            if (!generalFailureCache.contains(failureKey)) {
+                generalFailureCache.add(failureKey);
+                new Thread(() -> {
+                    try {
+                        Thread.sleep(GENERAL_FAILURE_CACHE_DURATION_MS);
+                        generalFailureCache.remove(failureKey);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                    }
+                }).start();
+                System.err.println("Erro DNS (host não encontrado) para: " + domain);
+            }
         } catch (Exception e) {
-            System.err.println("Erro na requisição HTTP para " + urlStr + ": " + e.getMessage());
-            e.printStackTrace();
+            // Verifica se é erro SSL/TLS - verifica a exceção diretamente e suas causas
+            boolean isSSLError = false;
+            String errorMsg = e.getMessage();
+            String className = e.getClass().getName();
+            
+            // Verifica se é exceção SSL diretamente
+            if (className.contains("SSL") || className.contains("TLS") ||
+                e instanceof javax.net.ssl.SSLException ||
+                e instanceof javax.net.ssl.SSLHandshakeException ||
+                e instanceof javax.net.ssl.SSLPeerUnverifiedException) {
+                isSSLError = true;
+            }
+            
+            // Verifica nas causas
+            Throwable cause = e.getCause();
+            while (cause != null && !isSSLError) {
+                String causeClassName = cause.getClass().getName();
+                if (causeClassName.contains("SSL") || causeClassName.contains("TLS") ||
+                    cause instanceof java.security.KeyManagementException ||
+                    cause instanceof java.security.NoSuchAlgorithmException ||
+                    cause instanceof javax.net.ssl.SSLException ||
+                    (cause.getMessage() != null && 
+                     (cause.getMessage().contains("SSL") || 
+                      cause.getMessage().contains("TLS") || 
+                      cause.getMessage().contains("trust store") ||
+                      cause.getMessage().contains("certificate")))) {
+                    isSSLError = true;
+                    break;
+                }
+                cause = cause.getCause();
+            }
+            
+            // Verifica na mensagem de erro também
+            if (!isSSLError && errorMsg != null) {
+                String lowerMsg = errorMsg.toLowerCase();
+                if (lowerMsg.contains("ssl") || lowerMsg.contains("tls") || 
+                    lowerMsg.contains("certificate") || lowerMsg.contains("trust store")) {
+                    isSSLError = true;
+                }
+            }
+            
+            if (isSSLError) {
+                // Adiciona ao cache de falhas SSL
+                sslFailureCache.add(domain);
+                new Thread(() -> {
+                    try {
+                        Thread.sleep(SSL_FAILURE_CACHE_DURATION_MS);
+                        sslFailureCache.remove(domain);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                    }
+                }).start();
+                String logKey = domain + "_ssl_logged";
+                if (!sslFailureCache.contains(logKey)) {
+                    System.err.println("Erro SSL/TLS ao conectar com " + domain + ". Requisições serão ignoradas por 5 minutos.");
+                    sslFailureCache.add(logKey);
+                    // Remove a flag de log após o período
+                    new Thread(() -> {
+                        try {
+                            Thread.sleep(SSL_FAILURE_CACHE_DURATION_MS);
+                            sslFailureCache.remove(logKey);
+                        } catch (InterruptedException ie) {
+                            Thread.currentThread().interrupt();
+                        }
+                    }).start();
+                }
+            } else {
+                // Para erros não-SSL, usa cache geral para evitar spam de logs
+                String failureKey = domain + "_general";
+                if (!generalFailureCache.contains(failureKey)) {
+                    generalFailureCache.add(failureKey);
+                    // Remove após o período de cache
+                    new Thread(() -> {
+                        try {
+                            Thread.sleep(GENERAL_FAILURE_CACHE_DURATION_MS);
+                            generalFailureCache.remove(failureKey);
+                        } catch (InterruptedException ie) {
+                            Thread.currentThread().interrupt();
+                        }
+                    }).start();
+                    
+                    // Log apenas uma vez por período
+                    if (errorMsg != null && !errorMsg.contains("404")) {
+                        System.err.println("Erro na requisição HTTP para " + domain + ": " + errorMsg);
+                    }
+                }
+            }
         }
         return null;
+    }
+    
+    /**
+     * Extrai o domínio de uma URL
+     */
+    private String extractDomain(String urlStr) {
+        try {
+            URL url = new URL(urlStr);
+            return url.getHost();
+        } catch (Exception e) {
+            return urlStr;
+        }
     }
     
     /**
@@ -739,95 +1429,157 @@ public class QuoteService {
     }
     
     /**
-     * Parse preço de resposta CoinGecko
+     * Parse preço de resposta CoinCap
      */
-    private double parseCryptoPrice(String response, String coinId) {
+    private double parseCryptoPrice(String response, String coinId, boolean isHistorical) {
         try {
-            // Para API simples: {"bitcoin":{"usd":50000}}
-            int coinIdx = response.indexOf("\"" + coinId + "\"");
-            if (coinIdx > 0) {
-                int usdIdx = response.indexOf("\"usd\"", coinIdx);
-                if (usdIdx > 0) {
-                    int valueStart = response.indexOf(":", usdIdx) + 1;
-                    // Pula espaços
-                    while (valueStart < response.length() && Character.isWhitespace(response.charAt(valueStart))) {
-                        valueStart++;
-                    }
-                    int valueEnd = valueStart;
-                    // Encontra o fim do número
-                    while (valueEnd < response.length() && 
-                           (Character.isDigit(response.charAt(valueEnd)) || 
-                            response.charAt(valueEnd) == '.' || 
-                            response.charAt(valueEnd) == 'e' ||
-                            response.charAt(valueEnd) == 'E' ||
-                            response.charAt(valueEnd) == '-' ||
-                            response.charAt(valueEnd) == '+')) {
-                        valueEnd++;
-                    }
-                    // Se encontrou vírgula ou }, para antes
-                    int commaIdx = response.indexOf(",", valueStart);
-                    int braceIdx = response.indexOf("}", valueStart);
-                    if (commaIdx > 0 && commaIdx < valueEnd) valueEnd = commaIdx;
-                    if (braceIdx > 0 && braceIdx < valueEnd) valueEnd = braceIdx;
-                    
-                    if (valueEnd > valueStart) {
-                        String priceStr = response.substring(valueStart, valueEnd).trim();
-                        if (!priceStr.isEmpty()) {
-                            return Double.parseDouble(priceStr);
+            if (isHistorical) {
+                // Para API histórico: {"data": [{"priceUsd": "50000.00", "time": 1234567890000, ...}]}
+                // Pega o último item do array (mais próximo da data solicitada)
+                int dataIdx = response.indexOf("\"data\"");
+                if (dataIdx > 0) {
+                    int arrayStart = response.indexOf("[", dataIdx);
+                    if (arrayStart > 0) {
+                        int arrayEnd = response.indexOf("]", arrayStart);
+                        if (arrayEnd > arrayStart) {
+                            String arrayContent = response.substring(arrayStart + 1, arrayEnd);
+                            // Procura o último "priceUsd" no array
+                            int lastPriceUsdIdx = arrayContent.lastIndexOf("\"priceUsd\"");
+                            if (lastPriceUsdIdx > 0) {
+                                int valueStart = arrayContent.indexOf(":", lastPriceUsdIdx) + 1;
+                                // Pula espaços e aspas
+                                while (valueStart < arrayContent.length() && 
+                                       (Character.isWhitespace(arrayContent.charAt(valueStart)) || 
+                                        arrayContent.charAt(valueStart) == '"')) {
+                                    valueStart++;
+                                }
+                                int valueEnd = valueStart;
+                                // Encontra o fim do número (pode estar entre aspas)
+                                while (valueEnd < arrayContent.length()) {
+                                    char ch = arrayContent.charAt(valueEnd);
+                                    if (ch == '"' || ch == ',' || ch == '}') {
+                                        break;
+                                    }
+                                    if (Character.isDigit(ch) || ch == '.' || ch == 'e' || ch == 'E' || ch == '-' || ch == '+') {
+                                        valueEnd++;
+                                    } else {
+                                        break;
+                                    }
+                                }
+                                
+                                if (valueEnd > valueStart) {
+                                    String priceStr = arrayContent.substring(valueStart, valueEnd).trim();
+                                    if (!priceStr.isEmpty()) {
+                                        return Double.parseDouble(priceStr);
+                                    }
+                                }
+                            }
                         }
                     }
                 }
-            }
-            
-            // Para API de histórico: {"market_data":{"current_price":{"usd":50000}}}
-            int marketDataIdx = response.indexOf("\"market_data\"");
-            if (marketDataIdx > 0) {
-                int currentPriceIdx = response.indexOf("\"current_price\"", marketDataIdx);
-                if (currentPriceIdx > 0) {
-                    int usdIdx = response.indexOf("\"usd\"", currentPriceIdx);
-                    if (usdIdx > 0) {
-                        int valueStart = response.indexOf(":", usdIdx) + 1;
-                        int valueEnd = response.indexOf(",", valueStart);
-                        if (valueEnd == -1) valueEnd = response.indexOf("}", valueStart);
-                        String priceStr = response.substring(valueStart, valueEnd).trim();
-                        if (!priceStr.isEmpty()) {
-                            return Double.parseDouble(priceStr);
+            } else {
+                // Para API atual: {"data": {"id": "bitcoin", "priceUsd": "50000.00", ...}}
+                int dataIdx = response.indexOf("\"data\"");
+                if (dataIdx > 0) {
+                    int priceUsdIdx = response.indexOf("\"priceUsd\"", dataIdx);
+                    if (priceUsdIdx > 0) {
+                        int valueStart = response.indexOf(":", priceUsdIdx) + 1;
+                        // Pula espaços e aspas
+                        while (valueStart < response.length() && 
+                               (Character.isWhitespace(response.charAt(valueStart)) || 
+                                response.charAt(valueStart) == '"')) {
+                            valueStart++;
+                        }
+                        int valueEnd = valueStart;
+                        // Encontra o fim do número (pode estar entre aspas)
+                        while (valueEnd < response.length()) {
+                            char ch = response.charAt(valueEnd);
+                            if (ch == '"' || ch == ',' || ch == '}') {
+                                break;
+                            }
+                            if (Character.isDigit(ch) || ch == '.' || ch == 'e' || ch == 'E' || ch == '-' || ch == '+') {
+                                valueEnd++;
+                            } else {
+                                break;
+                            }
+                        }
+                        
+                        // Se encontrou vírgula ou }, para antes
+                        int commaIdx = response.indexOf(",", valueStart);
+                        int braceIdx = response.indexOf("}", valueStart);
+                        if (commaIdx > 0 && commaIdx < valueEnd) valueEnd = commaIdx;
+                        if (braceIdx > 0 && braceIdx < valueEnd) valueEnd = braceIdx;
+                        
+                        if (valueEnd > valueStart) {
+                            String priceStr = response.substring(valueStart, valueEnd).trim();
+                            if (!priceStr.isEmpty()) {
+                                return Double.parseDouble(priceStr);
+                            }
                         }
                     }
                 }
             }
         } catch (Exception e) {
-            System.err.println("Erro ao fazer parse do preço CoinGecko: " + e.getMessage());
+            System.err.println("Erro ao fazer parse do preço CoinCap: " + e.getMessage());
         }
         return 0.0;
     }
     
     /**
-     * Busca taxa de câmbio USD para BRL
+     * Busca taxa de câmbio USD para BRL (com cache)
      */
     public double getExchangeRate(String from, String to) {
         if (from.equals(to)) return 1.0;
         
+        String cacheKey = from + "_" + to;
+        
+        // Verifica cache
+        CachedExchangeRate cached = exchangeRateCache.get(cacheKey);
+        if (cached != null && !cached.isExpired()) {
+            return cached.rate;
+        }
+        
+        // Verifica se está em rate limit
+        if (rateLimitCache.contains("exchangerate-api.com")) {
+            // Usa taxa em cache mesmo se expirada, ou taxa fixa
+            if (cached != null) {
+                return cached.rate;
+            }
+            // Fallback: taxa aproximada USD/BRL
+            return 6.0;
+        }
+        
         try {
             if (from.equals("USD") && to.equals("BRL")) {
                 String response = httpGet(EXCHANGE_RATE_API);
-                if (response != null) {
+                if (response != null && !response.isEmpty()) {
                     int brlIdx = response.indexOf("\"BRL\"");
                     if (brlIdx > 0) {
                         int valueStart = response.indexOf(":", brlIdx) + 1;
                         int valueEnd = response.indexOf(",", valueStart);
                         if (valueEnd == -1) valueEnd = response.indexOf("}", valueStart);
                         String rateStr = response.substring(valueStart, valueEnd).trim();
-                        return Double.parseDouble(rateStr);
+                        double rate = Double.parseDouble(rateStr);
+                        
+                        // Atualiza cache
+                        exchangeRateCache.put(cacheKey, new CachedExchangeRate(
+                            rate, System.currentTimeMillis(), EXCHANGE_RATE_CACHE_DURATION_MS));
+                        return rate;
                     }
                 }
             }
         } catch (Exception e) {
-            // Fallback para taxa fixa
+            // Se houver erro, usa cache expirado se disponível
+            if (cached != null) {
+                return cached.rate;
+            }
         }
         
         // Fallback: taxa aproximada USD/BRL
-        return 6.0;
+        double fallbackRate = 6.0;
+        exchangeRateCache.put(cacheKey, new CachedExchangeRate(
+            fallbackRate, System.currentTimeMillis(), EXCHANGE_RATE_CACHE_DURATION_MS));
+        return fallbackRate;
     }
     
     /**

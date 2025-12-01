@@ -108,6 +108,79 @@ else
     echo "✓ Driver PostgreSQL encontrado"
 fi
 
+# Verifica/baixa HikariCP e dependências se não existirem
+if [ ! -f "lib/hikaricp.jar" ]; then
+    echo ""
+    echo "Baixando HikariCP Connection Pool..."
+    HIKARICP_VERSION="5.1.0"
+    HIKARICP_URL="https://repo1.maven.org/maven2/com/zaxxer/HikariCP/${HIKARICP_VERSION}/HikariCP-${HIKARICP_VERSION}.jar"
+    
+    if command -v wget &> /dev/null; then
+        wget -q -O lib/hikaricp.jar "$HIKARICP_URL"
+    elif command -v curl &> /dev/null; then
+        curl -s -L -o lib/hikaricp.jar "$HIKARICP_URL"
+    else
+        echo "ERRO: wget ou curl não encontrado"
+        echo "Baixe manualmente: $HIKARICP_URL"
+        exit 1
+    fi
+    
+    if [ $? -eq 0 ] && [ -f "lib/hikaricp.jar" ]; then
+        echo "✓ HikariCP baixado (${HIKARICP_VERSION})"
+    else
+        echo "✗ Erro ao baixar HikariCP"
+        exit 1
+    fi
+else
+    echo "✓ HikariCP encontrado"
+fi
+
+# Verifica/baixa SLF4J API (dependência do HikariCP)
+if [ ! -f "lib/slf4j-api.jar" ]; then
+    echo ""
+    echo "Baixando SLF4J API (dependência do HikariCP)..."
+    SLF4J_VERSION="2.0.9"
+    SLF4J_API_URL="https://repo1.maven.org/maven2/org/slf4j/slf4j-api/${SLF4J_VERSION}/slf4j-api-${SLF4J_VERSION}.jar"
+    
+    if command -v wget &> /dev/null; then
+        wget -q -O lib/slf4j-api.jar "$SLF4J_API_URL"
+    elif command -v curl &> /dev/null; then
+        curl -s -L -o lib/slf4j-api.jar "$SLF4J_API_URL"
+    fi
+    
+    if [ $? -eq 0 ] && [ -f "lib/slf4j-api.jar" ]; then
+        echo "✓ SLF4J API baixado (${SLF4J_VERSION})"
+    else
+        echo "✗ Erro ao baixar SLF4J API"
+        exit 1
+    fi
+else
+    echo "✓ SLF4J API encontrado"
+fi
+
+# Verifica/baixa SLF4J Simple (implementação de logging)
+if [ ! -f "lib/slf4j-simple.jar" ]; then
+    echo ""
+    echo "Baixando SLF4J Simple (implementação de logging)..."
+    SLF4J_VERSION="2.0.9"
+    SLF4J_SIMPLE_URL="https://repo1.maven.org/maven2/org/slf4j/slf4j-simple/${SLF4J_VERSION}/slf4j-simple-${SLF4J_VERSION}.jar"
+    
+    if command -v wget &> /dev/null; then
+        wget -q -O lib/slf4j-simple.jar "$SLF4J_SIMPLE_URL"
+    elif command -v curl &> /dev/null; then
+        curl -s -L -o lib/slf4j-simple.jar "$SLF4J_SIMPLE_URL"
+    fi
+    
+    if [ $? -eq 0 ] && [ -f "lib/slf4j-simple.jar" ]; then
+        echo "✓ SLF4J Simple baixado (${SLF4J_VERSION})"
+    else
+        echo "✗ Erro ao baixar SLF4J Simple"
+        exit 1
+    fi
+else
+    echo "✓ SLF4J Simple encontrado"
+fi
+
 # Limpa compilações anteriores
 echo ""
 echo "Limpando compilações anteriores..."
@@ -118,6 +191,24 @@ echo "✓ Limpeza concluída"
 echo ""
 echo "Compilando servidor Java..."
 
+# Verifica se os imports do HikariCP estão presentes
+if ! grep -q "import com.zaxxer.hikari.HikariConfig" src/BancoDadosPostgreSQL.java; then
+    echo "⚠ AVISO: Imports do HikariCP não encontrados em BancoDadosPostgreSQL.java"
+    echo "  Restaurando imports automaticamente..."
+    # Cria um arquivo temporário com os imports adicionados
+    awk '
+        /^import java.util.Properties;$/ {
+            print $0
+            print "import com.zaxxer.hikari.HikariConfig;"
+            print "import com.zaxxer.hikari.HikariDataSource;"
+            next
+        }
+        { print }
+    ' src/BancoDadosPostgreSQL.java > src/BancoDadosPostgreSQL.java.tmp && \
+    mv src/BancoDadosPostgreSQL.java.tmp src/BancoDadosPostgreSQL.java
+    echo "✓ Imports restaurados"
+fi
+
 # Encontra todos os arquivos Java (incluindo subdiretórios)
 JAVA_FILES=$(find src -name "*.java" ! -name "BancoDados.java" ! -name "MigracaoDados.java")
 
@@ -127,7 +218,7 @@ if [ -z "$JAVA_FILES" ]; then
 fi
 
 # Compila todos os arquivos de uma vez
-javac -cp ".:lib/postgresql.jar:bin" \
+javac -cp ".:lib/postgresql.jar:lib/hikaricp.jar:lib/slf4j-api.jar:lib/slf4j-simple.jar:bin" \
       -d bin \
       -source 11 \
       -target 11 \
@@ -183,7 +274,7 @@ echo "=========================================="
 echo ""
 
 # Executa o servidor
-java -cp ".:lib/postgresql.jar:bin" \
+java -cp ".:lib/postgresql.jar:lib/hikaricp.jar:lib/slf4j-api.jar:lib/slf4j-simple.jar:bin" \
      -Dfile.encoding=UTF-8 \
      ControleSeServer
 

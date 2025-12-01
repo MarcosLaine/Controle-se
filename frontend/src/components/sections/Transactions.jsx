@@ -6,6 +6,7 @@ import api from '../../services/api';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import Modal from '../common/Modal';
 import toast from 'react-hot-toast';
+import SkeletonSection from '../common/SkeletonSection';
 
 export default function Transactions() {
   const { user } = useAuth();
@@ -83,11 +84,7 @@ export default function Transactions() {
   };
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-primary-600 border-t-transparent"></div>
-      </div>
-    );
+    return <SkeletonSection type="transactions" />;
   }
 
   return (
@@ -318,11 +315,8 @@ function TransactionModal({ isOpen, onClose, type, categories, accounts, tags, o
       };
 
       if (type === 'expense') {
-        data.categoryIds = formData.categoryIds.map(Number);
-        if (data.categoryIds.length === 0) {
-          toast.error('Selecione pelo menos uma categoria');
-          return;
-        }
+        // Categoria não é mais obrigatória - gastos sem categoria serão associados à categoria "Sem Categoria"
+        data.categoryIds = formData.categoryIds.length > 0 ? formData.categoryIds.map(Number) : [];
       }
 
       if (formData.tagIds.length > 0) {
@@ -434,7 +428,7 @@ function TransactionModal({ isOpen, onClose, type, categories, accounts, tags, o
               .filter((acc) => acc.tipo?.toLowerCase() !== 'investimento')
               .map((acc) => (
                 <option key={acc.idConta} value={acc.idConta}>
-                  {acc.nome} ({acc.tipo})
+                  {acc.nome}
                 </option>
               ))}
           </select>

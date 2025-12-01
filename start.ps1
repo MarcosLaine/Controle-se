@@ -120,6 +120,89 @@ if (-not $needsDownload) {
     Write-Host "[OK] Driver PostgreSQL encontrado" -ForegroundColor Green
 }
 
+# Verifica/baixa HikariCP se nao existir
+$hikariJarPath = "lib/hikaricp.jar"
+$needsHikariDownload = -not (Test-Path $hikariJarPath)
+
+if ($needsHikariDownload) {
+    Write-Host ""
+    Write-Host "Baixando HikariCP (Connection Pool)..."
+    $HIKARI_VERSION = "5.1.0"
+    $HIKARI_URL = "https://repo1.maven.org/maven2/com/zaxxer/HikariCP/$HIKARI_VERSION/HikariCP-$HIKARI_VERSION.jar"
+    
+    $oldErrorAction = $ErrorActionPreference
+    $ErrorActionPreference = "SilentlyContinue"
+    $result = Invoke-WebRequest -Uri $HIKARI_URL -OutFile $hikariJarPath -UseBasicParsing
+    $ErrorActionPreference = $oldErrorAction
+    
+    if (($result -ne $null) -and (Test-Path $hikariJarPath)) {
+        Write-Host "[OK] HikariCP baixado ($HIKARI_VERSION)" -ForegroundColor Green
+    }
+    else {
+        Write-Host "ERRO: Falha ao baixar HikariCP" -ForegroundColor Red
+        Write-Host "Baixe manualmente: $HIKARI_URL"
+        exit 1
+    }
+}
+
+if (-not $needsHikariDownload) {
+    Write-Host "[OK] HikariCP encontrado" -ForegroundColor Green
+}
+
+# Verifica/baixa SLF4J API (dependência do HikariCP) se nao existir
+$slf4jApiJarPath = "lib/slf4j-api.jar"
+$needsSlf4jDownload = -not (Test-Path $slf4jApiJarPath)
+
+if ($needsSlf4jDownload) {
+    Write-Host ""
+    Write-Host "Baixando SLF4J API (dependência do HikariCP)..."
+    $SLF4J_VERSION = "2.0.9"
+    $SLF4J_API_URL = "https://repo1.maven.org/maven2/org/slf4j/slf4j-api/$SLF4J_VERSION/slf4j-api-$SLF4J_VERSION.jar"
+    
+    $oldErrorAction = $ErrorActionPreference
+    $ErrorActionPreference = "SilentlyContinue"
+    $result = Invoke-WebRequest -Uri $SLF4J_API_URL -OutFile $slf4jApiJarPath -UseBasicParsing
+    $ErrorActionPreference = $oldErrorAction
+    
+    if (($result -ne $null) -and (Test-Path $slf4jApiJarPath)) {
+        Write-Host "[OK] SLF4J API baixado ($SLF4J_VERSION)" -ForegroundColor Green
+    }
+    else {
+        Write-Host "[AVISO] Falha ao baixar SLF4J API (HikariCP pode funcionar sem ele)" -ForegroundColor Yellow
+    }
+}
+
+if (-not $needsSlf4jDownload) {
+    Write-Host "[OK] SLF4J API encontrado" -ForegroundColor Green
+}
+
+# Verifica/baixa SLF4J Simple (implementação de logging) se nao existir
+$slf4jSimpleJarPath = "lib/slf4j-simple.jar"
+$needsSlf4jSimpleDownload = -not (Test-Path $slf4jSimpleJarPath)
+
+if ($needsSlf4jSimpleDownload) {
+    Write-Host ""
+    Write-Host "Baixando SLF4J Simple (implementação de logging)..."
+    $SLF4J_SIMPLE_VERSION = "2.0.9"
+    $SLF4J_SIMPLE_URL = "https://repo1.maven.org/maven2/org/slf4j/slf4j-simple/$SLF4J_SIMPLE_VERSION/slf4j-simple-$SLF4J_SIMPLE_VERSION.jar"
+    
+    $oldErrorAction = $ErrorActionPreference
+    $ErrorActionPreference = "SilentlyContinue"
+    $result = Invoke-WebRequest -Uri $SLF4J_SIMPLE_URL -OutFile $slf4jSimpleJarPath -UseBasicParsing
+    $ErrorActionPreference = $oldErrorAction
+    
+    if (($result -ne $null) -and (Test-Path $slf4jSimpleJarPath)) {
+        Write-Host "[OK] SLF4J Simple baixado ($SLF4J_SIMPLE_VERSION)" -ForegroundColor Green
+    }
+    else {
+        Write-Host "[AVISO] Falha ao baixar SLF4J Simple (logs do HikariCP não serão exibidos)" -ForegroundColor Yellow
+    }
+}
+
+if (-not $needsSlf4jSimpleDownload) {
+    Write-Host "[OK] SLF4J Simple encontrado" -ForegroundColor Green
+}
+
 # Limpa compilações anteriores
 Write-Host ""
 Write-Host "Limpando compilações anteriores..."
@@ -141,7 +224,14 @@ if ($JAVA_FILES.Count -eq 0) {
 }
 
 # Compila todos os arquivos de uma vez
-$classpath = ".;lib/postgresql.jar;bin"
+$classpath = ".;lib/postgresql.jar;lib/hikaricp.jar"
+if (Test-Path "lib/slf4j-api.jar") {
+    $classpath += ";lib/slf4j-api.jar"
+}
+if (Test-Path "lib/slf4j-simple.jar") {
+    $classpath += ";lib/slf4j-simple.jar"
+}
+$classpath += ";bin"
 & javac -cp $classpath -d bin -source 11 -target 11 -encoding UTF-8 $JAVA_FILES
 
 # Verifica se a compilação foi bem-sucedida
@@ -209,7 +299,14 @@ Write-Host "=========================================="
 Write-Host ""
 
 # Executa o servidor
-$classpath = ".;lib/postgresql.jar;bin"
+$classpath = ".;lib/postgresql.jar;lib/hikaricp.jar"
+if (Test-Path "lib/slf4j-api.jar") {
+    $classpath += ";lib/slf4j-api.jar"
+}
+if (Test-Path "lib/slf4j-simple.jar") {
+    $classpath += ";lib/slf4j-simple.jar"
+}
+$classpath += ";bin"
 $javaArgs = @(
     "-cp", $classpath,
     "-Dfile.encoding=UTF-8",

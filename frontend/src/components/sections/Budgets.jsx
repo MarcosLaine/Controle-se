@@ -5,6 +5,7 @@ import api from '../../services/api';
 import { formatCurrency } from '../../utils/formatters';
 import Modal from '../common/Modal';
 import toast from 'react-hot-toast';
+import SkeletonSection from '../common/SkeletonSection';
 
 export default function Budgets() {
   const { user } = useAuth();
@@ -87,11 +88,7 @@ export default function Budgets() {
   };
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-primary-600 border-t-transparent"></div>
-      </div>
-    );
+    return <SkeletonSection type="budgets" />;
   }
 
   return (

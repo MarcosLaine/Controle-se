@@ -5,14 +5,14 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { DataProvider } from './contexts/DataContext';
 import LoginPage from './pages/LoginPage';
 import Dashboard from './pages/Dashboard';
-import LoadingScreen from './components/common/LoadingScreen';
+import SkeletonScreen from './components/common/SkeletonScreen';
 import ThemeProvider from './contexts/ThemeContext';
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
 
   if (loading) {
-    return <LoadingScreen />;
+    return <SkeletonScreen />;
   }
 
   if (!user) {
@@ -26,7 +26,7 @@ function AppRoutes() {
   const { user, loading } = useAuth();
 
   if (loading) {
-    return <LoadingScreen />;
+    return <SkeletonScreen />;
   }
 
   return (
@@ -60,17 +60,40 @@ function App() {
                 position="top-center"
                 toastOptions={{
                   duration: 3000,
+                  className: 'toast-blur',
                   style: {
-                    background: 'var(--toast-bg)',
-                    color: 'var(--toast-color)',
+                    background: 'rgba(255, 255, 255, 0.85)',
+                    backdropFilter: 'blur(12px)',
+                    WebkitBackdropFilter: 'blur(12px)',
+                    color: '#1f2937',
+                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.1)',
                   },
                   success: {
+                    className: 'toast-blur toast-success',
+                    style: {
+                      background: 'rgba(34, 197, 94, 0.15)',
+                      backdropFilter: 'blur(12px)',
+                      WebkitBackdropFilter: 'blur(12px)',
+                      color: '#1f2937',
+                      border: '1px solid rgba(34, 197, 94, 0.3)',
+                      boxShadow: '0 8px 32px 0 rgba(34, 197, 94, 0.2)',
+                    },
                     iconTheme: {
                       primary: '#22c55e',
                       secondary: '#fff',
                     },
                   },
                   error: {
+                    className: 'toast-blur toast-error',
+                    style: {
+                      background: 'rgba(239, 68, 68, 0.15)',
+                      backdropFilter: 'blur(12px)',
+                      WebkitBackdropFilter: 'blur(12px)',
+                      color: '#1f2937',
+                      border: '1px solid rgba(239, 68, 68, 0.3)',
+                      boxShadow: '0 8px 32px 0 rgba(239, 68, 68, 0.2)',
+                    },
                     iconTheme: {
                       primary: '#ef4444',
                       secondary: '#fff',

@@ -1,6 +1,7 @@
 import React, { useState, lazy, Suspense, useCallback } from 'react';
 import Header from '../components/layout/Header';
 import Sidebar from '../components/layout/Sidebar';
+import SkeletonSection from '../components/common/SkeletonSection';
 
 const lazyWithPreload = (loader) => {
   const Component = lazy(loader);
@@ -19,10 +20,8 @@ const sectionComponents = {
   investments: lazyWithPreload(() => import('../components/sections/Investments')),
 };
 
-const SectionFallback = () => (
-  <div className="flex items-center justify-center h-64">
-    <div className="animate-spin rounded-full h-12 w-12 border-4 border-primary-600 border-t-transparent"></div>
-  </div>
+const SectionFallback = ({ sectionType }) => (
+  <SkeletonSection type={sectionType} />
 );
 
 export default function Dashboard() {
@@ -62,7 +61,7 @@ export default function Dashboard() {
         />
         <main className="flex-1 p-4 lg:p-6 overflow-y-auto h-[calc(100vh-73px)] w-full">
           <div className="max-w-7xl mx-auto">
-            <Suspense fallback={<SectionFallback />}>
+            <Suspense fallback={<SectionFallback sectionType={activeSection} />}>
               <ActiveSection />
             </Suspense>
           </div>

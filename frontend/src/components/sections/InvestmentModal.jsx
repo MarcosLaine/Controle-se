@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import { useAuth } from '../../contexts/AuthContext';
 import api from '../../services/api';
 import Modal from '../common/Modal';
+import { parseFloatBrazilian, parseIntBrazilian } from '../../utils/formatters';
 
 export default function InvestmentModal({ isOpen, onClose, onSuccess, investmentToEdit }) {
   const { user } = useAuth();
@@ -129,7 +130,7 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
     e.preventDefault();
     setLoading(true);
     try {
-      let quantity = parseFloat(variableForm.quantity);
+      let quantity = parseFloatBrazilian(variableForm.quantity);
       
       // If selling, quantity should be negative
       if (variableForm.operationType === 'SELL') {
@@ -141,7 +142,7 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
       const manualPriceInput = (variableForm.price || '').toString().trim();
       let manualPrice = null;
       if (manualPriceInput) {
-        manualPrice = parseFloat(manualPriceInput.replace(',', '.'));
+        manualPrice = parseFloatBrazilian(manualPriceInput);
         if (isNaN(manualPrice) || manualPrice <= 0) {
           toast.error('Informe um preço válido maior que zero');
           setLoading(false);
@@ -152,8 +153,8 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
       const data = {
         ...variableForm,
         quantity: quantity,
-        brokerage: parseFloat(variableForm.brokerage),
-        accountId: parseInt(variableForm.accountId),
+        brokerage: parseFloatBrazilian(variableForm.brokerage),
+        accountId: parseIntBrazilian(variableForm.accountId),
         userId: user.id
       };
       
@@ -178,7 +179,13 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
       const response = await api[method.toLowerCase()]('/investments', payload);
       
       if (response.success) {
-        toast.success(`Investimento ${investmentToEdit ? 'atualizado' : 'criado'} com sucesso!`);
+        if (investmentToEdit) {
+          toast.success('Investimento atualizado com sucesso!');
+        } else if (variableForm.operationType === 'SELL') {
+          toast.success('Venda de ativo registrada com sucesso!');
+        } else {
+          toast.success('Investimento criado com sucesso!');
+        }
         onSuccess();
         onClose();
         resetForms();
@@ -197,11 +204,11 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
     try {
       const data = {
         ...fixedForm,
-        amount: parseFloat(fixedForm.amount),
-        indexPercent: fixedForm.indexPercent ? parseFloat(fixedForm.indexPercent) : null,
-        fixedRate: fixedForm.fixedRate ? parseFloat(fixedForm.fixedRate) : null,
-        preRate: fixedForm.preRate ? parseFloat(fixedForm.preRate) : null,
-        accountId: parseInt(fixedForm.accountId),
+        amount: parseFloatBrazilian(fixedForm.amount),
+        indexPercent: fixedForm.indexPercent ? parseFloatBrazilian(fixedForm.indexPercent) : null,
+        fixedRate: fixedForm.fixedRate ? parseFloatBrazilian(fixedForm.fixedRate) : null,
+        preRate: fixedForm.preRate ? parseFloatBrazilian(fixedForm.preRate) : null,
+        accountId: parseIntBrazilian(fixedForm.accountId),
         userId: user.id
       };
 

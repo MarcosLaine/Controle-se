@@ -1,8 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { Wallet, Mail, Lock, User, Moon, Sun } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
+import ReCaptcha from '../components/common/ReCaptcha';
+
+// Site key do reCAPTCHA
+// Configure via variável de ambiente VITE_RECAPTCHA_SITE_KEY ou substitua abaixo
+// Para obter chaves: https://www.google.com/recaptcha/admin/create
+// Chave de teste (sempre passa): 6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI
+const RECAPTCHA_SITE_KEY = import.meta.env.VITE_RECAPTCHA_SITE_KEY || '6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI';
 
 export default function LoginPage() {
   const [activeTab, setActiveTab] = useState('login');
@@ -14,6 +21,9 @@ export default function LoginPage() {
   // Login form state
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
+  const [requiresCaptcha, setRequiresCaptcha] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState(null);
+  const captchaRef = useRef(null);
 
   // Register form state
   const [registerName, setRegisterName] = useState('');
@@ -23,11 +33,41 @@ export default function LoginPage() {
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoading(true);
-    const result = await login(loginEmail, loginPassword);
-    setLoading(false);
-    if (result.success) {
-      navigate('/dashboard');
+    
+    // Se CAPTCHA é necessário mas não foi fornecido, não envia
+    if (requiresCaptcha && !captchaToken) {
+      setLoading(false);
+      return;
     }
+    
+    const result = await login(loginEmail, loginPassword, captchaToken);
+    setLoading(false);
+    
+    if (result.success) {
+      // Limpa estado do CAPTCHA em caso de sucesso
+      setRequiresCaptcha(false);
+      setCaptchaToken(null);
+      navigate('/dashboard');
+    } else if (result.requiresCaptcha) {
+      // Se o servidor requer CAPTCHA, mostra o componente
+      console.log('CAPTCHA requerido - ativando componente');
+      setRequiresCaptcha(true);
+      setCaptchaToken(null);
+      // Reseta o CAPTCHA se já estava renderizado
+      setTimeout(() => {
+        if (captchaRef.current) {
+          captchaRef.current.reset();
+        }
+      }, 100);
+    }
+  };
+
+  const handleCaptchaVerify = (token) => {
+    setCaptchaToken(token);
+  };
+
+  const handleCaptchaExpire = () => {
+    setCaptchaToken(null);
   };
 
   const handleRegister = async (e) => {
@@ -128,10 +168,28 @@ export default function LoginPage() {
                   required
                 />
               </div>
+              
+              {/* CAPTCHA - aparece apenas quando necessário */}
+              {requiresCaptcha && (
+                <div className="py-2">
+                  <div className="text-sm text-gray-600 dark:text-gray-400 mb-2 text-center">
+                    Por segurança, complete o CAPTCHA abaixo:
+                  </div>
+                  <ReCaptcha
+                    key={`captcha-${requiresCaptcha}`} // Force re-render quando requiresCaptcha muda
+                    ref={captchaRef}
+                    siteKey={RECAPTCHA_SITE_KEY}
+                    onVerify={handleCaptchaVerify}
+                    onExpire={handleCaptchaExpire}
+                    theme={theme}
+                  />
+                </div>
+              )}
+              
               <button
                 type="submit"
-                disabled={loading}
-                className="btn-primary w-full justify-center"
+                disabled={loading || (requiresCaptcha && !captchaToken)}
+                className="btn-primary w-full justify-center disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {loading ? (
                   <>

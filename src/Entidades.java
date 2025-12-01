@@ -358,6 +358,8 @@ class Conta implements Serializable {
     private double saldoAtual;
     private int idUsuario; // FK para Usuario
     private boolean ativo;
+    private Integer diaFechamento; // Dia de fechamento da fatura (1-31)
+    private Integer diaPagamento; // Dia de pagamento da fatura (1-31)
     
     public Conta(int idConta, String nome, String tipo, double saldoAtual, int idUsuario) {
         this.idConta = idConta;
@@ -366,6 +368,8 @@ class Conta implements Serializable {
         this.saldoAtual = saldoAtual;
         this.idUsuario = idUsuario;
         this.ativo = true;
+        this.diaFechamento = null;
+        this.diaPagamento = null;
     }
     
     // Getters e Setters
@@ -386,6 +390,18 @@ class Conta implements Serializable {
     
     public boolean isAtivo() { return ativo; }
     public void setAtivo(boolean ativo) { this.ativo = ativo; }
+    
+    public Integer getDiaFechamento() { return diaFechamento; }
+    public void setDiaFechamento(Integer diaFechamento) { this.diaFechamento = diaFechamento; }
+    
+    public Integer getDiaPagamento() { return diaPagamento; }
+    public void setDiaPagamento(Integer diaPagamento) { this.diaPagamento = diaPagamento; }
+    
+    public boolean isCartaoCredito() {
+        return tipo != null && (tipo.toUpperCase().equals("CARTAO_CREDITO") || 
+                                tipo.toUpperCase().equals("CARTAO DE CREDITO") ||
+                                tipo.toUpperCase().contains("CARTAO"));
+    }
     
     @Override
     public String toString() {
