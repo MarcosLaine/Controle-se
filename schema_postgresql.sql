@@ -219,18 +219,6 @@ CREATE TABLE IF NOT EXISTS gasto_observacoes (
 
 CREATE INDEX IF NOT EXISTS idx_gasto_observacoes_gasto ON gasto_observacoes(id_gasto);
 
--- Tabela: receita_observacoes
-CREATE TABLE IF NOT EXISTS receita_observacoes (
-    id_observacao SERIAL PRIMARY KEY,
-    id_receita INTEGER NOT NULL,
-    observacao TEXT NOT NULL,
-    ordem INTEGER DEFAULT 0,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (id_receita) REFERENCES receitas(id_receita) ON DELETE CASCADE
-);
-
-CREATE INDEX IF NOT EXISTS idx_receita_observacoes_receita ON receita_observacoes(id_receita);
-
 -- =====================================================
 -- TRIGGERS PARA UPDATED_AT
 -- =====================================================
