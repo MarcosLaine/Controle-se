@@ -1,8 +1,8 @@
+import { LogOut, Menu, Moon, Sun, User, Wallet } from 'lucide-react';
 import React, { useState } from 'react';
-import { Wallet, LogOut, Moon, Sun, User, Menu } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
-import { useNavigate } from 'react-router-dom';
 import ChangePasswordModal from '../common/ChangePasswordModal';
 
 export default function Header({ onMenuClick }) {

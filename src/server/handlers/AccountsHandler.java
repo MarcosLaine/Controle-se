@@ -41,6 +41,12 @@ public class AccountsHandler implements HttpHandler {
                 accountData.put("tipo", conta.getTipo());
                 accountData.put("saldoAtual", conta.getSaldoAtual());
                 accountData.put("idUsuario", conta.getIdUsuario());
+                if (conta.getDiaFechamento() != null) {
+                    accountData.put("diaFechamento", conta.getDiaFechamento());
+                }
+                if (conta.getDiaPagamento() != null) {
+                    accountData.put("diaPagamento", conta.getDiaPagamento());
+                }
                 accountList.add(accountData);
             }
             
@@ -73,7 +79,19 @@ public class AccountsHandler implements HttpHandler {
             double balance = Double.parseDouble(balanceStr);
             int userId = 1;
             
-            int accountId = bancoDados.cadastrarConta(name, type, balance, userId);
+            // Lê campos opcionais de cartão de crédito
+            Integer diaFechamento = null;
+            Integer diaPagamento = null;
+            String diaFechamentoStr = data.get("diaFechamento");
+            if (diaFechamentoStr != null && !diaFechamentoStr.isEmpty()) {
+                diaFechamento = Integer.parseInt(diaFechamentoStr);
+            }
+            String diaPagamentoStr = data.get("diaPagamento");
+            if (diaPagamentoStr != null && !diaPagamentoStr.isEmpty()) {
+                diaPagamento = Integer.parseInt(diaPagamentoStr);
+            }
+            
+            int accountId = bancoDados.cadastrarConta(name, type, balance, userId, diaFechamento, diaPagamento);
             
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);
@@ -129,7 +147,19 @@ public class AccountsHandler implements HttpHandler {
             if (balanceStr == null) throw new IllegalArgumentException("Saldo é obrigatório");
             double balance = Double.parseDouble(balanceStr);
             
-            bancoDados.atualizarConta(accountId, name, type, balance);
+            // Lê campos opcionais de cartão de crédito
+            Integer diaFechamento = null;
+            Integer diaPagamento = null;
+            String diaFechamentoStr = data.get("diaFechamento");
+            if (diaFechamentoStr != null && !diaFechamentoStr.isEmpty()) {
+                diaFechamento = Integer.parseInt(diaFechamentoStr);
+            }
+            String diaPagamentoStr = data.get("diaPagamento");
+            if (diaPagamentoStr != null && !diaPagamentoStr.isEmpty()) {
+                diaPagamento = Integer.parseInt(diaPagamentoStr);
+            }
+            
+            bancoDados.atualizarConta(accountId, name, type, balance, diaFechamento, diaPagamento);
             
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);

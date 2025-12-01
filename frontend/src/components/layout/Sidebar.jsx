@@ -1,15 +1,14 @@
-import React from 'react';
-import { 
-  LayoutDashboard, 
-  Tag, 
-  Building2, 
-  ArrowLeftRight, 
-  TrendingUp, 
-  FileText, 
+import {
+  ArrowLeftRight,
+  Building2,
+  FileText,
+  LayoutDashboard,
   PieChart,
-  BarChart3,
+  Tag,
+  TrendingUp,
   X
 } from 'lucide-react';
+import React from 'react';
 
 const menuItems = [
   { id: 'overview', label: 'Visão Geral', icon: LayoutDashboard },

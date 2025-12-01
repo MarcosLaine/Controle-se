@@ -46,6 +46,8 @@ CREATE TABLE IF NOT EXISTS contas (
     saldo_atual DECIMAL(15,2) DEFAULT 0,
     id_usuario INTEGER NOT NULL,
     ativo BOOLEAN DEFAULT TRUE,
+    dia_fechamento INTEGER,
+    dia_pagamento INTEGER,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (id_usuario) REFERENCES usuarios(id_usuario) ON DELETE CASCADE
@@ -54,6 +56,8 @@ CREATE TABLE IF NOT EXISTS contas (
 CREATE INDEX IF NOT EXISTS idx_contas_usuario ON contas(id_usuario);
 CREATE INDEX IF NOT EXISTS idx_contas_tipo ON contas(tipo);
 CREATE INDEX IF NOT EXISTS idx_contas_ativo ON contas(ativo);
+-- Índice composto para otimizar queries de contas por usuário, tipo e ativo
+CREATE INDEX IF NOT EXISTS idx_contas_usuario_tipo_ativo ON contas(id_usuario, tipo, ativo) WHERE ativo = TRUE;
 
 -- Tabela: gastos
 CREATE TABLE IF NOT EXISTS gastos (
@@ -78,6 +82,14 @@ CREATE INDEX IF NOT EXISTS idx_gastos_data ON gastos(data);
 CREATE INDEX IF NOT EXISTS idx_gastos_conta ON gastos(id_conta);
 CREATE INDEX IF NOT EXISTS idx_gastos_ativo ON gastos(ativo);
 CREATE INDEX IF NOT EXISTS idx_gastos_recorrencia ON gastos(proxima_recorrencia) WHERE proxima_recorrencia IS NOT NULL;
+-- Índice composto para otimizar queries de gastos por usuário e ativo
+CREATE INDEX IF NOT EXISTS idx_gastos_usuario_ativo ON gastos(id_usuario, ativo) WHERE ativo = TRUE;
+-- Índice composto para queries de gastos por usuário, ativo e data (ORDER BY data DESC)
+CREATE INDEX IF NOT EXISTS idx_gastos_usuario_ativo_data ON gastos(id_usuario, ativo, data DESC) WHERE ativo = TRUE;
+-- Índice para queries de gastos por data específica
+CREATE INDEX IF NOT EXISTS idx_gastos_data_ativo ON gastos(data, ativo) WHERE ativo = TRUE;
+-- Índice para queries de recorrência de gastos
+CREATE INDEX IF NOT EXISTS idx_gastos_recorrencia_ativo ON gastos(proxima_recorrencia, ativo) WHERE proxima_recorrencia IS NOT NULL AND ativo = TRUE;
 
 -- Tabela: receitas
 CREATE TABLE IF NOT EXISTS receitas (
@@ -102,6 +114,14 @@ CREATE INDEX IF NOT EXISTS idx_receitas_data ON receitas(data);
 CREATE INDEX IF NOT EXISTS idx_receitas_conta ON receitas(id_conta);
 CREATE INDEX IF NOT EXISTS idx_receitas_ativo ON receitas(ativo);
 CREATE INDEX IF NOT EXISTS idx_receitas_recorrencia ON receitas(proxima_recorrencia) WHERE proxima_recorrencia IS NOT NULL;
+-- Índice composto para otimizar queries de receitas por usuário e ativo
+CREATE INDEX IF NOT EXISTS idx_receitas_usuario_ativo ON receitas(id_usuario, ativo) WHERE ativo = TRUE;
+-- Índice composto para queries de receitas por usuário, ativo e data (ORDER BY data DESC)
+CREATE INDEX IF NOT EXISTS idx_receitas_usuario_ativo_data ON receitas(id_usuario, ativo, data DESC) WHERE ativo = TRUE;
+-- Índice para queries de receitas por data específica
+CREATE INDEX IF NOT EXISTS idx_receitas_data_ativo ON receitas(data, ativo) WHERE ativo = TRUE;
+-- Índice para queries de recorrência de receitas
+CREATE INDEX IF NOT EXISTS idx_receitas_recorrencia_ativo ON receitas(proxima_recorrencia, ativo) WHERE proxima_recorrencia IS NOT NULL AND ativo = TRUE;
 
 -- Tabela: orcamentos
 CREATE TABLE IF NOT EXISTS orcamentos (
@@ -120,6 +140,8 @@ CREATE TABLE IF NOT EXISTS orcamentos (
 CREATE INDEX IF NOT EXISTS idx_orcamentos_usuario ON orcamentos(id_usuario);
 CREATE INDEX IF NOT EXISTS idx_orcamentos_categoria ON orcamentos(id_categoria);
 CREATE INDEX IF NOT EXISTS idx_orcamentos_ativo ON orcamentos(ativo);
+-- Índice composto para queries de orçamentos por categoria e ativo
+CREATE INDEX IF NOT EXISTS idx_orcamentos_categoria_ativo ON orcamentos(id_categoria, ativo) WHERE ativo = TRUE;
 
 -- Tabela: tags
 CREATE TABLE IF NOT EXISTS tags (
@@ -166,6 +188,8 @@ CREATE TABLE IF NOT EXISTS investimentos (
 CREATE INDEX IF NOT EXISTS idx_investimentos_usuario ON investimentos(id_usuario);
 CREATE INDEX IF NOT EXISTS idx_investimentos_conta ON investimentos(id_conta);
 CREATE INDEX IF NOT EXISTS idx_investimentos_ativo ON investimentos(ativo);
+-- Índice composto para queries de investimentos por usuário, ativo e data_aporte (ORDER BY data_aporte DESC)
+CREATE INDEX IF NOT EXISTS idx_investimentos_usuario_ativo_data ON investimentos(id_usuario, ativo, data_aporte DESC) WHERE ativo = TRUE;
 
 -- =====================================================
 -- TABELAS DE RELACIONAMENTO N:N
@@ -186,6 +210,10 @@ CREATE TABLE IF NOT EXISTS categoria_gasto (
 CREATE INDEX IF NOT EXISTS idx_categoria_gasto_categoria ON categoria_gasto(id_categoria);
 CREATE INDEX IF NOT EXISTS idx_categoria_gasto_gasto ON categoria_gasto(id_gasto);
 CREATE INDEX IF NOT EXISTS idx_categoria_gasto_ativo ON categoria_gasto(ativo);
+-- Índice composto para otimizar query agregada de gastos por categoria
+CREATE INDEX IF NOT EXISTS idx_categoria_gasto_composto ON categoria_gasto(id_categoria, id_gasto, ativo) WHERE ativo = TRUE;
+-- Índice composto para JOINs com categoria_gasto (buscar gastos por categoria)
+CREATE INDEX IF NOT EXISTS idx_categoria_gasto_gasto_ativo ON categoria_gasto(id_gasto, ativo) WHERE ativo = TRUE;
 
 -- Tabela: transacao_tag (Relacionamento N:N)
 CREATE TABLE IF NOT EXISTS transacao_tag (
@@ -202,6 +230,10 @@ CREATE TABLE IF NOT EXISTS transacao_tag (
 CREATE INDEX IF NOT EXISTS idx_transacao_tag_transacao ON transacao_tag(id_transacao, tipo_transacao);
 CREATE INDEX IF NOT EXISTS idx_transacao_tag_tag ON transacao_tag(id_tag);
 CREATE INDEX IF NOT EXISTS idx_transacao_tag_ativo ON transacao_tag(ativo);
+-- Índice composto para otimizar JOINs com transacao_tag (buscar gastos/receitas por tag)
+CREATE INDEX IF NOT EXISTS idx_transacao_tag_tag_tipo_ativo ON transacao_tag(id_tag, tipo_transacao, ativo) WHERE ativo = TRUE;
+-- Índice composto para otimizar JOINs reversos (buscar tags de uma transação)
+CREATE INDEX IF NOT EXISTS idx_transacao_tag_transacao_tipo_ativo ON transacao_tag(id_transacao, tipo_transacao, ativo) WHERE ativo = TRUE;
 
 -- =====================================================
 -- TABELA PARA ATRIBUTO MULTIVALORADO (OBSERVAÇÕES)

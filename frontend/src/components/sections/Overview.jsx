@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowUp, ArrowDown, Scale, Landmark, TrendingUp, Info } from 'lucide-react';
+import { ArrowUp, ArrowDown, Scale, Landmark, TrendingUp, Info, CreditCard } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useData } from '../../contexts/DataContext';
 import api from '../../services/api';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import SummaryCard from '../common/SummaryCard';
 import Modal from '../common/Modal';
+import SkeletonSection from '../common/SkeletonSection';
 import { Doughnut, Bar } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -31,7 +32,7 @@ ChartJS.register(
 export default function Overview() {
   const { user } = useAuth();
   const { fetchData, getCachedData } = useData();
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState('month');
   const [overviewData, setOverviewData] = useState(null);
   const [recentTransactions, setRecentTransactions] = useState([]);
@@ -52,6 +53,7 @@ export default function Overview() {
       if (cachedOverview && cachedTrans) {
         setOverviewData(cachedOverview);
         setRecentTransactions(cachedTrans);
+        setLoading(false);
         return;
       }
 
@@ -109,12 +111,9 @@ export default function Overview() {
       }
     : null;
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-primary-600 border-t-transparent"></div>
-      </div>
-    );
+  // Mostra skeleton enquanto está carregando ou quando não há dados ainda
+  if (loading || !overviewData) {
+    return <SkeletonSection type="overview" />;
   }
 
   return (
@@ -189,6 +188,50 @@ export default function Overview() {
           type="default"
         />
       </div>
+
+      {/* Cartão de Crédito Agregado */}
+      {overviewData?.totalCreditoDisponivel > 0 && (
+        <div className="card border-2 border-orange-500 bg-orange-50 dark:bg-orange-900/10">
+          <div className="flex items-center justify-between">
+            <div className="flex-1">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">
+                Cartões de Crédito
+              </h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+                Crédito Disponível Total
+              </p>
+              <p className="text-3xl font-bold text-orange-600 dark:text-orange-400 mb-3">
+                {formatCurrency(overviewData.totalCreditoDisponivel)}
+              </p>
+              {overviewData.cartoesInfo && (
+                <div className="space-y-1 text-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="text-gray-600 dark:text-gray-400">Próximo Fechamento:</span>
+                    <span className="font-medium text-gray-900 dark:text-white">
+                      {formatDate(overviewData.cartoesInfo.proximoFechamento)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-gray-600 dark:text-gray-400">Próximo Pagamento:</span>
+                    <span className={`font-medium ${
+                      overviewData.cartoesInfo.diasAtePagamento <= 7 
+                        ? 'text-red-600 dark:text-red-400' 
+                        : overviewData.cartoesInfo.diasAtePagamento <= 15
+                        ? 'text-yellow-600 dark:text-yellow-400'
+                        : 'text-gray-900 dark:text-white'
+                    }`}>
+                      {formatDate(overviewData.cartoesInfo.proximoPagamento)}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="w-16 h-16 bg-orange-100 dark:bg-orange-900/30 rounded-full flex items-center justify-center ml-4">
+              <CreditCard className="w-8 h-8 text-orange-600 dark:text-orange-400" />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Charts and Recent Transactions */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

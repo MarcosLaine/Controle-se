@@ -1,3 +1,4 @@
+import axios from 'axios';
 import {
   ArcElement,
   CategoryScale,
@@ -24,7 +25,7 @@ import { ptBR } from 'date-fns/locale';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { ChevronDown, ChevronUp, Download, File, FileSpreadsheet, FileText, Info, PieChart, Plus, TrendingUp, Wallet } from 'lucide-react';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Doughnut, Line } from 'react-chartjs-2';
 import toast from 'react-hot-toast';
 import * as XLSX from 'xlsx';
@@ -32,6 +33,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import api from '../../services/api';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import Modal from '../common/Modal';
+import SkeletonSection from '../common/SkeletonSection';
 import SummaryCard from '../common/SummaryCard';
 import InvestmentModal from './InvestmentModal';
 import AssetDetailsModal from './Investments/AssetDetailsModal';
@@ -134,6 +136,21 @@ const computeHoldingStats = (transactions = []) => {
   };
 };
 
+// Função auxiliar para gerar intervalos de 2 horas
+const eachTwoHoursOfInterval = (interval) => {
+  const { start, end } = interval;
+  const dates = [];
+  let current = new Date(start);
+  const endTime = new Date(end);
+  
+  while (current <= endTime) {
+    dates.push(new Date(current));
+    current = new Date(current.getTime() + 2 * 60 * 60 * 1000); // Adiciona 2 horas
+  }
+  
+  return dates;
+};
+
 const buildEvolutionSeries = (transactions, startDate, endDate) => {
   if (!transactions.length) return null;
 
@@ -141,7 +158,7 @@ const buildEvolutionSeries = (transactions, startDate, endDate) => {
   const msDiff = Math.abs(endDate.getTime() - startDate.getTime());
   const isTwoHourSteps = msDiff <= 24 * 60 * 60 * 1000;
   const interval = isTwoHourSteps
-    ? eachHourOfInterval({ start: startDate, end: endDate }, { step: 2 })
+    ? eachTwoHoursOfInterval({ start: startDate, end: endDate })
     : eachDayOfInterval({ start: startDate, end: endDate });
   const assetState = new Map();
   const labels = [];
@@ -243,30 +260,80 @@ const buildChartDataFromSeries = (series) => {
     return null;
   }
 
+  const categoryNames = {
+    'ACAO': 'Ações (B3)',
+    'STOCK': 'Stocks (Ações Internacionais)',
+    'CRYPTO': 'Criptomoedas',
+    'FII': 'Fundos Imobiliários',
+    'RENDA_FIXA': 'Renda Fixa',
+    'OUTROS': 'Outros'
+  };
+
+  // Cores para cada categoria
+  const categoryColors = {
+    'ACAO': { border: '#3b82f6', background: 'rgba(59, 130, 246, 0.1)' },
+    'STOCK': { border: '#8b5cf6', background: 'rgba(139, 92, 246, 0.1)' },
+    'CRYPTO': { border: '#f59e0b', background: 'rgba(245, 158, 11, 0.1)' },
+    'FII': { border: '#10b981', background: 'rgba(16, 185, 129, 0.1)' },
+    'RENDA_FIXA': { border: '#06b6d4', background: 'rgba(6, 182, 212, 0.1)' },
+    'OUTROS': { border: '#6b7280', background: 'rgba(107, 114, 128, 0.1)' }
+  };
+
+  const datasets = [
+    {
+      label: 'Valor Patrimonial',
+      data: series.current,
+      borderColor: '#3b82f6',
+      backgroundColor: 'rgba(59, 130, 246, 0.1)',
+      fill: true,
+      tension: 0.4,
+      pointRadius: 0,
+      pointHoverRadius: 4,
+    },
+    {
+      label: 'Valor Investido',
+      data: series.invested || [],
+      borderColor: '#9ca3af',
+      borderDash: [5, 5],
+      fill: false,
+      tension: 0.4,
+      pointRadius: 0,
+      pointHoverRadius: 4,
+    },
+  ];
+
+  // Adiciona linhas por categoria se disponível
+  if (series.categories && typeof series.categories === 'object') {
+    Object.keys(series.categories).forEach((category) => {
+      const catData = series.categories[category];
+      const colors = categoryColors[category] || categoryColors['OUTROS'];
+      const categoryLabel = categoryNames[category] || category;
+      
+      // Verifica se há dados e se o tamanho corresponde ao número de labels
+      if (catData && catData.current && catData.current.length > 0) {
+        // Garante que o array de dados tem o mesmo tamanho que os labels
+        const dataArray = catData.current;
+        if (dataArray.length === series.labels.length) {
+          datasets.push({
+            label: categoryLabel,
+            data: dataArray,
+            borderColor: colors.border,
+            backgroundColor: colors.background,
+            fill: false,
+            tension: 0.4,
+            pointRadius: 0,
+            pointHoverRadius: 4,
+            // Não oculta a linha mesmo se houver valores zero
+            spanGaps: false,
+          });
+        }
+      }
+    });
+  }
+
   return {
     labels: series.labels,
-    datasets: [
-      {
-        label: 'Valor Patrimonial',
-        data: series.current,
-        borderColor: '#3b82f6',
-        backgroundColor: 'rgba(59, 130, 246, 0.1)',
-        fill: true,
-        tension: 0.4,
-        pointRadius: 0,
-        pointHoverRadius: 4,
-      },
-      {
-        label: 'Valor Investido',
-        data: series.invested || [],
-        borderColor: '#9ca3af',
-        borderDash: [5, 5],
-        fill: false,
-        tension: 0.4,
-        pointRadius: 0,
-        pointHoverRadius: 4,
-      },
-    ],
+    datasets,
   };
 };
 
@@ -286,12 +353,24 @@ export default function Investments() {
   const [evolutionLoading, setEvolutionLoading] = useState(false);
   const [evolutionError, setEvolutionError] = useState(null);
   const [showReturnInfo, setShowReturnInfo] = useState(false);
+  
+  // Ref para armazenar o AbortController da requisição atual
+  const abortControllerRef = useRef(null);
 
   const fetchEvolutionData = useCallback(async (periodOverride = chartPeriod) => {
     if (!user || !investments.length) {
       setEvolutionSeries(null);
       return;
     }
+
+    // Cancela a requisição anterior se ainda estiver em andamento
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    // Cria um novo AbortController para esta requisição
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
 
     setEvolutionLoading(true);
     setEvolutionError(null);
@@ -302,7 +381,15 @@ export default function Investments() {
         period: periodOverride,
       });
 
-      const response = await api.get(`/investments/evolution?${params.toString()}`);
+      const response = await api.get(`/investments/evolution?${params.toString()}`, {
+        signal: abortController.signal
+      });
+      
+      // Verifica se a requisição foi cancelada antes de processar a resposta
+      if (abortController.signal.aborted) {
+        return;
+      }
+      
       if (response.success) {
         setEvolutionSeries(response.data || null);
       } else {
@@ -310,10 +397,30 @@ export default function Investments() {
         setEvolutionError(response.message || 'Não foi possível atualizar o gráfico.');
       }
     } catch (error) {
+      // Ignora erros de cancelamento - não atualiza o estado se foi cancelado
+      if (axios.isCancel && axios.isCancel(error)) {
+        return;
+      }
+      if (error.name === 'CanceledError' || error.name === 'AbortError') {
+        return;
+      }
+      
+      // Verifica se a requisição foi cancelada antes de processar o erro
+      if (abortController.signal.aborted) {
+        return;
+      }
+      
       setEvolutionSeries(null);
       setEvolutionError(error.message || 'Não foi possível atualizar o gráfico.');
     } finally {
-      setEvolutionLoading(false);
+      // Só atualiza o loading se a requisição não foi cancelada
+      if (!abortController.signal.aborted) {
+        setEvolutionLoading(false);
+      }
+      // Limpa a referência se esta ainda é a requisição atual
+      if (abortControllerRef.current === abortController) {
+        abortControllerRef.current = null;
+      }
     }
   }, [chartPeriod, investments.length, user]);
 
@@ -331,6 +438,14 @@ export default function Investments() {
       return;
     }
     fetchEvolutionData(chartPeriod);
+    
+    // Cleanup: cancela a requisição quando o componente desmonta ou quando as dependências mudam
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+    };
   }, [user, investments.length, chartPeriod, fetchEvolutionData]);
 
   const loadInvestments = async () => {
@@ -736,7 +851,12 @@ const {
           autoTable(doc, {
             startY: yPos,
             head: [['Categoria', 'Ativo', 'Qtd.', 'Preço Médio', 'Valor Atual', 'Valor Investido', 'Retorno %']],
-            body: positions.sort((a, b) => parseFloat(b[4].replace(/[^\d,-]/g, '').replace(',', '.')) - parseFloat(a[4].replace(/[^\d,-]/g, '').replace(',', '.'))).slice(0, 18),
+            body: positions.sort((a, b) => {
+              // Remove caracteres não numéricos exceto vírgula e ponto, depois normaliza
+              const valB = b[4].replace(/[^\d,-]/g, '');
+              const valA = a[4].replace(/[^\d,-]/g, '');
+              return parseFloatBrazilian(valB) - parseFloatBrazilian(valA);
+            }).slice(0, 18),
             styles: { fontSize: 8 },
             headStyles: { fillColor: palette.purple },
           });
@@ -908,11 +1028,7 @@ const {
   };
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-primary-600 border-t-transparent"></div>
-      </div>
-    );
+    return <SkeletonSection type="investments" />;
   }
 
   return (
@@ -1033,7 +1149,7 @@ const {
           <div className="h-64 w-full">
             {evolutionLoading ? (
               <div className="h-full flex items-center justify-center text-gray-500 dark:text-gray-400 text-sm">
-                Atualizando cotações históricas...
+                Obtendo informações. Isso pode demorar um pouco...
               </div>
             ) : evolutionChartData ? (
               <>

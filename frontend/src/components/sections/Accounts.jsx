@@ -3,8 +3,9 @@ import React, { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../contexts/AuthContext';
 import api from '../../services/api';
-import { formatCurrency } from '../../utils/formatters';
+import { formatCurrency, parseFloatBrazilian, formatDate } from '../../utils/formatters';
 import Modal from '../common/Modal';
+import SkeletonSection from '../common/SkeletonSection';
 
 export default function Accounts() {
   const { user } = useAuth();
@@ -16,7 +17,31 @@ export default function Accounts() {
     nome: '',
     tipo: 'Corrente',
     saldoInicial: '',
+    diaFechamento: '',
+    diaPagamento: '',
   });
+
+  const formatAccountType = (tipo) => {
+    if (!tipo) return '';
+    const tipoLower = tipo.toLowerCase();
+    if (tipoLower.includes('cartão') || tipoLower.includes('cartao') || tipoLower.includes('cartao_credito')) {
+      return 'Cartão de Crédito';
+    }
+    if (tipoLower.includes('investimento')) {
+      return 'Investimento';
+    }
+    if (tipoLower.includes('corrente')) {
+      return 'Conta Corrente';
+    }
+    if (tipoLower.includes('poupança') || tipoLower.includes('poupanca')) {
+      return 'Poupança';
+    }
+    if (tipoLower.includes('dinheiro')) {
+      return 'Dinheiro';
+    }
+    // Retorna o tipo original com primeira letra maiúscula
+    return tipo.charAt(0).toUpperCase() + tipo.slice(1).toLowerCase();
+  };
 
   useEffect(() => {
     loadAccounts();
@@ -45,12 +70,28 @@ export default function Accounts() {
     }
 
     try {
+      // Normaliza o tipo: se for "Investimento (Corretora)" ou qualquer variação, salva como "Investimento"
+      let tipo = formData.tipo;
+      if (tipo && tipo.toLowerCase().includes('investimento')) {
+        tipo = 'Investimento';
+      }
+      
       const data = {
         nome: formData.nome,
-        tipo: formData.tipo,
-        saldoInicial: parseFloat(formData.saldoInicial) || 0,
+        tipo: tipo,
+        saldoInicial: parseFloatBrazilian(formData.saldoInicial) || 0,
         userId: user.id,
       };
+      
+      // Adiciona campos de cartão de crédito se for cartão
+      if (tipo && (tipo.toLowerCase().includes('cartão') || tipo.toLowerCase().includes('cartao'))) {
+        if (formData.diaFechamento) {
+          data.diaFechamento = parseInt(formData.diaFechamento);
+        }
+        if (formData.diaPagamento) {
+          data.diaPagamento = parseInt(formData.diaPagamento);
+        }
+      }
 
       if (editingAccount) {
         const response = await api.put(`/accounts/${editingAccount.idConta}`, data);
@@ -74,10 +115,17 @@ export default function Accounts() {
 
   const handleEdit = (account) => {
     setEditingAccount(account);
+    // Normaliza o tipo: se for "INVESTIMENTO (CORRETORA)" ou qualquer variação, mostra como "Investimento"
+    let accountType = account.tipo || '';
+    if (accountType && accountType.toLowerCase().includes('investimento')) {
+      accountType = 'Investimento';
+    }
     setFormData({
       nome: account.nome,
-      tipo: account.tipo,
+      tipo: accountType,
       saldoInicial: account.saldoAtual?.toString() || '',
+      diaFechamento: account.diaFechamento?.toString() || '',
+      diaPagamento: account.diaPagamento?.toString() || '',
     });
     setShowModal(true);
   };
@@ -99,15 +147,11 @@ export default function Accounts() {
   const handleCloseModal = () => {
     setShowModal(false);
     setEditingAccount(null);
-    setFormData({ nome: '', tipo: 'Corrente', saldoInicial: '' });
+    setFormData({ nome: '', tipo: 'Corrente', saldoInicial: '', diaFechamento: '', diaPagamento: '' });
   };
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-primary-600 border-t-transparent"></div>
-      </div>
-    );
+    return <SkeletonSection type="accounts" />;
   }
 
   return (
@@ -136,35 +180,80 @@ export default function Accounts() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {accounts.map((account) => (
-            <div key={account.idConta} className="card">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-                {account.nome}
-              </h3>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">
-                {account.tipo}
-              </p>
-              <p className="text-2xl font-bold text-primary-600 dark:text-primary-400 mb-4">
-                {formatCurrency(account.saldoAtual || 0)}
-              </p>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => handleEdit(account)}
-                  className="btn-secondary flex-1"
-                >
-                  <Edit className="w-4 h-4" />
-                  Editar
-                </button>
-                <button
-                  onClick={() => handleDelete(account.idConta)}
-                  className="btn-danger flex-1"
-                >
-                  <Trash2 className="w-4 h-4" />
-                  Excluir
-                </button>
+          {accounts.map((account) => {
+            const isCartao = account.tipo && (account.tipo.toLowerCase().includes('cartão') || account.tipo.toLowerCase().includes('cartao'));
+            
+            return (
+              <div key={account.idConta} className="card">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+                  {account.nome}
+                </h3>
+                {isCartao && (
+                  <p className="text-xs text-gray-500 dark:text-gray-500 mb-1">
+                    Crédito Disponível
+                  </p>
+                )}
+                <p className={`text-2xl font-bold mb-4 ${isCartao ? 'text-orange-600 dark:text-orange-400' : 'text-primary-600 dark:text-primary-400'}`}>
+                  {formatCurrency(account.saldoAtual || 0)}
+                </p>
+                {isCartao && (
+                  <div className="text-sm text-gray-600 dark:text-gray-400 mb-2 space-y-2">
+                    {account.diaFechamento && account.diaPagamento && (
+                      <div className="flex items-center gap-2 text-xs">
+                        <span className="text-gray-500 dark:text-gray-500">Fechamento: dia {account.diaFechamento}</span>
+                        <span className="text-gray-400">•</span>
+                        <span className="text-gray-500 dark:text-gray-500">Pagamento: dia {account.diaPagamento}</span>
+                      </div>
+                    )}
+                    {account.faturaInfo && (
+                      <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700 space-y-2">
+                        <div className="text-xs">
+                          <span className="text-gray-500 dark:text-gray-500">Próximo Fechamento:</span>{' '}
+                          <span className="text-gray-700 dark:text-gray-300 font-medium">
+                            {formatDate(account.faturaInfo.proximoFechamento)}
+                          </span>
+                        </div>
+                        <div className={`text-xs ${
+                          account.faturaInfo.diasAtePagamento <= 7 
+                            ? 'text-red-600 dark:text-red-400' 
+                            : account.faturaInfo.diasAtePagamento <= 15
+                            ? 'text-yellow-600 dark:text-yellow-400'
+                            : 'text-gray-700 dark:text-gray-300'
+                        }`}>
+                          <span className="text-gray-500 dark:text-gray-500">Próximo Pagamento:</span>{' '}
+                          <span className="font-medium">
+                            {formatDate(account.faturaInfo.proximoPagamento)}
+                          </span>
+                        </div>
+                        {account.faturaInfo.faturaAberta && (
+                          <div className="flex items-center gap-1 text-green-600 dark:text-green-400 font-medium text-xs">
+                            <span>✓</span>
+                            <span>Fatura Aberta</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleEdit(account)}
+                    className="btn-secondary flex-1"
+                  >
+                    <Edit className="w-4 h-4" />
+                    Editar
+                  </button>
+                  <button
+                    onClick={() => handleDelete(account.idConta)}
+                    className="btn-danger flex-1"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    Excluir
+                  </button>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -194,7 +283,7 @@ export default function Accounts() {
             >
               <option value="Corrente">Corrente</option>
               <option value="Poupança">Poupança</option>
-              <option value="Investimento (Corretora)">Investimento (Corretora)</option>
+              <option value="Investimento">Investimento (Corretora)</option>
               <option value="Dinheiro">Dinheiro</option>
               <option value="Cartão de Crédito">Cartão de Crédito</option>
             </select>
@@ -209,7 +298,40 @@ export default function Accounts() {
               className="input"
               placeholder="0.00"
             />
+            {(formData.tipo && (formData.tipo.toLowerCase().includes('cartão') || formData.tipo.toLowerCase().includes('cartao'))) && (
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Para cartões de crédito, este valor representa o limite de crédito disponível
+              </p>
+            )}
           </div>
+          {(formData.tipo && (formData.tipo.toLowerCase().includes('cartão') || formData.tipo.toLowerCase().includes('cartao'))) && (
+            <>
+              <div>
+                <label className="label">Dia de Fechamento (1-31)</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="31"
+                  value={formData.diaFechamento}
+                  onChange={(e) => setFormData({ ...formData, diaFechamento: e.target.value })}
+                  className="input"
+                  placeholder="Ex: 15"
+                />
+              </div>
+              <div>
+                <label className="label">Dia de Pagamento (1-31)</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="31"
+                  value={formData.diaPagamento}
+                  onChange={(e) => setFormData({ ...formData, diaPagamento: e.target.value })}
+                  className="input"
+                  placeholder="Ex: 20"
+                />
+              </div>
+            </>
+          )}
           <div className="flex gap-2 justify-end">
             <button
               type="button"

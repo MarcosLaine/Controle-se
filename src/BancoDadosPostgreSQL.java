@@ -1,25 +1,25 @@
 import java.sql.*;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
+import com.zaxxer.hikari.HikariConfig;
+import com.zaxxer.hikari.HikariDataSource;
 
 /**
  * Implementação do Banco de Dados usando PostgreSQL (Aiven)
  * Substitui a implementação com arquivos .db por um SGBD relacional
+ * Usa HikariCP para connection pooling eficiente
  */
 public class BancoDadosPostgreSQL {
     
-    // ThreadLocal garante que cada thread tenha sua própria conexão (thread-safe)
-    private ThreadLocal<Connection> connectionThreadLocal = new ThreadLocal<>();
+    // HikariCP DataSource para gerenciamento de pool de conexões
+    private static HikariDataSource dataSource;
     private String jdbcUrl;
     private String username;
     private String password;
-    
-    // Limite máximo de conexões simultâneas (proteção contra sobrecarga)
-    private static final int MAX_CONNECTIONS = 50;
-    private static int activeConnections = 0;
-    private static final Object connectionLock = new Object();
     
     /**
      * Construtor padrão - lê configuração de variáveis de ambiente ou arquivo
@@ -86,7 +86,8 @@ public class BancoDadosPostgreSQL {
             } else {
                 // Aiven e produção requerem SSL - usar sslmode=require
                 // Usa NonValidatingFactory para evitar problemas com certificado (produção deve usar certificado real)
-                this.jdbcUrl = String.format("jdbc:postgresql://%s:%s/%s?sslmode=require&sslfactory=org.postgresql.ssl.NonValidatingFactory", 
+                // Adiciona timeouts na URL para conexões SSL que podem demorar mais
+                this.jdbcUrl = String.format("jdbc:postgresql://%s:%s/%s?sslmode=require&sslfactory=org.postgresql.ssl.NonValidatingFactory&connectTimeout=30&socketTimeout=60&tcpKeepAlive=true", 
                     host, port != null ? port : "5432", database != null ? database : "controle_se");
             }
         } else {
@@ -96,10 +97,13 @@ public class BancoDadosPostgreSQL {
             this.jdbcUrl = "jdbc:postgresql://missing-configuration:5432/controle_se";
         }
         
-        // Não conecta aqui - conexão será criada por thread quando necessário
-        // Apenas inicializa o schema uma vez (usando conexão temporária)
+        // Inicializa o pool de conexões HikariCP
+        initializeConnectionPool();
+        
+        // Inicializa o schema uma vez (usando conexão do pool)
         initializeSchemaOnce();
         ensureObservationTables();
+        ensurePerformanceIndexes();
     }
     
     /**
@@ -109,12 +113,18 @@ public class BancoDadosPostgreSQL {
         if ("localhost".equals(host) || "127.0.0.1".equals(host) || "db".equals(host) || "controle-se-db".equals(host)) {
             this.jdbcUrl = String.format("jdbc:postgresql://%s:%s/%s?sslmode=disable", host, port, database);
         } else {
-            this.jdbcUrl = String.format("jdbc:postgresql://%s:%s/%s?sslmode=require", host, port, database);
+            // Adiciona timeouts na URL para conexões SSL que podem demorar mais
+            this.jdbcUrl = String.format("jdbc:postgresql://%s:%s/%s?sslmode=require&connectTimeout=30&socketTimeout=60&tcpKeepAlive=true", host, port, database);
         }
         this.username = username;
         this.password = password;
-        // Não conecta aqui - conexão será criada por thread quando necessário
+        
+        // Inicializa o pool de conexões HikariCP
+        initializeConnectionPool();
+        
+        // Inicializa o schema uma vez (usando conexão do pool)
         initializeSchemaOnce();
+        ensurePerformanceIndexes();
     }
     
     /**
@@ -138,72 +148,73 @@ public class BancoDadosPostgreSQL {
     }
     
     /**
-     * Estabelece conexão com o banco de dados (cria uma nova conexão por thread)
-     * Thread-safe: cada thread tem sua própria conexão
+     * Inicializa o pool de conexões HikariCP
+     * Configura pool com tamanho adequado e health checks
      */
-    private Connection connect() {
-        // Verifica limite de conexões
-        synchronized (connectionLock) {
-            if (activeConnections >= MAX_CONNECTIONS) {
-                throw new RuntimeException("Limite máximo de conexões simultâneas atingido (" + MAX_CONNECTIONS + ")");
-            }
-            activeConnections++;
+    private void initializeConnectionPool() {
+        // Se o pool já foi inicializado, não inicializa novamente
+        if (dataSource != null && !dataSource.isClosed()) {
+            return;
         }
         
         try {
-            // Carrega o driver PostgreSQL
-            Class.forName("org.postgresql.Driver");
+            HikariConfig config = new HikariConfig();
             
-            Properties props = new Properties();
-            props.setProperty("user", username != null ? username : "postgres");
-            props.setProperty("password", password != null ? password : "");
+            // Configuração básica de conexão
+            config.setJdbcUrl(jdbcUrl);
+            config.setUsername(username != null ? username : "postgres");
+            config.setPassword(password != null ? password : "");
             
-            // Timeouts para evitar conexões travadas
-            props.setProperty("connectTimeout", "10"); // 10 segundos para conectar
-            props.setProperty("socketTimeout", "30"); // 30 segundos para operações
+            // Configurações do pool
+            // Reduzido para evitar esgotamento no Aiven (limite de conexões)
+            config.setMaximumPoolSize(10); // Máximo de conexões no pool (reduzido de 20)
+            config.setMinimumIdle(2); // Mínimo de conexões ociosas mantidas (reduzido de 5)
+            config.setConnectionTimeout(10000); // 10 segundos para obter conexão do pool (reduzido de 30s)
+            config.setIdleTimeout(300000); // 5 minutos - conexões ociosas são fechadas (reduzido de 10min)
+            config.setMaxLifetime(900000); // 15 minutos - tempo máximo de vida de uma conexão (reduzido de 30min)
+            config.setLeakDetectionThreshold(30000); // Detecta connection leaks após 30s (reduzido de 60s)
             
-            // Configura certificado CA do Aiven se existir
-            java.io.File caCert = new java.io.File("ca-certificate.crt");
-            if (caCert.exists()) {
-                String certPath = caCert.getAbsolutePath();
-                props.setProperty("ssl", "true");
-                props.setProperty("sslmode", "require");
-                props.setProperty("sslfactory", "org.postgresql.ssl.DefaultJavaSSLFactory");
-                System.setProperty("javax.net.ssl.trustStore", certPath);
-            }
+            // Health check - testa conexão antes de usar
+            config.setConnectionTestQuery("SELECT 1");
             
-            Connection conn = DriverManager.getConnection(jdbcUrl, props);
-            conn.setAutoCommit(false); // Usar transações explícitas
+            // Propriedades adicionais para PostgreSQL
+            config.addDataSourceProperty("cachePrepStmts", "true");
+            config.addDataSourceProperty("prepStmtCacheSize", "250");
+            config.addDataSourceProperty("prepStmtCacheSqlLimit", "2048");
+            config.addDataSourceProperty("useServerPrepStmts", "true");
             
-            // Armazena na ThreadLocal
-            connectionThreadLocal.set(conn);
+            // Timeouts para conexões SSL
+            config.addDataSourceProperty("connectTimeout", "30");
+            config.addDataSourceProperty("socketTimeout", "60");
+            config.addDataSourceProperty("tcpKeepAlive", "true");
             
-            return conn;
-        } catch (ClassNotFoundException e) {
-            synchronized (connectionLock) {
-                activeConnections--;
-            }
-            System.err.println("Driver PostgreSQL não encontrado! Adicione postgresql.jar ao classpath.");
-            throw new RuntimeException("Driver PostgreSQL não encontrado", e);
-        } catch (SQLException e) {
-            synchronized (connectionLock) {
-                activeConnections--;
-            }
-            System.err.println("Erro ao conectar ao PostgreSQL: " + e.getMessage());
-            System.err.println("URL: " + jdbcUrl.replace(password != null ? password : "", "***"));
-            throw new RuntimeException("Erro ao conectar ao banco de dados", e);
+            // Nome do pool para identificação em logs
+            config.setPoolName("ControleSePool");
+            
+            // Cria o DataSource
+            dataSource = new HikariDataSource(config);
+            
+            System.out.println("✅ Pool de conexões HikariCP inicializado com sucesso");
+            System.out.println("   - Máximo de conexões: " + config.getMaximumPoolSize());
+            System.out.println("   - Mínimo de conexões ociosas: " + config.getMinimumIdle());
+            
+        } catch (Exception e) {
+            System.err.println("❌ Erro ao inicializar pool de conexões HikariCP: " + e.getMessage());
+            e.printStackTrace();
+            throw new RuntimeException("Falha ao inicializar connection pool", e);
         }
     }
     
+    
     /**
      * Inicializa o schema do banco uma única vez (cria tabelas se não existirem)
-     * Usa uma conexão temporária apenas para inicialização
+     * Usa uma conexão do pool apenas para inicialização
      */
     private void initializeSchemaOnce() {
         Connection tempConn = null;
         try {
-            // Cria conexão temporária apenas para inicialização
-            tempConn = connect();
+            // Obtém conexão do pool para inicialização
+            tempConn = getConnection();
             
             // Lê o arquivo schema_postgresql.sql
             java.io.InputStream is = getClass().getClassLoader().getResourceAsStream("schema_postgresql.sql");
@@ -263,19 +274,157 @@ public class BancoDadosPostgreSQL {
             System.err.println("Erro ao inicializar schema: " + e.getMessage());
             // Não falha - assume que schema já existe
         } finally {
-            // Fecha conexão temporária
+            // Fecha conexão temporária (retorna ao pool HikariCP)
             if (tempConn != null) {
                 try {
-                    tempConn.close();
-                } catch (SQLException e) {}
-                connectionThreadLocal.remove();
-                synchronized (connectionLock) {
-                    activeConnections--;
+                    tempConn.close(); // Retorna ao pool automaticamente
+                } catch (SQLException e) {
+                    System.err.println("Aviso: Erro ao fechar conexão: " + e.getMessage());
                 }
             }
         }
     }
 
+    /**
+     * Garante que índices de performance existam
+     * Cria os índices compostos otimizados para queries frequentes
+     */
+    private void ensurePerformanceIndexes() {
+        Connection tempConn = null;
+        try {
+            tempConn = getConnection();
+            try (Statement stmt = tempConn.createStatement()) {
+                System.out.println("[ÍNDICES] Criando/verificando índices de performance...");
+                
+                // ========== ÍNDICES PARA CATEGORIA_GASTO ==========
+                stmt.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_categoria_gasto_composto " +
+                    "ON categoria_gasto(id_categoria, id_gasto, ativo) " +
+                    "WHERE ativo = TRUE"
+                );
+                stmt.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_categoria_gasto_gasto_ativo " +
+                    "ON categoria_gasto(id_gasto, ativo) " +
+                    "WHERE ativo = TRUE"
+                );
+                
+                // ========== ÍNDICES PARA GASTOS ==========
+                stmt.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_gastos_usuario_ativo " +
+                    "ON gastos(id_usuario, ativo) " +
+                    "WHERE ativo = TRUE"
+                );
+                stmt.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_gastos_usuario_ativo_data " +
+                    "ON gastos(id_usuario, ativo, data DESC) " +
+                    "WHERE ativo = TRUE"
+                );
+                stmt.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_gastos_data_ativo " +
+                    "ON gastos(data, ativo) " +
+                    "WHERE ativo = TRUE"
+                );
+                stmt.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_gastos_recorrencia_ativo " +
+                    "ON gastos(proxima_recorrencia, ativo) " +
+                    "WHERE proxima_recorrencia IS NOT NULL AND ativo = TRUE"
+                );
+                
+                // ========== ÍNDICES PARA RECEITAS ==========
+                stmt.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_receitas_usuario_ativo " +
+                    "ON receitas(id_usuario, ativo) " +
+                    "WHERE ativo = TRUE"
+                );
+                stmt.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_receitas_usuario_ativo_data " +
+                    "ON receitas(id_usuario, ativo, data DESC) " +
+                    "WHERE ativo = TRUE"
+                );
+                stmt.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_receitas_data_ativo " +
+                    "ON receitas(data, ativo) " +
+                    "WHERE ativo = TRUE"
+                );
+                stmt.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_receitas_recorrencia_ativo " +
+                    "ON receitas(proxima_recorrencia, ativo) " +
+                    "WHERE proxima_recorrencia IS NOT NULL AND ativo = TRUE"
+                );
+                
+                // ========== ÍNDICES PARA CONTAS ==========
+                stmt.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_contas_usuario_tipo_ativo " +
+                    "ON contas(id_usuario, tipo, ativo) " +
+                    "WHERE ativo = TRUE"
+                );
+                
+                // ========== ÍNDICES PARA INVESTIMENTOS ==========
+                stmt.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_investimentos_usuario_ativo_data " +
+                    "ON investimentos(id_usuario, ativo, data_aporte DESC) " +
+                    "WHERE ativo = TRUE"
+                );
+                
+                // ========== ÍNDICES PARA TRANSAÇÃO_TAG ==========
+                stmt.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_transacao_tag_tag_tipo_ativo " +
+                    "ON transacao_tag(id_tag, tipo_transacao, ativo) " +
+                    "WHERE ativo = TRUE"
+                );
+                stmt.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_transacao_tag_transacao_tipo_ativo " +
+                    "ON transacao_tag(id_transacao, tipo_transacao, ativo) " +
+                    "WHERE ativo = TRUE"
+                );
+                
+                // ========== ÍNDICES PARA ORÇAMENTOS ==========
+                stmt.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_orcamentos_categoria_ativo " +
+                    "ON orcamentos(id_categoria, ativo) " +
+                    "WHERE ativo = TRUE"
+                );
+                
+                // Verifica se os índices foram criados corretamente
+                try (ResultSet rs = stmt.executeQuery(
+                    "SELECT COUNT(*) as total FROM pg_indexes " +
+                    "WHERE schemaname = 'public' " +
+                    "AND (indexname LIKE 'idx_%_composto' " +
+                    "OR indexname LIKE 'idx_%_usuario_ativo%' " +
+                    "OR indexname LIKE 'idx_%_data%' " +
+                    "OR indexname LIKE 'idx_%_recorrencia%' " +
+                    "OR indexname LIKE 'idx_%_tag%' " +
+                    "OR indexname LIKE 'idx_%_categoria_ativo')"
+                )) {
+                    if (rs.next()) {
+                        int count = rs.getInt("total");
+                        System.out.println("✓ " + count + " índices de performance verificados/criados");
+                    } else {
+                        System.out.println("✓ Índices de performance verificados/criados");
+                    }
+                } catch (SQLException e) {
+                    // Se a query de verificação falhar, apenas continua
+                    System.out.println("✓ Índices de performance verificados/criados");
+                }
+            }
+            tempConn.commit();
+        } catch (Exception e) {
+            System.err.println("Aviso: não foi possível garantir índices de performance: " + e.getMessage());
+            e.printStackTrace();
+            try {
+                if (tempConn != null) {
+                    tempConn.rollback();
+                }
+            } catch (SQLException ignored) {}
+        } finally {
+            if (tempConn != null) {
+                try {
+                    tempConn.close(); // Retorna ao pool HikariCP
+                } catch (SQLException ignored) {}
+            }
+        }
+    }
+    
     /**
      * Garante que tabelas de observações existam (usadas em despesas e receitas)
      * Necessário quando schema inicial não foi executado automaticamente
@@ -283,7 +432,7 @@ public class BancoDadosPostgreSQL {
     private void ensureObservationTables() {
         Connection tempConn = null;
         try {
-            tempConn = connect();
+            tempConn = getConnection();
             try (Statement stmt = tempConn.createStatement()) {
                 stmt.execute(
                     "CREATE TABLE IF NOT EXISTS gasto_observacoes (" +
@@ -318,51 +467,68 @@ public class BancoDadosPostgreSQL {
         } finally {
             if (tempConn != null) {
                 try {
-                    tempConn.close();
+                    tempConn.close(); // Retorna ao pool HikariCP
                 } catch (SQLException ignored) {}
-                connectionThreadLocal.remove();
-                synchronized (connectionLock) {
-                    activeConnections--;
-                }
             }
         }
     }
     
     /**
-     * Obtém uma conexão para a thread atual (thread-safe)
-     * Cada thread tem sua própria conexão armazenada em ThreadLocal
+     * Obtém uma conexão do pool HikariCP (thread-safe)
+     * O HikariCP gerencia automaticamente a distribuição de conexões entre threads
      */
-    private Connection getConnection() {
-        Connection conn = connectionThreadLocal.get();
-        try {
-            if (conn == null || conn.isClosed()) {
-                conn = connect();
-            }
-        } catch (SQLException e) {
-            // Se conexão está fechada, cria nova
-            conn = connect();
+    private Connection getConnection() throws SQLException {
+        if (dataSource == null || dataSource.isClosed()) {
+            throw new SQLException("Pool de conexões não está disponível");
         }
+        
+        Connection conn = dataSource.getConnection();
+        
+        // Garante que autoCommit está desabilitado para usar transações explícitas
+        if (conn.getAutoCommit()) {
+            conn.setAutoCommit(false);
+        }
+        
         return conn;
     }
     
     /**
-     * Fecha a conexão da thread atual (chamado quando thread termina)
+     * Fecha a conexão e a retorna ao pool HikariCP
+     * IMPORTANTE: Com HikariCP, todas as conexões DEVEM ser fechadas explicitamente
+     * Use try-with-resources sempre que possível
      */
     public void closeConnection() {
-        Connection conn = connectionThreadLocal.get();
+        // Método mantido para compatibilidade, mas não faz nada
+        // As conexões devem ser fechadas usando try-with-resources ou closeConnection(Connection)
+    }
+    
+    /**
+     * Fecha uma conexão específica e a retorna ao pool
+     * Use este método quando tiver uma referência direta à conexão
+     * IMPORTANTE: Sempre feche conexões para evitar esgotamento do pool
+     */
+    public void closeConnection(Connection conn) {
         if (conn != null) {
             try {
                 if (!conn.isClosed()) {
-                    conn.close();
+                    conn.close(); // Retorna ao pool HikariCP automaticamente
                 }
             } catch (SQLException e) {
-                // Ignora erros ao fechar
-            } finally {
-                connectionThreadLocal.remove();
-                synchronized (connectionLock) {
-                    activeConnections--;
-                }
+                // Log mas não propaga - HikariCP gerencia erros de conexão
+                System.err.println("Aviso: Erro ao fechar conexão: " + e.getMessage());
             }
+        }
+    }
+    
+    
+    /**
+     * Fecha o pool de conexões (chamado no shutdown da aplicação)
+     */
+    public static void shutdownConnectionPool() {
+        if (dataSource != null && !dataSource.isClosed()) {
+            System.out.println("Encerrando pool de conexões HikariCP...");
+            dataSource.close();
+            System.out.println("✅ Pool de conexões encerrado");
         }
     }
     
@@ -484,11 +650,55 @@ public class BancoDadosPostgreSQL {
         validateInput("Senha", senha, 200);
 
         synchronized (this) {
-            if (buscarUsuarioPorEmail(email) != null) {
-                throw new RuntimeException("Email já cadastrado!");
-            }
+            // Normaliza o email da mesma forma que será salvo (lowercase + trim)
+            String emailNormalizado = email.toLowerCase().trim();
+            
+            // Não verifica duplicação prévia - confia na constraint UNIQUE do banco
+            // Isso evita problemas de isolamento de transação e race conditions
+            // A constraint UNIQUE é mais confiável e atômica
+            
             String senhaHash = PasswordHasher.hashPassword(senha);
-            return salvarUsuario(nome, email, senhaHash);
+            return salvarUsuario(nome, emailNormalizado, senhaHash);
+        }
+    }
+    
+    /**
+     * Verifica se um email já existe no banco (sem verificar se está ativo)
+     * Útil para verificação de duplicação antes de cadastrar
+     * Usa uma conexão separada com autoCommit para evitar problemas de isolamento
+     */
+    private boolean emailJaExiste(String email) {
+        String sql = "SELECT COUNT(*) FROM usuarios WHERE email = ?";
+        
+        Connection conn = null;
+        try {
+            // Obtém conexão do pool
+            conn = dataSource.getConnection();
+            // Habilita autoCommit para esta consulta de leitura
+            conn.setAutoCommit(true);
+            
+            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                pstmt.setString(1, email);
+                ResultSet rs = pstmt.executeQuery();
+                
+                if (rs.next()) {
+                    return rs.getInt(1) > 0;
+                }
+                return false;
+            }
+        } catch (SQLException e) {
+            // Em caso de erro, assume que não existe para não bloquear cadastros legítimos
+            // O INSERT com constraint de unique vai capturar duplicação real
+            return false;
+        } finally {
+            // Fecha a conexão
+            if (conn != null) {
+                try {
+                    conn.close();
+                } catch (SQLException e) {
+                    // Ignora erro ao fechar
+                }
+            }
         }
     }
 
@@ -496,36 +706,57 @@ public class BancoDadosPostgreSQL {
         validateInput("Nome", nome, 100);
         validateEmail(email);
 
-        String sql = "INSERT INTO usuarios (nome, email, senha) VALUES (?, ?, ?) RETURNING id_usuario";
+        // Garante que ativo seja TRUE explicitamente
+        // Email já vem normalizado do cadastrarUsuario
+        String sql = "INSERT INTO usuarios (nome, email, senha, ativo) VALUES (?, ?, ?, TRUE) RETURNING id_usuario";
         
-        try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
-            pstmt.setString(1, nome.trim());
-            pstmt.setString(2, email.toLowerCase().trim()); // Normaliza email
-            pstmt.setString(3, senhaArmazenada);
+        Connection conn = null;
+        try {
+            conn = getConnection(); // getConnection já desabilita autoCommit
             
-            ResultSet rs = pstmt.executeQuery();
-            if (rs.next()) {
-                int idUsuario = rs.getInt(1);
-                getConnection().commit();
-                return idUsuario;
+            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                pstmt.setString(1, nome.trim());
+                pstmt.setString(2, email); // Email já normalizado
+                pstmt.setString(3, senhaArmazenada);
+                
+                ResultSet rs = pstmt.executeQuery();
+                if (rs.next()) {
+                    int idUsuario = rs.getInt(1);
+                    conn.commit(); // Commit na mesma conexão
+                    return idUsuario;
+                }
+                throw new RuntimeException("Erro ao cadastrar usuário");
             }
-            throw new RuntimeException("Erro ao cadastrar usuário");
         } catch (SQLException e) {
-            try {
-                getConnection().rollback();
-            } catch (SQLException ex) {}
-            // Verifica se é erro de duplicação (race condition)
+            if (conn != null) {
+                try {
+                    conn.rollback(); // Rollback na mesma conexão
+                } catch (SQLException ex) {
+                    // Ignora erro no rollback
+                }
+            }
+            // Verifica se é erro de duplicação (constraint unique)
             if (e.getSQLState() != null && e.getSQLState().equals("23505")) {
                 throw new RuntimeException("Email já cadastrado!");
             }
             throw new RuntimeException("Erro ao cadastrar usuário: " + e.getMessage(), e);
+        } finally {
+            // Fecha a conexão
+            if (conn != null) {
+                try {
+                    conn.close();
+                } catch (SQLException e) {
+                    // Ignora erro ao fechar
+                }
+            }
         }
     }
     
     public Usuario buscarUsuario(int idUsuario) {
         String sql = "SELECT id_usuario, nome, email, senha, ativo FROM usuarios WHERE id_usuario = ? AND ativo = TRUE";
         
-        try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setInt(1, idUsuario);
             ResultSet rs = pstmt.executeQuery();
             
@@ -539,10 +770,18 @@ public class BancoDadosPostgreSQL {
     }
     
     public Usuario buscarUsuarioPorEmail(String email) {
+        if (email == null || email.trim().isEmpty()) {
+            return null;
+        }
+        
+        // Normaliza o email (lowercase + trim) para garantir consistência
+        String emailNormalizado = email.toLowerCase().trim();
+        
         String sql = "SELECT id_usuario, nome, email, senha, ativo FROM usuarios WHERE email = ? AND ativo = TRUE";
         
-        try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
-            pstmt.setString(1, email);
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, emailNormalizado);
             ResultSet rs = pstmt.executeQuery();
             
             if (rs.next()) {
@@ -551,6 +790,27 @@ public class BancoDadosPostgreSQL {
             return null;
         } catch (SQLException e) {
             throw new RuntimeException("Erro ao buscar usuário por email: " + e.getMessage(), e);
+        }
+    }
+    
+    /**
+     * Busca usuário por ID sem verificar se está ativo
+     * Útil para buscar usuário recém-cadastrado
+     */
+    public Usuario buscarUsuarioSemAtivo(int idUsuario) {
+        String sql = "SELECT id_usuario, nome, email, senha, ativo FROM usuarios WHERE id_usuario = ?";
+        
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, idUsuario);
+            ResultSet rs = pstmt.executeQuery();
+            
+            if (rs.next()) {
+                return mapUsuario(rs);
+            }
+            return null;
+        } catch (SQLException e) {
+            throw new RuntimeException("Erro ao buscar usuário: " + e.getMessage(), e);
         }
     }
     
@@ -660,7 +920,8 @@ public class BancoDadosPostgreSQL {
     public Categoria buscarCategoria(int idCategoria) {
         String sql = "SELECT id_categoria, nome, id_usuario, ativo FROM categorias WHERE id_categoria = ? AND ativo = TRUE";
         
-        try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setInt(1, idCategoria);
             ResultSet rs = pstmt.executeQuery();
             
@@ -673,11 +934,36 @@ public class BancoDadosPostgreSQL {
         }
     }
     
+    /**
+     * Obtém ou cria a categoria especial "Sem Categoria" para um usuário.
+     * Esta categoria é usada automaticamente para gastos sem categoria e não aparece na listagem normal.
+     */
+    public int obterOuCriarCategoriaSemCategoria(int idUsuario) {
+        String sql = "SELECT id_categoria FROM categorias WHERE id_usuario = ? AND UPPER(nome) = 'SEM CATEGORIA' AND ativo = TRUE";
+        
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, idUsuario);
+            ResultSet rs = pstmt.executeQuery();
+            
+            if (rs.next()) {
+                return rs.getInt("id_categoria");
+            }
+            
+            // Se não existe, cria a categoria
+            return cadastrarCategoria("Sem Categoria", idUsuario);
+        } catch (SQLException e) {
+            throw new RuntimeException("Erro ao obter/criar categoria Sem Categoria: " + e.getMessage(), e);
+        }
+    }
+    
     public List<Categoria> buscarCategoriasPorUsuario(int idUsuario) {
-        String sql = "SELECT id_categoria, nome, id_usuario, ativo FROM categorias WHERE id_usuario = ? AND ativo = TRUE ORDER BY nome";
+        // Exclui a categoria "Sem Categoria" da listagem para o usuário
+        String sql = "SELECT id_categoria, nome, id_usuario, ativo FROM categorias WHERE id_usuario = ? AND ativo = TRUE AND UPPER(nome) != 'SEM CATEGORIA' ORDER BY nome";
         List<Categoria> categorias = new ArrayList<>();
         
-        try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setInt(1, idUsuario);
             ResultSet rs = pstmt.executeQuery();
             
@@ -704,20 +990,97 @@ public class BancoDadosPostgreSQL {
     // ========== OPERAÇÕES DE CONTA ==========
     
     public int cadastrarConta(String nome, String tipo, double saldoAtual, int idUsuario) {
+        return cadastrarConta(nome, tipo, saldoAtual, idUsuario, null, null);
+    }
+    
+    public int cadastrarConta(String nome, String tipo, double saldoAtual, int idUsuario, Integer diaFechamento, Integer diaPagamento) {
         // Validações de entrada
         validateInput("Nome da conta", nome, 100);
         validateId("ID do usuário", idUsuario);
         validateAmount("Saldo inicial", saldoAtual);
         
         // Valida tipo de conta
-        String[] tiposPermitidos = {"CORRENTE", "POUPANCA", "INVESTIMENTO", "CARTAO_CREDITO", "OUTROS"};
-        validateEnum("Tipo de conta", tipo, tiposPermitidos);
+        // Aceita tanto "INVESTIMENTO" quanto "INVESTIMENTO (CORRETORA)" para compatibilidade
+        // Aceita variações de cartão de crédito (com e sem acento)
+        String tipoUpper = tipo != null ? tipo.toUpperCase() : "";
+        String[] tiposPermitidos = {"CORRENTE", "POUPANCA", "INVESTIMENTO", "INVESTIMENTO (CORRETORA)", 
+                                   "CARTAO_CREDITO", "CARTAO DE CREDITO", "CARTAO DE CRÉDITO", 
+                                   "CARTÃO DE CRÉDITO", "CARTÃO DE CREDITO", "OUTROS"};
+        
+        // Normaliza tipo para validação (remove acentos e espaços extras)
+        String tipoNormalizado = tipoUpper.replace("É", "E").replace("À", "A").replace(" ", "_");
+        boolean tipoValido = false;
+        for (String tipoPermitido : tiposPermitidos) {
+            String permitidoNormalizado = tipoPermitido.replace("É", "E").replace("À", "A").replace(" ", "_");
+            if (tipoNormalizado.equals(permitidoNormalizado) || tipoUpper.contains("CARTAO") || tipoUpper.contains("CARTÃO")) {
+                tipoValido = true;
+                break;
+            }
+        }
+        if (!tipoValido && !tipoUpper.contains("CARTAO") && !tipoUpper.contains("CARTÃO")) {
+            validateEnum("Tipo de conta", tipo, tiposPermitidos);
+        }
+        
+        // Normaliza tipo de cartão para formato padrão
+        if (tipoUpper.contains("CARTAO") || tipoUpper.contains("CARTÃO")) {
+            tipo = "CARTAO_CREDITO";
+        }
+        
+        // Valida dias se for cartão de crédito
+        boolean isCartao = tipoUpper.contains("CARTAO") || tipoUpper.contains("CARTÃO");
+        if (isCartao) {
+            if (diaFechamento != null && (diaFechamento < 1 || diaFechamento > 31)) {
+                throw new IllegalArgumentException("Dia de fechamento deve estar entre 1 e 31");
+            }
+            if (diaPagamento != null && (diaPagamento < 1 || diaPagamento > 31)) {
+                throw new IllegalArgumentException("Dia de pagamento deve estar entre 1 e 31");
+            }
+        }
         
         // Sanitiza nome
         nome = sanitizeString(nome);
         
-        String sql = "INSERT INTO contas (nome, tipo, saldo_atual, id_usuario) VALUES (?, ?, ?, ?) RETURNING id_conta";
+        // Tenta inserir com campos de cartão de crédito se existirem
+        if (hasCartaoCreditoColumns() && (diaFechamento != null || diaPagamento != null)) {
+            String sql = "INSERT INTO contas (nome, tipo, saldo_atual, id_usuario, dia_fechamento, dia_pagamento) VALUES (?, ?, ?, ?, ?, ?) RETURNING id_conta";
+            try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
+                pstmt.setString(1, nome);
+                pstmt.setString(2, tipo.toUpperCase());
+                pstmt.setDouble(3, saldoAtual);
+                pstmt.setInt(4, idUsuario);
+                if (diaFechamento != null) {
+                    pstmt.setInt(5, diaFechamento);
+                } else {
+                    pstmt.setNull(5, java.sql.Types.INTEGER);
+                }
+                if (diaPagamento != null) {
+                    pstmt.setInt(6, diaPagamento);
+                } else {
+                    pstmt.setNull(6, java.sql.Types.INTEGER);
+                }
+                
+                ResultSet rs = pstmt.executeQuery();
+                if (rs.next()) {
+                    int idConta = rs.getInt(1);
+                    getConnection().commit();
+                    return idConta;
+                }
+                throw new RuntimeException("Erro ao cadastrar conta");
+            } catch (SQLException e) {
+                // Se falhar por causa das colunas não existirem, tenta sem elas
+                if (e.getMessage().contains("dia_fechamento") || e.getMessage().contains("dia_pagamento")) {
+                    // Continua para o código abaixo que faz INSERT sem esses campos
+                } else {
+                    try {
+                        getConnection().rollback();
+                    } catch (SQLException ex) {}
+                    throw new RuntimeException("Erro ao cadastrar conta: " + e.getMessage(), e);
+                }
+            }
+        }
         
+        // INSERT sem campos de cartão de crédito (para compatibilidade com bancos antigos)
+        String sql = "INSERT INTO contas (nome, tipo, saldo_atual, id_usuario) VALUES (?, ?, ?, ?) RETURNING id_conta";
         try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
             pstmt.setString(1, nome);
             pstmt.setString(2, tipo.toUpperCase());
@@ -742,12 +1105,13 @@ public class BancoDadosPostgreSQL {
     public Conta buscarConta(int idConta) {
         String sql = "SELECT id_conta, nome, tipo, saldo_atual, id_usuario, ativo FROM contas WHERE id_conta = ? AND ativo = TRUE";
         
-        try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setInt(1, idConta);
             ResultSet rs = pstmt.executeQuery();
             
             if (rs.next()) {
-                return mapConta(rs);
+                return mapConta(rs, conn);
             }
             return null;
         } catch (SQLException e) {
@@ -756,15 +1120,18 @@ public class BancoDadosPostgreSQL {
     }
     
     public List<Conta> buscarContasPorUsuario(int idUsuario) {
+        // Query sem os campos novos para compatibilidade com bancos antigos
+        // O mapConta tentará ler esses campos dos metadados se existirem
         String sql = "SELECT id_conta, nome, tipo, saldo_atual, id_usuario, ativo FROM contas WHERE id_usuario = ? AND ativo = TRUE ORDER BY nome";
         List<Conta> contas = new ArrayList<>();
         
-        try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setInt(1, idUsuario);
             ResultSet rs = pstmt.executeQuery();
             
             while (rs.next()) {
-                contas.add(mapConta(rs));
+                contas.add(mapConta(rs, conn));
             }
         } catch (SQLException e) {
             throw new RuntimeException("Erro ao buscar contas: " + e.getMessage(), e);
@@ -778,12 +1145,13 @@ public class BancoDadosPostgreSQL {
                     "FROM contas WHERE tipo = ? AND ativo = TRUE ORDER BY nome";
         List<Conta> contas = new ArrayList<>();
         
-        try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, tipo);
             ResultSet rs = pstmt.executeQuery();
             
             while (rs.next()) {
-                contas.add(mapConta(rs));
+                contas.add(mapConta(rs, conn));
             }
         } catch (SQLException e) {
             throw new RuntimeException("Erro ao buscar contas por tipo: " + e.getMessage(), e);
@@ -792,7 +1160,28 @@ public class BancoDadosPostgreSQL {
         return contas;
     }
     
-    private Conta mapConta(ResultSet rs) throws SQLException {
+    // Cache para verificar se as colunas de cartão de crédito existem
+    private Boolean hasCartaoCreditoColumns = null;
+    
+    private boolean hasCartaoCreditoColumns() {
+        if (hasCartaoCreditoColumns != null) {
+            return hasCartaoCreditoColumns;
+        }
+        
+        try (Connection conn = getConnection()) {
+            String sql = "SELECT dia_fechamento, dia_pagamento FROM contas LIMIT 1";
+            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                pstmt.executeQuery();
+                hasCartaoCreditoColumns = true;
+                return true;
+            }
+        } catch (SQLException e) {
+            hasCartaoCreditoColumns = false;
+            return false;
+        }
+    }
+    
+    private Conta mapConta(ResultSet rs, Connection conn) throws SQLException {
         Conta conta = new Conta(
             rs.getInt("id_conta"),
             rs.getString("nome"),
@@ -801,6 +1190,30 @@ public class BancoDadosPostgreSQL {
             rs.getInt("id_usuario")
         );
         conta.setAtivo(rs.getBoolean("ativo"));
+        
+        // Tenta ler campos opcionais de cartão de crédito apenas se existirem
+        if (hasCartaoCreditoColumns()) {
+            try {
+                int idConta = conta.getIdConta();
+                String sqlExtra = "SELECT dia_fechamento, dia_pagamento FROM contas WHERE id_conta = ?";
+                try (PreparedStatement pstmtExtra = conn.prepareStatement(sqlExtra)) {
+                    pstmtExtra.setInt(1, idConta);
+                    ResultSet rsExtra = pstmtExtra.executeQuery();
+                    if (rsExtra.next()) {
+                        int diaFechamento = rsExtra.getInt("dia_fechamento");
+                        if (!rsExtra.wasNull()) {
+                            conta.setDiaFechamento(diaFechamento);
+                        }
+                        int diaPagamento = rsExtra.getInt("dia_pagamento");
+                        if (!rsExtra.wasNull()) {
+                            conta.setDiaPagamento(diaPagamento);
+                        }
+                    }
+                }
+            } catch (SQLException e) {
+                // Ignora erros ao ler campos opcionais
+            }
+        }
         return conta;
     }
     
@@ -823,7 +1236,9 @@ public class BancoDadosPostgreSQL {
         if (conta == null) {
             throw new IllegalArgumentException("Conta não encontrada");
         }
-        if (conta.getTipo() != null && conta.getTipo().equalsIgnoreCase("INVESTIMENTO")) {
+        // Verifica se é conta de investimento (aceita "Investimento" ou "Investimento (Corretora)")
+        String tipoConta = conta.getTipo() != null ? conta.getTipo().toLowerCase().trim() : "";
+        if (tipoConta.equals("investimento") || tipoConta.equals("investimento (corretora)") || tipoConta.startsWith("investimento")) {
             throw new IllegalArgumentException("Contas de investimento não podem ser usadas para gastos");
         }
         
@@ -886,22 +1301,27 @@ public class BancoDadosPostgreSQL {
             }
             
             // Associa categorias (relacionamento N:N)
-            if (idsCategorias != null && !idsCategorias.isEmpty()) {
-                String sqlCategoria = "INSERT INTO categoria_gasto (id_categoria, id_gasto) VALUES (?, ?)";
-                try (PreparedStatement pstmt = getConnection().prepareStatement(sqlCategoria)) {
-                    for (int idCategoria : idsCategorias) {
-                        // Valida se a categoria existe e está ativa
-                        Categoria cat = buscarCategoria(idCategoria);
-                        if (cat != null && cat.isAtivo()) {
-                            pstmt.setInt(1, idCategoria);
-                            pstmt.setInt(2, idGasto);
-                            try {
-                                pstmt.executeUpdate();
-                            } catch (SQLException e) {
-                                // Ignora duplicatas
-                                if (!e.getMessage().contains("duplicate") && !e.getMessage().contains("unique")) {
-                                    throw e;
-                                }
+            // Se não houver categorias, usa a categoria especial "Sem Categoria"
+            if (idsCategorias == null || idsCategorias.isEmpty()) {
+                int idCategoriaSemCategoria = obterOuCriarCategoriaSemCategoria(idUsuario);
+                idsCategorias = new ArrayList<>();
+                idsCategorias.add(idCategoriaSemCategoria);
+            }
+            
+            String sqlCategoria = "INSERT INTO categoria_gasto (id_categoria, id_gasto) VALUES (?, ?)";
+            try (PreparedStatement pstmt = getConnection().prepareStatement(sqlCategoria)) {
+                for (int idCategoria : idsCategorias) {
+                    // Valida se a categoria existe e está ativa
+                    Categoria cat = buscarCategoria(idCategoria);
+                    if (cat != null && cat.isAtivo()) {
+                        pstmt.setInt(1, idCategoria);
+                        pstmt.setInt(2, idGasto);
+                        try {
+                            pstmt.executeUpdate();
+                        } catch (SQLException e) {
+                            // Ignora duplicatas
+                            if (!e.getMessage().contains("duplicate") && !e.getMessage().contains("unique")) {
+                                throw e;
                             }
                         }
                     }
@@ -923,7 +1343,10 @@ public class BancoDadosPostgreSQL {
                 }
             }
             
-            // Atualiza saldo da conta (subtrai o gasto)
+            // Atualiza saldo da conta ou crédito disponível (para cartões de crédito)
+            // Para cartões de crédito, saldo_atual representa o crédito disponível
+            // Para outras contas, saldo_atual representa o saldo real
+            // Em ambos os casos, subtraímos o valor do gasto
             String sqlConta = "UPDATE contas SET saldo_atual = saldo_atual - ? WHERE id_conta = ?";
             try (PreparedStatement pstmt = getConnection().prepareStatement(sqlConta)) {
                 pstmt.setDouble(1, valor);
@@ -967,7 +1390,8 @@ public class BancoDadosPostgreSQL {
                     "proxima_recorrencia, id_gasto_original, ativo " +
                     "FROM gastos WHERE id_gasto = ? AND ativo = TRUE";
         
-        try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setInt(1, idGasto);
             ResultSet rs = pstmt.executeQuery();
             
@@ -990,7 +1414,8 @@ public class BancoDadosPostgreSQL {
         String sql = "SELECT observacao FROM gasto_observacoes WHERE id_gasto = ? ORDER BY ordem";
         List<String> obsList = new ArrayList<>();
         
-        try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setInt(1, idGasto);
             ResultSet rs = pstmt.executeQuery();
             
@@ -1002,6 +1427,52 @@ public class BancoDadosPostgreSQL {
         }
         
         return obsList.toArray(new String[0]);
+    }
+    
+    /**
+     * Busca todas as observações de múltiplos gastos de uma vez (otimização batch)
+     * Retorna um Map onde a chave é o id_gasto e o valor é o array de observações
+     */
+    public Map<Integer, String[]> buscarObservacoesDeGastos(List<Integer> idsGastos) {
+        if (idsGastos == null || idsGastos.isEmpty()) {
+            return new HashMap<>();
+        }
+        
+        Map<Integer, List<String>> obsMap = new HashMap<>();
+        
+        StringBuilder placeholders = new StringBuilder();
+        for (int i = 0; i < idsGastos.size(); i++) {
+            if (i > 0) placeholders.append(",");
+            placeholders.append("?");
+        }
+        
+        String sql = "SELECT id_gasto, observacao FROM gasto_observacoes " +
+                    "WHERE id_gasto IN (" + placeholders + ") " +
+                    "ORDER BY id_gasto, ordem";
+        
+        try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
+            for (int i = 0; i < idsGastos.size(); i++) {
+                pstmt.setInt(i + 1, idsGastos.get(i));
+            }
+            
+            ResultSet rs = pstmt.executeQuery();
+            while (rs.next()) {
+                int idGasto = rs.getInt("id_gasto");
+                String observacao = rs.getString("observacao");
+                
+                obsMap.computeIfAbsent(idGasto, k -> new ArrayList<>()).add(observacao);
+            }
+        } catch (SQLException e) {
+            // Ignora erro e retorna map vazio
+        }
+        
+        // Converte List<String> para String[]
+        Map<Integer, String[]> resultado = new HashMap<>();
+        for (Map.Entry<Integer, List<String>> entry : obsMap.entrySet()) {
+            resultado.put(entry.getKey(), entry.getValue().toArray(new String[0]));
+        }
+        
+        return resultado;
     }
     
     private void inserirObservacoesReceita(int idReceita, String[] observacoes) throws SQLException {
@@ -1043,13 +1514,60 @@ public class BancoDadosPostgreSQL {
         return obsList.toArray(new String[0]);
     }
     
+    /**
+     * Busca todas as observações de múltiplas receitas de uma vez (otimização batch)
+     * Retorna um Map onde a chave é o id_receita e o valor é o array de observações
+     */
+    public Map<Integer, String[]> buscarObservacoesDeReceitas(List<Integer> idsReceitas) {
+        if (idsReceitas == null || idsReceitas.isEmpty()) {
+            return new HashMap<>();
+        }
+        
+        Map<Integer, List<String>> obsMap = new HashMap<>();
+        
+        StringBuilder placeholders = new StringBuilder();
+        for (int i = 0; i < idsReceitas.size(); i++) {
+            if (i > 0) placeholders.append(",");
+            placeholders.append("?");
+        }
+        
+        String sql = "SELECT id_receita, observacao FROM receita_observacoes " +
+                    "WHERE id_receita IN (" + placeholders + ") " +
+                    "ORDER BY id_receita, ordem";
+        
+        try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
+            for (int i = 0; i < idsReceitas.size(); i++) {
+                pstmt.setInt(i + 1, idsReceitas.get(i));
+            }
+            
+            ResultSet rs = pstmt.executeQuery();
+            while (rs.next()) {
+                int idReceita = rs.getInt("id_receita");
+                String observacao = rs.getString("observacao");
+                
+                obsMap.computeIfAbsent(idReceita, k -> new ArrayList<>()).add(observacao);
+            }
+        } catch (SQLException e) {
+            // Ignora erro e retorna map vazio
+        }
+        
+        // Converte List<String> para String[]
+        Map<Integer, String[]> resultado = new HashMap<>();
+        for (Map.Entry<Integer, List<String>> entry : obsMap.entrySet()) {
+            resultado.put(entry.getKey(), entry.getValue().toArray(new String[0]));
+        }
+        
+        return resultado;
+    }
+    
     public List<Gasto> buscarGastosPorUsuario(int idUsuario) {
         String sql = "SELECT id_gasto, descricao, valor, data, frequencia, id_usuario, id_conta, " +
                     "proxima_recorrencia, id_gasto_original, ativo " +
                     "FROM gastos WHERE id_usuario = ? AND ativo = TRUE ORDER BY data DESC";
         List<Gasto> gastos = new ArrayList<>();
         
-        try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setInt(1, idUsuario);
             ResultSet rs = pstmt.executeQuery();
             
@@ -1072,7 +1590,8 @@ public class BancoDadosPostgreSQL {
                     "WHERE cg.id_gasto = ? AND cg.ativo = TRUE AND c.ativo = TRUE";
         List<Categoria> categorias = new ArrayList<>();
         
-        try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setInt(1, idGasto);
             ResultSet rs = pstmt.executeQuery();
             
@@ -1084,6 +1603,50 @@ public class BancoDadosPostgreSQL {
         }
         
         return categorias;
+    }
+    
+    /**
+     * Busca todas as categorias de múltiplos gastos de uma vez (otimização batch)
+     * Retorna um Map onde a chave é o id_gasto e o valor é a lista de categorias
+     */
+    public Map<Integer, List<Categoria>> buscarCategoriasDeGastos(List<Integer> idsGastos) {
+        if (idsGastos == null || idsGastos.isEmpty()) {
+            return new HashMap<>();
+        }
+        
+        Map<Integer, List<Categoria>> resultado = new HashMap<>();
+        
+        // Cria uma string com placeholders para IN clause
+        StringBuilder placeholders = new StringBuilder();
+        for (int i = 0; i < idsGastos.size(); i++) {
+            if (i > 0) placeholders.append(",");
+            placeholders.append("?");
+        }
+        
+        String sql = "SELECT cg.id_gasto, c.id_categoria, c.nome, c.id_usuario, c.ativo " +
+                    "FROM categorias c " +
+                    "INNER JOIN categoria_gasto cg ON c.id_categoria = cg.id_categoria " +
+                    "WHERE cg.id_gasto IN (" + placeholders + ") " +
+                    "AND cg.ativo = TRUE AND c.ativo = TRUE " +
+                    "ORDER BY cg.id_gasto";
+        
+        try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
+            for (int i = 0; i < idsGastos.size(); i++) {
+                pstmt.setInt(i + 1, idsGastos.get(i));
+            }
+            
+            ResultSet rs = pstmt.executeQuery();
+            while (rs.next()) {
+                int idGasto = rs.getInt("id_gasto");
+                Categoria categoria = mapCategoria(rs);
+                
+                resultado.computeIfAbsent(idGasto, k -> new ArrayList<>()).add(categoria);
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Erro ao buscar categorias dos gastos: " + e.getMessage(), e);
+        }
+        
+        return resultado;
     }
     
     public List<Gasto> buscarGastosComFiltros(int idUsuario, Integer idCategoria, LocalDate data) {
@@ -1112,7 +1675,8 @@ public class BancoDadosPostgreSQL {
         
         List<Gasto> gastos = new ArrayList<>();
         
-        try (PreparedStatement pstmt = getConnection().prepareStatement(sql.toString())) {
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql.toString())) {
             for (int i = 0; i < params.size(); i++) {
                 Object param = params.get(i);
                 if (param instanceof Integer) {
@@ -1142,7 +1706,8 @@ public class BancoDadosPostgreSQL {
         
         List<Gasto> gastos = new ArrayList<>();
         
-        try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setDate(1, java.sql.Date.valueOf(data));
             ResultSet rs = pstmt.executeQuery();
             
@@ -1168,7 +1733,8 @@ public class BancoDadosPostgreSQL {
         
         List<Gasto> gastos = new ArrayList<>();
         
-        try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setInt(1, idUsuario);
             pstmt.setDate(2, java.sql.Date.valueOf(dataInicio));
             pstmt.setDate(3, java.sql.Date.valueOf(dataFim));
@@ -1314,7 +1880,8 @@ public class BancoDadosPostgreSQL {
                     "proxima_recorrencia, id_receita_original, ativo " +
                     "FROM receitas WHERE id_receita = ? AND ativo = TRUE";
         
-        try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setInt(1, idReceita);
             ResultSet rs = pstmt.executeQuery();
             
@@ -1333,7 +1900,8 @@ public class BancoDadosPostgreSQL {
                     "FROM receitas WHERE id_usuario = ? AND ativo = TRUE ORDER BY data DESC";
         List<Receita> receitas = new ArrayList<>();
         
-        try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setInt(1, idUsuario);
             ResultSet rs = pstmt.executeQuery();
             
@@ -1366,7 +1934,8 @@ public class BancoDadosPostgreSQL {
         
         List<Receita> receitas = new ArrayList<>();
         
-        try (PreparedStatement pstmt = getConnection().prepareStatement(sql.toString())) {
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql.toString())) {
             pstmt.setInt(1, idUsuario);
             if (data != null) {
                 pstmt.setDate(2, java.sql.Date.valueOf(data));
@@ -1390,7 +1959,8 @@ public class BancoDadosPostgreSQL {
         
         List<Receita> receitas = new ArrayList<>();
         
-        try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setDate(1, java.sql.Date.valueOf(data));
             ResultSet rs = pstmt.executeQuery();
             
@@ -1414,7 +1984,8 @@ public class BancoDadosPostgreSQL {
         
         List<Receita> receitas = new ArrayList<>();
         
-        try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setInt(1, idUsuario);
             pstmt.setDate(2, java.sql.Date.valueOf(dataInicio));
             pstmt.setDate(3, java.sql.Date.valueOf(dataFim));
@@ -1520,7 +2091,8 @@ public class BancoDadosPostgreSQL {
         String sql = "SELECT id_orcamento, valor_planejado, periodo, id_categoria, id_usuario, ativo " +
                     "FROM orcamentos WHERE id_orcamento = ? AND ativo = TRUE";
         
-        try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setInt(1, idOrcamento);
             ResultSet rs = pstmt.executeQuery();
             
@@ -1538,7 +2110,8 @@ public class BancoDadosPostgreSQL {
                     "FROM orcamentos WHERE id_usuario = ? AND ativo = TRUE ORDER BY periodo";
         List<Orcamento> orcamentos = new ArrayList<>();
         
-        try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setInt(1, idUsuario);
             ResultSet rs = pstmt.executeQuery();
             
@@ -1624,7 +2197,8 @@ public class BancoDadosPostgreSQL {
     public Tag buscarTag(int idTag) {
         String sql = "SELECT id_tag, nome, cor, id_usuario, ativo FROM tags WHERE id_tag = ? AND ativo = TRUE";
         
-        try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setInt(1, idTag);
             ResultSet rs = pstmt.executeQuery();
             
@@ -1641,7 +2215,8 @@ public class BancoDadosPostgreSQL {
         String sql = "SELECT id_tag, nome, cor, id_usuario, ativo FROM tags WHERE id_usuario = ? AND ativo = TRUE ORDER BY nome";
         List<Tag> tags = new ArrayList<>();
         
-        try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setInt(1, idUsuario);
             ResultSet rs = pstmt.executeQuery();
             
@@ -1712,6 +2287,50 @@ public class BancoDadosPostgreSQL {
         return tags;
     }
     
+    /**
+     * Busca todas as tags de múltiplos gastos de uma vez (otimização batch)
+     * Retorna um Map onde a chave é o id_gasto e o valor é a lista de tags
+     */
+    public Map<Integer, List<Tag>> buscarTagsDeGastos(List<Integer> idsGastos) {
+        if (idsGastos == null || idsGastos.isEmpty()) {
+            return new HashMap<>();
+        }
+        
+        Map<Integer, List<Tag>> resultado = new HashMap<>();
+        
+        StringBuilder placeholders = new StringBuilder();
+        for (int i = 0; i < idsGastos.size(); i++) {
+            if (i > 0) placeholders.append(",");
+            placeholders.append("?");
+        }
+        
+        String sql = "SELECT tt.id_transacao, t.id_tag, t.nome, t.cor, t.id_usuario, t.ativo " +
+                    "FROM tags t " +
+                    "INNER JOIN transacao_tag tt ON t.id_tag = tt.id_tag " +
+                    "WHERE tt.id_transacao IN (" + placeholders + ") " +
+                    "AND tt.tipo_transacao = 'GASTO' " +
+                    "AND tt.ativo = TRUE AND t.ativo = TRUE " +
+                    "ORDER BY tt.id_transacao";
+        
+        try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
+            for (int i = 0; i < idsGastos.size(); i++) {
+                pstmt.setInt(i + 1, idsGastos.get(i));
+            }
+            
+            ResultSet rs = pstmt.executeQuery();
+            while (rs.next()) {
+                int idGasto = rs.getInt("id_transacao");
+                Tag tag = mapTag(rs);
+                
+                resultado.computeIfAbsent(idGasto, k -> new ArrayList<>()).add(tag);
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Erro ao buscar tags dos gastos: " + e.getMessage(), e);
+        }
+        
+        return resultado;
+    }
+    
     public List<Tag> buscarTagsReceita(int idReceita) {
         String sql = "SELECT t.id_tag, t.nome, t.cor, t.id_usuario, t.ativo " +
                     "FROM tags t " +
@@ -1732,6 +2351,50 @@ public class BancoDadosPostgreSQL {
         }
         
         return tags;
+    }
+    
+    /**
+     * Busca todas as tags de múltiplas receitas de uma vez (otimização batch)
+     * Retorna um Map onde a chave é o id_receita e o valor é a lista de tags
+     */
+    public Map<Integer, List<Tag>> buscarTagsDeReceitas(List<Integer> idsReceitas) {
+        if (idsReceitas == null || idsReceitas.isEmpty()) {
+            return new HashMap<>();
+        }
+        
+        Map<Integer, List<Tag>> resultado = new HashMap<>();
+        
+        StringBuilder placeholders = new StringBuilder();
+        for (int i = 0; i < idsReceitas.size(); i++) {
+            if (i > 0) placeholders.append(",");
+            placeholders.append("?");
+        }
+        
+        String sql = "SELECT tt.id_transacao, t.id_tag, t.nome, t.cor, t.id_usuario, t.ativo " +
+                    "FROM tags t " +
+                    "INNER JOIN transacao_tag tt ON t.id_tag = tt.id_tag " +
+                    "WHERE tt.id_transacao IN (" + placeholders + ") " +
+                    "AND tt.tipo_transacao = 'RECEITA' " +
+                    "AND tt.ativo = TRUE AND t.ativo = TRUE " +
+                    "ORDER BY tt.id_transacao";
+        
+        try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
+            for (int i = 0; i < idsReceitas.size(); i++) {
+                pstmt.setInt(i + 1, idsReceitas.get(i));
+            }
+            
+            ResultSet rs = pstmt.executeQuery();
+            while (rs.next()) {
+                int idReceita = rs.getInt("id_transacao");
+                Tag tag = mapTag(rs);
+                
+                resultado.computeIfAbsent(idReceita, k -> new ArrayList<>()).add(tag);
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Erro ao buscar tags das receitas: " + e.getMessage(), e);
+        }
+        
+        return resultado;
     }
     
     private Tag mapTag(ResultSet rs) throws SQLException {
@@ -1845,7 +2508,8 @@ public class BancoDadosPostgreSQL {
         String sql = "SELECT * FROM investimentos WHERE id_usuario = ? AND ativo = TRUE ORDER BY data_aporte DESC";
         List<Investimento> investimentos = new ArrayList<>();
         
-        try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setInt(1, idUsuario);
             ResultSet rs = pstmt.executeQuery();
             
@@ -1924,8 +2588,45 @@ public class BancoDadosPostgreSQL {
     }
     
     public void atualizarConta(int idConta, String novoNome, String novoTipo, double novoSaldo) {
-        String sql = "UPDATE contas SET nome = ?, tipo = ?, saldo_atual = ? WHERE id_conta = ?";
+        atualizarConta(idConta, novoNome, novoTipo, novoSaldo, null, null);
+    }
+    
+    public void atualizarConta(int idConta, String novoNome, String novoTipo, double novoSaldo, Integer diaFechamento, Integer diaPagamento) {
+        // Tenta atualizar com campos de cartão de crédito se existirem
+        if (hasCartaoCreditoColumns() && (diaFechamento != null || diaPagamento != null)) {
+            String sql = "UPDATE contas SET nome = ?, tipo = ?, saldo_atual = ?, dia_fechamento = ?, dia_pagamento = ? WHERE id_conta = ?";
+            try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
+                pstmt.setString(1, novoNome);
+                pstmt.setString(2, novoTipo);
+                pstmt.setDouble(3, novoSaldo);
+                if (diaFechamento != null) {
+                    pstmt.setInt(4, diaFechamento);
+                } else {
+                    pstmt.setNull(4, java.sql.Types.INTEGER);
+                }
+                if (diaPagamento != null) {
+                    pstmt.setInt(5, diaPagamento);
+                } else {
+                    pstmt.setNull(5, java.sql.Types.INTEGER);
+                }
+                pstmt.setInt(6, idConta);
+                pstmt.executeUpdate();
+                getConnection().commit();
+                return;
+            } catch (SQLException e) {
+                // Se falhar por causa das colunas não existirem, tenta sem elas
+                if (!e.getMessage().contains("dia_fechamento") && !e.getMessage().contains("dia_pagamento")) {
+                    try {
+                        getConnection().rollback();
+                    } catch (SQLException ex) {}
+                    throw new RuntimeException("Erro ao atualizar conta: " + e.getMessage(), e);
+                }
+                // Continua para o código abaixo que faz UPDATE sem esses campos
+            }
+        }
         
+        // UPDATE sem campos de cartão de crédito (para compatibilidade com bancos antigos)
+        String sql = "UPDATE contas SET nome = ?, tipo = ?, saldo_atual = ? WHERE id_conta = ?";
         try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
             pstmt.setString(1, novoNome);
             pstmt.setString(2, novoTipo);
@@ -2216,6 +2917,37 @@ public class BancoDadosPostgreSQL {
         }
     }
     
+    /**
+     * Busca todos os gastos por categoria de uma vez (otimizado para evitar N+1 queries)
+     * Retorna um Map onde a chave é o id da categoria e o valor é o total de gastos
+     */
+    public Map<Integer, Double> calcularTotalGastosPorTodasCategoriasEUsuario(int idUsuario) {
+        // Como todos os gastos são associados à categoria "Sem Categoria" quando não têm categoria,
+        // a query original funciona, mas precisamos garantir que inclua a categoria "Sem Categoria"
+        String sql = "SELECT cg.id_categoria, COALESCE(SUM(g.valor), 0) as total " +
+                    "FROM categoria_gasto cg " +
+                    "INNER JOIN gastos g ON cg.id_gasto = g.id_gasto " +
+                    "WHERE g.id_usuario = ? AND g.ativo = TRUE AND cg.ativo = TRUE " +
+                    "GROUP BY cg.id_categoria";
+        
+        Map<Integer, Double> gastosPorCategoria = new HashMap<>();
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, idUsuario);
+            ResultSet rs = pstmt.executeQuery();
+            
+            while (rs.next()) {
+                int idCategoria = rs.getInt("id_categoria");
+                double total = rs.getDouble("total");
+                gastosPorCategoria.put(idCategoria, total);
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Erro ao calcular gastos por categoria: " + e.getMessage(), e);
+        }
+        
+        return gastosPorCategoria;
+    }
+    
     public double calcularTotalGastosUsuario(int idUsuario) {
         String sql = "SELECT COALESCE(SUM(valor), 0) as total FROM gastos WHERE id_usuario = ? AND ativo = TRUE";
         return executeDoubleQuery(sql, idUsuario);
@@ -2231,18 +2963,37 @@ public class BancoDadosPostgreSQL {
     }
     
     public double calcularTotalSaldoContasUsuario(int idUsuario) {
-        String sql = "SELECT COALESCE(SUM(saldo_atual), 0) as total FROM contas WHERE id_usuario = ? AND ativo = TRUE";
+        // Exclui cartões de crédito pois são dívidas, não ativos
+        String sql = "SELECT COALESCE(SUM(saldo_atual), 0) as total " +
+                    "FROM contas WHERE id_usuario = ? " +
+                    "AND ativo = TRUE " +
+                    "AND (tipo IS NULL OR (UPPER(tipo) NOT LIKE 'CARTAO%' AND UPPER(tipo) != 'CARTAO_CREDITO'))";
         return executeDoubleQuery(sql, idUsuario);
     }
     
     public double calcularSaldoContasUsuarioSemInvestimento(int idUsuario) {
+        // Exclui contas de investimento e cartões de crédito
+        // Cartões de crédito não devem ser somados no saldo total (saldo_atual representa crédito disponível)
         String sql = "SELECT COALESCE(SUM(saldo_atual), 0) as total " +
-                    "FROM contas WHERE id_usuario = ? AND tipo != 'Investimento' AND ativo = TRUE";
+                    "FROM contas WHERE id_usuario = ? " +
+                    "AND UPPER(tipo) NOT LIKE 'INVESTIMENTO%' " +
+                    "AND UPPER(tipo) NOT LIKE 'CARTAO%' " +
+                    "AND ativo = TRUE";
+        return executeDoubleQuery(sql, idUsuario);
+    }
+    
+    public double calcularTotalCreditoDisponivelCartoes(int idUsuario) {
+        // Calcula o total de crédito disponível em todos os cartões de crédito
+        String sql = "SELECT COALESCE(SUM(saldo_atual), 0) as total " +
+                    "FROM contas WHERE id_usuario = ? " +
+                    "AND (UPPER(tipo) LIKE 'CARTAO%' OR UPPER(tipo) = 'CARTAO_CREDITO') " +
+                    "AND ativo = TRUE";
         return executeDoubleQuery(sql, idUsuario);
     }
     
     private double executeDoubleQuery(String sql, int id) {
-        try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setInt(1, id);
             ResultSet rs = pstmt.executeQuery();
             
@@ -2286,7 +3037,8 @@ public class BancoDadosPostgreSQL {
         
         int criados = 0;
         
-        try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setDate(1, java.sql.Date.valueOf(hoje));
             ResultSet rs = pstmt.executeQuery();
             
@@ -2362,7 +3114,8 @@ public class BancoDadosPostgreSQL {
         
         int criados = 0;
         
-        try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setDate(1, java.sql.Date.valueOf(hoje));
             ResultSet rs = pstmt.executeQuery();
             
@@ -2383,7 +3136,7 @@ public class BancoDadosPostgreSQL {
                 
                 // Marca a nova receita como recorrência da original
                 String sqlUpdate = "UPDATE receitas SET id_receita_original = ?, frequencia = ?, proxima_recorrencia = ? WHERE id_receita = ?";
-                try (PreparedStatement pstmtUpdate = getConnection().prepareStatement(sqlUpdate)) {
+                try (PreparedStatement pstmtUpdate = conn.prepareStatement(sqlUpdate)) {
                     pstmtUpdate.setInt(1, receitaOriginal.getIdReceita());
                     pstmtUpdate.setString(2, receitaOriginal.getFrequencia());
                     pstmtUpdate.setDate(3, receitaOriginal.getProximaRecorrencia() != null ? 
