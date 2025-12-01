@@ -4,6 +4,10 @@
 FROM node:18-alpine AS frontend-build
 WORKDIR /app/frontend
 
+# Declara argumentos de build para variáveis de ambiente do Vite
+ARG VITE_RECAPTCHA_SITE_KEY
+ENV VITE_RECAPTCHA_SITE_KEY=$VITE_RECAPTCHA_SITE_KEY
+
 # Copy package files
 COPY frontend/package*.json ./
 
