@@ -22,9 +22,10 @@ RUN npm run build
 FROM eclipse-temurin:17-jdk AS backend-build
 WORKDIR /app
 
-# Download PostgreSQL JDBC Driver
+# Download PostgreSQL JDBC Driver and HikariCP
 RUN mkdir -p lib && \
-    curl -L -o lib/postgresql.jar https://repo1.maven.org/maven2/org/postgresql/postgresql/42.7.1/postgresql-42.7.1.jar
+    curl -L -o lib/postgresql.jar https://repo1.maven.org/maven2/org/postgresql/postgresql/42.7.1/postgresql-42.7.1.jar && \
+    curl -L -o lib/hikaricp.jar https://repo1.maven.org/maven2/com/zaxxer/HikariCP/5.1.0/HikariCP-5.1.0.jar
 
 # Copy Java source code
 COPY src/ src/
@@ -33,7 +34,7 @@ COPY src/ src/
 RUN mkdir -p bin
 
 # Compile Java Code
-RUN javac -cp "src:lib/postgresql.jar" -d bin $(find src -name "*.java")
+RUN javac -cp "src:lib/postgresql.jar:lib/hikaricp.jar" -d bin $(find src -name "*.java")
 
 # ==========================================
 # Stage 3: Runtime Environment
@@ -60,4 +61,4 @@ EXPOSE 8080
 
 # Start the server
 # Modificado para priorizar variáveis de ambiente do sistema, usando .env apenas se existir e variáveis não estiverem definidas
-CMD ["sh", "-c", "if [ -f .env ]; then echo 'Carregando .env...'; export $(cat .env | grep -v '^#' | xargs); fi; java -cp bin:lib/postgresql.jar ControleSeServer"]
+CMD ["sh", "-c", "if [ -f .env ]; then echo 'Carregando .env...'; export $(cat .env | grep -v '^#' | xargs); fi; java -cp bin:lib/postgresql.jar:lib/hikaricp.jar ControleSeServer"]

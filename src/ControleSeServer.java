@@ -166,7 +166,7 @@ public class ControleSeServer {
                     loginAttemptTracker.shutdown();
                 }
                 if (bancoDados != null) {
-                    bancoDados.fecharConexoes();
+                    BancoDadosPostgreSQL.shutdownConnectionPool();
                 }
                 LOGGER.info("Servidor encerrado.");
             }, "ShutdownHook"));
