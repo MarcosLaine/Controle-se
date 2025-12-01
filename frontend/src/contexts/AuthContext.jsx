@@ -30,19 +30,44 @@ export const AuthProvider = ({ children }) => {
     setLoading(false);
   }, []);
 
-  const login = async (email, password) => {
+  const login = async (email, password, captchaToken = null) => {
     try {
-      const response = await api.post('/auth/login', { email, password });
+      const payload = { email, password };
+      if (captchaToken) {
+        payload.captchaToken = captchaToken;
+      }
+      
+      const response = await api.post('/auth/login', payload);
       if (response.success) {
         setUser(response.user);
         localStorage.setItem('controle-se-user', JSON.stringify(response.user));
         toast.success('Login realizado com sucesso!');
         return { success: true };
       } else {
+        // Verifica se precisa de CAPTCHA
+        if (response.requiresCaptcha) {
+          // Não mostra toast de erro quando CAPTCHA é requerido
+          return { 
+            success: false, 
+            message: response.message, 
+            requiresCaptcha: true,
+            failedAttempts: response.failedAttempts 
+          };
+        }
         toast.error(response.message || 'Erro no login');
-        return { success: false, message: response.message };
+        return { success: false, message: response.message, requiresCaptcha: response.requiresCaptcha };
       }
     } catch (error) {
+      // Verifica se o erro indica necessidade de CAPTCHA
+      if (error.requiresCaptcha) {
+        // Não mostra toast de erro quando CAPTCHA é requerido
+        return { 
+          success: false, 
+          message: error.message, 
+          requiresCaptcha: true,
+          failedAttempts: error.failedAttempts
+        };
+      }
       toast.error(error.message || 'Erro ao fazer login');
       return { success: false, message: error.message };
     }

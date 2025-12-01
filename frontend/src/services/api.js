@@ -35,11 +35,16 @@ api.interceptors.response.use(
     }
     
     if (error.response) {
-      // Erro da API
+      // Erro da API - passa todos os dados da resposta para preservar requiresCaptcha, blocked, etc.
       return Promise.reject({
         message: error.response.data?.message || 'Erro na requisição',
         status: error.response.status,
         name: error.name,
+        requiresCaptcha: error.response.data?.requiresCaptcha,
+        blocked: error.response.data?.blocked,
+        failedAttempts: error.response.data?.failedAttempts,
+        unlockTime: error.response.data?.unlockTime,
+        ...error.response.data // Inclui todos os outros campos da resposta
       });
     } else if (error.request) {
       // Erro de rede

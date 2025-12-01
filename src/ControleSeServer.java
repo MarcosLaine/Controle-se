@@ -18,6 +18,7 @@ import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLParameters;
 import javax.net.ssl.TrustManagerFactory;
+import server.security.*;
 
 /**
  * Servidor HTTP simplificado para conectar Frontend com Backend Java
@@ -32,6 +33,13 @@ public class ControleSeServer {
     // Cache simples para dados que mudam pouco (TTL de 30 segundos)
     private static final Map<String, CacheEntry> cache = new ConcurrentHashMap<>();
     private static final long CACHE_TTL_MS = 30 * 1000; // 30 segundos
+    
+    // Componentes de segurança
+    private static RateLimiter rateLimiter;
+    private static LoginAttemptTracker loginAttemptTracker;
+    private static CaptchaValidator captchaValidator;
+    private static CircuitBreaker authCircuitBreaker;
+    private static CircuitBreaker apiCircuitBreaker;
     
     private static class CacheEntry {
         final Object data;
@@ -121,6 +129,9 @@ public class ControleSeServer {
     
     public static void main(String[] args) {
         try {
+            // Inicializa componentes de segurança
+            initializeSecurityComponents();
+            
             // Inicializa o banco de dados PostgreSQL (Aiven)
             bancoDados = new BancoDadosPostgreSQL();
             
@@ -141,6 +152,24 @@ public class ControleSeServer {
             
             // Exibe informações do servidor
             exibirInformacoesServidor();
+            
+            // Adiciona shutdown hook para limpar recursos
+            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                LOGGER.info("Encerrando servidor...");
+                if (server != null) {
+                    server.stop(5); // Para o servidor com delay de 5 segundos
+                }
+                if (rateLimiter != null) {
+                    rateLimiter.shutdown();
+                }
+                if (loginAttemptTracker != null) {
+                    loginAttemptTracker.shutdown();
+                }
+                if (bancoDados != null) {
+                    bancoDados.fecharConexoes();
+                }
+                LOGGER.info("Servidor encerrado.");
+            }, "ShutdownHook"));
             
         } catch (IOException e) {
             LOGGER.log(Level.SEVERE, "Erro ao iniciar servidor", e);
@@ -198,6 +227,24 @@ public class ControleSeServer {
         
         LOGGER.warning("Variáveis TLS não configuradas. Servidor rodando em HTTP (somente para desenvolvimento).");
         return HttpServer.create(new InetSocketAddress(PORT), 0);
+    }
+    
+    /**
+     * Inicializa componentes de segurança (Rate Limiting, Login Tracking, Circuit Breaker, CAPTCHA)
+     */
+    private static void initializeSecurityComponents() {
+        rateLimiter = new RateLimiter();
+        loginAttemptTracker = new LoginAttemptTracker();
+        captchaValidator = new CaptchaValidator();
+        authCircuitBreaker = new CircuitBreaker("auth", 10, 60 * 1000, 3); // 10 falhas, 1 min timeout
+        apiCircuitBreaker = new CircuitBreaker("api", 20, 60 * 1000, 5); // 20 falhas, 1 min timeout
+        
+        if (captchaValidator.isEnabled()) {
+            LOGGER.info("Componentes de segurança inicializados (Rate Limiting, Login Tracking, Circuit Breaker, CAPTCHA)");
+        } else {
+            LOGGER.warning("CAPTCHA desabilitado: configure RECAPTCHA_SECRET_KEY para habilitar");
+            LOGGER.info("Componentes de segurança inicializados (Rate Limiting, Login Tracking, Circuit Breaker)");
+        }
     }
     
     /**
@@ -301,25 +348,81 @@ public class ControleSeServer {
         LOGGER.info("[INICIALIZAÇÃO] Scheduler de cotações iniciado (atualiza a cada 30 minutos)");
     }
     
+    /**
+     * Extrai o IP do cliente da requisição
+     */
+    private static String getClientIp(HttpExchange exchange) {
+        // Tenta obter do header X-Forwarded-For (útil para proxies/load balancers)
+        String forwardedFor = exchange.getRequestHeaders().getFirst("X-Forwarded-For");
+        if (forwardedFor != null && !forwardedFor.isEmpty()) {
+            // Pega o primeiro IP (o IP original do cliente)
+            String[] ips = forwardedFor.split(",");
+            if (ips.length > 0) {
+                return ips[0].trim();
+            }
+        }
+        
+        // Tenta obter do header X-Real-IP
+        String realIp = exchange.getRequestHeaders().getFirst("X-Real-IP");
+        if (realIp != null && !realIp.isEmpty()) {
+            return realIp.trim();
+        }
+        
+        // Fallback para o IP remoto da conexão
+        InetSocketAddress remoteAddress = exchange.getRemoteAddress();
+        if (remoteAddress != null) {
+            return remoteAddress.getAddress().getHostAddress();
+        }
+        
+        return "unknown";
+    }
+    
+    /**
+     * Cria um handler protegido com rate limiting e circuit breaker
+     */
+    private static HttpHandler withRateLimit(HttpHandler handler, String endpoint, CircuitBreaker circuitBreaker) {
+        return new RateLimitHandler(handler, rateLimiter, circuitBreaker, endpoint);
+    }
+    
     private static void setupRoutes() {
         // API Routes básicas (devem vir antes do StaticFileHandler)
-        server.createContext("/api/auth/login", new LoginHandler());
-        server.createContext("/api/auth/register", new RegisterHandler());
-        server.createContext("/api/auth/change-password", secure(new ChangePasswordHandler()));
-        server.createContext("/api/auth/user", secure(new DeleteUserHandler()));
-        server.createContext("/api/dashboard/overview", secure(new OverviewHandler()));
-        server.createContext("/api/categories", secure(new CategoriesHandler()));
-        server.createContext("/api/accounts", secure(new AccountsHandler()));
-        server.createContext("/api/transactions/recent", secure(new RecentTransactionsHandler()));
-        server.createContext("/api/transactions", secure(new TransactionsHandler()));
-        server.createContext("/api/expenses", secure(new ExpensesHandler()));
-        server.createContext("/api/incomes", secure(new IncomesHandler()));
-        server.createContext("/api/budgets", secure(new BudgetsHandler()));
-        server.createContext("/api/tags", secure(new TagsHandler()));
-        server.createContext("/api/reports", secure(new ReportsHandler()));
-        server.createContext("/api/investments", secure(new InvestmentsHandler()));
-        server.createContext("/api/investments/evolution", secure(new InvestmentEvolutionHandler()));
-        server.createContext("/api/investments/quote", secure(new InvestmentQuoteHandler()));
+        // Endpoints de autenticação com proteção especial
+        server.createContext("/api/auth/login", 
+            withRateLimit(new LoginHandler(), "/api/auth/login", authCircuitBreaker));
+        server.createContext("/api/auth/register", 
+            withRateLimit(new RegisterHandler(), "/api/auth/register", authCircuitBreaker));
+        server.createContext("/api/auth/change-password", 
+            withRateLimit(secure(new ChangePasswordHandler()), "/api/auth/change-password", authCircuitBreaker));
+        server.createContext("/api/auth/user", 
+            withRateLimit(secure(new DeleteUserHandler()), "/api/auth/user", authCircuitBreaker));
+        
+        // Endpoints da API com proteção padrão
+        server.createContext("/api/dashboard/overview", 
+            withRateLimit(secure(new OverviewHandler()), "/api/dashboard/overview", apiCircuitBreaker));
+        server.createContext("/api/categories", 
+            withRateLimit(secure(new CategoriesHandler()), "/api/categories", apiCircuitBreaker));
+        server.createContext("/api/accounts", 
+            withRateLimit(secure(new AccountsHandler()), "/api/accounts", apiCircuitBreaker));
+        server.createContext("/api/transactions/recent", 
+            withRateLimit(secure(new RecentTransactionsHandler()), "/api/transactions/recent", apiCircuitBreaker));
+        server.createContext("/api/transactions", 
+            withRateLimit(secure(new TransactionsHandler()), "/api/transactions", apiCircuitBreaker));
+        server.createContext("/api/expenses", 
+            withRateLimit(secure(new ExpensesHandler()), "/api/expenses", apiCircuitBreaker));
+        server.createContext("/api/incomes", 
+            withRateLimit(secure(new IncomesHandler()), "/api/incomes", apiCircuitBreaker));
+        server.createContext("/api/budgets", 
+            withRateLimit(secure(new BudgetsHandler()), "/api/budgets", apiCircuitBreaker));
+        server.createContext("/api/tags", 
+            withRateLimit(secure(new TagsHandler()), "/api/tags", apiCircuitBreaker));
+        server.createContext("/api/reports", 
+            withRateLimit(secure(new ReportsHandler()), "/api/reports", apiCircuitBreaker));
+        server.createContext("/api/investments", 
+            withRateLimit(secure(new InvestmentsHandler()), "/api/investments", apiCircuitBreaker));
+        server.createContext("/api/investments/evolution", 
+            withRateLimit(secure(new InvestmentEvolutionHandler()), "/api/investments/evolution", apiCircuitBreaker));
+        server.createContext("/api/investments/quote", 
+            withRateLimit(secure(new InvestmentQuoteHandler()), "/api/investments/quote", apiCircuitBreaker));
         
         // Health check
         server.createContext("/health", new HealthHandler());
@@ -466,14 +569,76 @@ public class ControleSeServer {
                 return;
             }
             
+            String clientIp = getClientIp(exchange);
+            
             try {
                 String requestBody = readRequestBody(exchange);
+                LOGGER.info("Request body recebido: " + requestBody.substring(0, Math.min(200, requestBody.length())) + (requestBody.length() > 200 ? "..." : ""));
+                
                 Map<String, String> data = parseJson(requestBody);
                 
                 String email = data.get("email");
                 String password = data.get("password");
+                String captchaToken = data.get("captchaToken");
                 
+                // Debug: log do token recebido (apenas tamanho por segurança)
+                if (captchaToken != null) {
+                    LOGGER.info(String.format("CAPTCHA token recebido (tamanho: %d caracteres)", captchaToken.length()));
+                } else {
+                    LOGGER.warning("CAPTCHA token não recebido no request. Chaves disponíveis: " + data.keySet());
+                }
+                
+                // PRIMEIRO: Verifica se deve solicitar CAPTCHA (antes de verificar bloqueio)
+                // Isso permite que o CAPTCHA apareça mesmo se houver muitas tentativas
+                boolean requiresCaptcha = loginAttemptTracker.shouldRequireCaptcha(clientIp, email);
+                if (requiresCaptcha) {
+                    // Se CAPTCHA é necessário mas não foi fornecido
+                    if (captchaToken == null || captchaToken.isEmpty()) {
+                        Map<String, Object> response = new HashMap<>();
+                        response.put("success", false);
+                        response.put("message", "CAPTCHA requerido após múltiplas tentativas falhas");
+                        response.put("requiresCaptcha", true);
+                        response.put("failedAttempts", loginAttemptTracker.getAttemptInfo(clientIp, email).failedAttempts);
+                        
+                        sendJsonResponse(exchange, 401, response);
+                        return;
+                    }
+                    
+                    // Valida o token do CAPTCHA
+                    if (!captchaValidator.validate(captchaToken, clientIp)) {
+                        // CAPTCHA inválido - registra como tentativa falha
+                        loginAttemptTracker.recordFailedAttempt(clientIp, email);
+                        
+                        Map<String, Object> response = new HashMap<>();
+                        response.put("success", false);
+                        response.put("message", "CAPTCHA inválido. Tente novamente.");
+                        response.put("requiresCaptcha", true);
+                        response.put("failedAttempts", loginAttemptTracker.getAttemptInfo(clientIp, email).failedAttempts);
+                        
+                        sendJsonResponse(exchange, 401, response);
+                        return;
+                    }
+                }
+                
+                // DEPOIS: Verifica se IP ou email estão bloqueados (após 5 tentativas)
+                if (loginAttemptTracker.isBlocked(clientIp, email)) {
+                    LoginAttemptTracker.AttemptInfo info = loginAttemptTracker.getAttemptInfo(clientIp, email);
+                    Map<String, Object> response = new HashMap<>();
+                    response.put("success", false);
+                    response.put("message", "Muitas tentativas falhas. Acesso bloqueado temporariamente.");
+                    response.put("blocked", true);
+                    response.put("unlockTime", info.unlockTime);
+                    response.put("failedAttempts", info.failedAttempts);
+                    
+                    sendJsonResponse(exchange, 429, response);
+                    return;
+                }
+                
+                // Tenta autenticar
                 if (bancoDados.autenticarUsuario(email, password)) {
+                    // Login bem-sucedido - limpa tentativas falhas
+                    loginAttemptTracker.recordSuccessfulAttempt(clientIp, email);
+                    
                     Usuario usuario = bancoDados.buscarUsuarioPorEmail(email);
                     String token = JwtUtil.generateToken(usuario);
                     Map<String, Object> response = new HashMap<>();
@@ -487,14 +652,20 @@ public class ControleSeServer {
                     
                     sendJsonResponse(exchange, 200, response);
                 } else {
+                    // Login falhou - registra tentativa falha
+                    loginAttemptTracker.recordFailedAttempt(clientIp, email);
+                    
+                    LoginAttemptTracker.AttemptInfo info = loginAttemptTracker.getAttemptInfo(clientIp, email);
                     Map<String, Object> response = new HashMap<>();
                     response.put("success", false);
                     response.put("message", "Email ou senha incorretos");
+                    response.put("failedAttempts", info.failedAttempts);
+                    response.put("requiresCaptcha", info.failedAttempts >= 3);
                     
                     sendJsonResponse(exchange, 401, response);
                 }
             } catch (Exception e) {
-                e.printStackTrace(); // Log do erro para debug
+                LOGGER.log(Level.SEVERE, "Erro ao processar login", e);
                 sendErrorResponse(exchange, 500, "Erro interno do servidor");
             } finally {
                 // Garante que conexão da thread seja fechada após requisição
@@ -519,10 +690,56 @@ public class ControleSeServer {
                 String email = data.get("email");
                 String password = data.get("password");
                 
-                int userId = bancoDados.cadastrarUsuario(name, email, password);
+                // Validações básicas
+                if (name == null || name.trim().isEmpty()) {
+                    sendErrorResponse(exchange, 400, "Nome é obrigatório");
+                    return;
+                }
+                if (email == null || email.trim().isEmpty()) {
+                    sendErrorResponse(exchange, 400, "Email é obrigatório");
+                    return;
+                }
+                if (password == null || password.trim().isEmpty()) {
+                    sendErrorResponse(exchange, 400, "Senha é obrigatória");
+                    return;
+                }
                 
-                // Busca o usuário recém-cadastrado para retornar os dados completos
-                Usuario usuario = bancoDados.buscarUsuario(userId);
+                // Normaliza email antes de cadastrar (mesma normalização usada no banco)
+                String emailNormalizado = email.toLowerCase().trim();
+                int userId = bancoDados.cadastrarUsuario(name, emailNormalizado, password);
+                
+                // Busca o usuário recém-cadastrado usando email normalizado (mais confiável após INSERT)
+                // Usa buscarUsuarioPorEmail que deve encontrar o usuário recém-criado
+                Usuario usuario = bancoDados.buscarUsuarioPorEmail(emailNormalizado);
+                
+                // Se ainda não encontrou, tenta buscar por ID (pode haver delay de transação)
+                if (usuario == null) {
+                    // Aguarda um pouco e tenta novamente (para casos de isolamento de transação)
+                    try {
+                        Thread.sleep(100);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                    }
+                    usuario = bancoDados.buscarUsuarioPorEmail(emailNormalizado);
+                }
+                
+                // Se ainda não encontrou, tenta buscar por ID sem verificar ativo
+                if (usuario == null) {
+                    usuario = bancoDados.buscarUsuarioSemAtivo(userId);
+                }
+                
+                // Se ainda não encontrou, retorna erro
+                if (usuario == null) {
+                    LOGGER.warning(String.format(
+                        "Usuário cadastrado (ID: %d) mas não encontrado ao buscar. Email: %s", 
+                        userId, emailNormalizado
+                    ));
+                    Map<String, Object> response = new HashMap<>();
+                    response.put("success", false);
+                    response.put("message", "Usuário cadastrado, mas erro ao recuperar dados. Tente fazer login.");
+                    sendJsonResponse(exchange, 500, response);
+                    return;
+                }
                 
                 Map<String, Object> response = new HashMap<>();
                 response.put("success", true);
@@ -535,12 +752,21 @@ public class ControleSeServer {
                 ));
                 
                 sendJsonResponse(exchange, 201, response);
-            } catch (Exception e) {
+            } catch (RuntimeException e) {
+                // Erros de validação ou duplicação
                 Map<String, Object> response = new HashMap<>();
                 response.put("success", false);
                 response.put("message", e.getMessage());
                 
-                sendJsonResponse(exchange, 400, response);
+                int statusCode = e.getMessage().contains("já cadastrado") ? 409 : 400;
+                sendJsonResponse(exchange, statusCode, response);
+            } catch (Exception e) {
+                LOGGER.log(Level.SEVERE, "Erro ao processar cadastro", e);
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Erro interno do servidor: " + e.getMessage());
+                
+                sendJsonResponse(exchange, 500, response);
             } finally {
                 // Garante que conexão da thread seja fechada após requisição
                 bancoDados.closeConnection();
@@ -3873,38 +4099,72 @@ public class ControleSeServer {
     }
     
     private static Map<String, String> parseJson(String json) {
-        // Robust JSON parser using regex
+        // Parser JSON melhorado para lidar com strings longas (tokens CAPTCHA)
         Map<String, String> result = new HashMap<>();
-        if (json == null) return result;
+        if (json == null || json.trim().isEmpty()) return result;
         
         try {
-            // Pattern to match "key": "value" or "key": value or "key": [array]
-            // Captura strings, arrays, e valores primitivos
-            Pattern pattern = Pattern.compile("\"([^\"]+)\"\\s*:\\s*(\"([^\"]*)\"|\\[([^\\]]*)\\]|([^,}\\s]+))");
-            Matcher matcher = pattern.matcher(json);
-            
-            while (matcher.find()) {
-                String key = matcher.group(1);
-                String value = null;
-                
-                if (matcher.group(3) != null) {
-                    // String value
-                    value = matcher.group(3);
-                } else if (matcher.group(4) != null) {
-                    // Array value
-                    value = "[" + matcher.group(4) + "]";
-                } else if (matcher.group(5) != null) {
-                    // Primitive value
-                    value = matcher.group(5);
+            // Parser manual mais robusto que lida com strings longas
+            int i = 0;
+            while (i < json.length()) {
+                // Pula espaços e vírgulas
+                while (i < json.length() && (json.charAt(i) == ' ' || json.charAt(i) == ',' || json.charAt(i) == '\n' || json.charAt(i) == '\t')) {
+                    i++;
                 }
+                if (i >= json.length()) break;
                 
-                if (value != null) {
-                    result.put(key.trim(), value.trim());
+                // Procura por chave (começa com aspas)
+                if (json.charAt(i) == '"') {
+                    int keyStart = i + 1;
+                    int keyEnd = json.indexOf('"', keyStart);
+                    if (keyEnd == -1) break;
+                    
+                    String key = json.substring(keyStart, keyEnd);
+                    i = keyEnd + 1;
+                    
+                    // Pula espaços e dois pontos
+                    while (i < json.length() && (json.charAt(i) == ' ' || json.charAt(i) == ':')) {
+                        i++;
+                    }
+                    if (i >= json.length()) break;
+                    
+                    // Lê o valor
+                    String value = null;
+                    if (json.charAt(i) == '"') {
+                        // String value - lê até a próxima aspas (não escapada)
+                        int valueStart = i + 1;
+                        int valueEnd = valueStart;
+                        while (valueEnd < json.length()) {
+                            if (json.charAt(valueEnd) == '"' && (valueEnd == valueStart || json.charAt(valueEnd - 1) != '\\')) {
+                                break;
+                            }
+                            valueEnd++;
+                        }
+                        if (valueEnd < json.length()) {
+                            value = json.substring(valueStart, valueEnd);
+                            // Remove escapes
+                            value = value.replace("\\\"", "\"").replace("\\\\", "\\").replace("\\n", "\n").replace("\\r", "\r").replace("\\t", "\t");
+                            i = valueEnd + 1;
+                        }
+                    } else {
+                        // Valor primitivo (número, boolean, null)
+                        int valueStart = i;
+                        while (i < json.length() && json.charAt(i) != ',' && json.charAt(i) != '}' && json.charAt(i) != ']') {
+                            i++;
+                        }
+                        value = json.substring(valueStart, i).trim();
+                    }
+                    
+                    if (value != null) {
+                        result.put(key, value);
+                    }
+                } else {
+                    i++;
                 }
             }
         } catch (Exception e) {
-            System.err.println("Erro ao fazer parse do JSON: " + e.getMessage());
-            System.err.println("JSON recebido: " + json);
+            LOGGER.log(Level.WARNING, "Erro ao fazer parse do JSON: " + e.getMessage(), e);
+            LOGGER.warning("JSON recebido: " + json);
         }
         
         return result;

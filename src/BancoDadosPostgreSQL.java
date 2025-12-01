@@ -650,11 +650,55 @@ public class BancoDadosPostgreSQL {
         validateInput("Senha", senha, 200);
 
         synchronized (this) {
-            if (buscarUsuarioPorEmail(email) != null) {
-                throw new RuntimeException("Email já cadastrado!");
-            }
+            // Normaliza o email da mesma forma que será salvo (lowercase + trim)
+            String emailNormalizado = email.toLowerCase().trim();
+            
+            // Não verifica duplicação prévia - confia na constraint UNIQUE do banco
+            // Isso evita problemas de isolamento de transação e race conditions
+            // A constraint UNIQUE é mais confiável e atômica
+            
             String senhaHash = PasswordHasher.hashPassword(senha);
-            return salvarUsuario(nome, email, senhaHash);
+            return salvarUsuario(nome, emailNormalizado, senhaHash);
+        }
+    }
+    
+    /**
+     * Verifica se um email já existe no banco (sem verificar se está ativo)
+     * Útil para verificação de duplicação antes de cadastrar
+     * Usa uma conexão separada com autoCommit para evitar problemas de isolamento
+     */
+    private boolean emailJaExiste(String email) {
+        String sql = "SELECT COUNT(*) FROM usuarios WHERE email = ?";
+        
+        Connection conn = null;
+        try {
+            // Obtém conexão do pool
+            conn = dataSource.getConnection();
+            // Habilita autoCommit para esta consulta de leitura
+            conn.setAutoCommit(true);
+            
+            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                pstmt.setString(1, email);
+                ResultSet rs = pstmt.executeQuery();
+                
+                if (rs.next()) {
+                    return rs.getInt(1) > 0;
+                }
+                return false;
+            }
+        } catch (SQLException e) {
+            // Em caso de erro, assume que não existe para não bloquear cadastros legítimos
+            // O INSERT com constraint de unique vai capturar duplicação real
+            return false;
+        } finally {
+            // Fecha a conexão
+            if (conn != null) {
+                try {
+                    conn.close();
+                } catch (SQLException e) {
+                    // Ignora erro ao fechar
+                }
+            }
         }
     }
 
@@ -662,29 +706,49 @@ public class BancoDadosPostgreSQL {
         validateInput("Nome", nome, 100);
         validateEmail(email);
 
-        String sql = "INSERT INTO usuarios (nome, email, senha) VALUES (?, ?, ?) RETURNING id_usuario";
+        // Garante que ativo seja TRUE explicitamente
+        // Email já vem normalizado do cadastrarUsuario
+        String sql = "INSERT INTO usuarios (nome, email, senha, ativo) VALUES (?, ?, ?, TRUE) RETURNING id_usuario";
         
-        try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
-            pstmt.setString(1, nome.trim());
-            pstmt.setString(2, email.toLowerCase().trim()); // Normaliza email
-            pstmt.setString(3, senhaArmazenada);
+        Connection conn = null;
+        try {
+            conn = getConnection(); // getConnection já desabilita autoCommit
             
-            ResultSet rs = pstmt.executeQuery();
-            if (rs.next()) {
-                int idUsuario = rs.getInt(1);
-                getConnection().commit();
-                return idUsuario;
+            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                pstmt.setString(1, nome.trim());
+                pstmt.setString(2, email); // Email já normalizado
+                pstmt.setString(3, senhaArmazenada);
+                
+                ResultSet rs = pstmt.executeQuery();
+                if (rs.next()) {
+                    int idUsuario = rs.getInt(1);
+                    conn.commit(); // Commit na mesma conexão
+                    return idUsuario;
+                }
+                throw new RuntimeException("Erro ao cadastrar usuário");
             }
-            throw new RuntimeException("Erro ao cadastrar usuário");
         } catch (SQLException e) {
-            try {
-                getConnection().rollback();
-            } catch (SQLException ex) {}
-            // Verifica se é erro de duplicação (race condition)
+            if (conn != null) {
+                try {
+                    conn.rollback(); // Rollback na mesma conexão
+                } catch (SQLException ex) {
+                    // Ignora erro no rollback
+                }
+            }
+            // Verifica se é erro de duplicação (constraint unique)
             if (e.getSQLState() != null && e.getSQLState().equals("23505")) {
                 throw new RuntimeException("Email já cadastrado!");
             }
             throw new RuntimeException("Erro ao cadastrar usuário: " + e.getMessage(), e);
+        } finally {
+            // Fecha a conexão
+            if (conn != null) {
+                try {
+                    conn.close();
+                } catch (SQLException e) {
+                    // Ignora erro ao fechar
+                }
+            }
         }
     }
     
@@ -706,11 +770,18 @@ public class BancoDadosPostgreSQL {
     }
     
     public Usuario buscarUsuarioPorEmail(String email) {
+        if (email == null || email.trim().isEmpty()) {
+            return null;
+        }
+        
+        // Normaliza o email (lowercase + trim) para garantir consistência
+        String emailNormalizado = email.toLowerCase().trim();
+        
         String sql = "SELECT id_usuario, nome, email, senha, ativo FROM usuarios WHERE email = ? AND ativo = TRUE";
         
         try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            pstmt.setString(1, email);
+            pstmt.setString(1, emailNormalizado);
             ResultSet rs = pstmt.executeQuery();
             
             if (rs.next()) {
@@ -719,6 +790,27 @@ public class BancoDadosPostgreSQL {
             return null;
         } catch (SQLException e) {
             throw new RuntimeException("Erro ao buscar usuário por email: " + e.getMessage(), e);
+        }
+    }
+    
+    /**
+     * Busca usuário por ID sem verificar se está ativo
+     * Útil para buscar usuário recém-cadastrado
+     */
+    public Usuario buscarUsuarioSemAtivo(int idUsuario) {
+        String sql = "SELECT id_usuario, nome, email, senha, ativo FROM usuarios WHERE id_usuario = ?";
+        
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, idUsuario);
+            ResultSet rs = pstmt.executeQuery();
+            
+            if (rs.next()) {
+                return mapUsuario(rs);
+            }
+            return null;
+        } catch (SQLException e) {
+            throw new RuntimeException("Erro ao buscar usuário: " + e.getMessage(), e);
         }
     }
     
