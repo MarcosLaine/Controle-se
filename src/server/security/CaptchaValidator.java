@@ -63,7 +63,7 @@ public class CaptchaValidator {
             return false;
         }
         
-        LOGGER.info(String.format("Validando CAPTCHA token (tamanho: %d, IP: %s)", captchaToken.length(), clientIp));
+        LOGGER.info(String.format("Validando CAPTCHA token (tamanho: %d, IP: %s)", captchaToken.length(), clientIp != null ? clientIp : "unknown"));
         
         try {
             // Constrói a URL com parâmetros usando POST (mais seguro para tokens longos)
@@ -92,20 +92,31 @@ public class CaptchaValidator {
             
             // Lê a resposta
             int responseCode = connection.getResponseCode();
-            if (responseCode != HttpURLConnection.HTTP_OK) {
+            
+            // Lê o corpo da resposta (pode estar no input stream ou error stream)
+            String responseBody;
+            if (responseCode == HttpURLConnection.HTTP_OK) {
+                try (InputStream is = connection.getInputStream();
+                     BufferedReader reader = new BufferedReader(
+                         new InputStreamReader(is, "UTF-8"))) {
+                    responseBody = reader.lines().collect(Collectors.joining("\n"));
+                }
+            } else {
+                // Tenta ler do error stream
+                try (InputStream is = connection.getErrorStream();
+                     BufferedReader reader = new BufferedReader(
+                         new InputStreamReader(is, "UTF-8"))) {
+                    responseBody = reader.lines().collect(Collectors.joining("\n"));
+                } catch (Exception e) {
+                    responseBody = "Erro ao ler resposta: " + e.getMessage();
+                }
                 LOGGER.warning(String.format(
-                    "Erro ao validar CAPTCHA: código HTTP %d", responseCode
+                    "Erro ao validar CAPTCHA: código HTTP %d, resposta: %s", responseCode, responseBody
                 ));
                 return false;
             }
             
-            // Lê o corpo da resposta
-            String responseBody;
-            try (InputStream is = connection.getInputStream();
-                 BufferedReader reader = new BufferedReader(
-                     new InputStreamReader(is, "UTF-8"))) {
-                responseBody = reader.lines().collect(Collectors.joining("\n"));
-            }
+            LOGGER.info(String.format("Resposta do Google reCAPTCHA: %s", responseBody));
             
             // Parse da resposta JSON
             // Formato esperado: {"success": true, "challenge_ts": "...", "hostname": "..."}
@@ -135,28 +146,31 @@ public class CaptchaValidator {
      */
     private boolean parseResponse(String jsonResponse) {
         if (jsonResponse == null || jsonResponse.isEmpty()) {
+            LOGGER.warning("Resposta do Google reCAPTCHA está vazia");
             return false;
         }
         
         // Parse simples de JSON (sem biblioteca externa)
-        // Procura por "success":true (sem espaços ou com espaços)
-        String normalized = jsonResponse.replaceAll("\\s+", "");
+        // Remove espaços e quebras de linha para facilitar o parse
+        String normalized = jsonResponse.replaceAll("\\s+", " ").trim();
         
-        // Verifica se contém "success":true
-        if (normalized.contains("\"success\":true") || 
-            normalized.contains("'success':true") ||
-            normalized.contains("\"success\": true")) {
+        // Procura por "success":true (com diferentes formatos possíveis)
+        // Formato esperado: {"success":true,...} ou {"success": true,...}
+        if (normalized.matches(".*\"success\"\\s*:\\s*true.*") || 
+            normalized.matches(".*'success'\\s*:\\s*true.*")) {
+            LOGGER.info("CAPTCHA validado: success=true encontrado na resposta");
             return true;
         }
         
         // Verifica se contém "success":false explicitamente
-        if (normalized.contains("\"success\":false") || 
-            normalized.contains("'success':false") ||
-            normalized.contains("\"success\": false")) {
+        if (normalized.matches(".*\"success\"\\s*:\\s*false.*") || 
+            normalized.matches(".*'success'\\s*:\\s*false.*")) {
+            LOGGER.warning("CAPTCHA inválido: success=false encontrado na resposta");
             return false;
         }
         
-        // Se não encontrou, assume inválido por segurança
+        // Se não encontrou padrão conhecido, loga e assume inválido por segurança
+        LOGGER.warning(String.format("Não foi possível parsear resposta do CAPTCHA: %s", jsonResponse));
         return false;
     }
     

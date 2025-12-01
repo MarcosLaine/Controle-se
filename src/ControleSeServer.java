@@ -618,7 +618,11 @@ public class ControleSeServer {
                     }
                     
                     // Valida o token do CAPTCHA
-                    if (!captchaValidator.validate(captchaToken, clientIp)) {
+                    LOGGER.info(String.format("Validando CAPTCHA para email: %s, IP: %s", email, clientIp));
+                    boolean captchaValid = captchaValidator.validate(captchaToken, clientIp);
+                    LOGGER.info(String.format("Resultado da validação CAPTCHA: %s", captchaValid ? "VÁLIDO" : "INVÁLIDO"));
+                    
+                    if (!captchaValid) {
                         // CAPTCHA inválido - registra como tentativa falha
                         loginAttemptTracker.recordFailedAttempt(clientIp, email);
                         
@@ -631,6 +635,7 @@ public class ControleSeServer {
                         sendJsonResponse(exchange, 401, response);
                         return;
                     }
+                    LOGGER.info("CAPTCHA validado com sucesso, prosseguindo com autenticação");
                 }
                 
                 // DEPOIS: Verifica se IP ou email estão bloqueados (após 5 tentativas)
