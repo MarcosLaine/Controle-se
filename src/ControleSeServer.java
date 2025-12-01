@@ -28,7 +28,19 @@ public class ControleSeServer {
     private static final Logger LOGGER = Logger.getLogger(ControleSeServer.class.getName());
     private static BancoDadosPostgreSQL bancoDados;
     private static HttpServer server;
-    private static final int PORT = 8080;
+    
+    // Lê a porta da variável de ambiente PORT (usada pelo Render) ou usa 8080 como padrão
+    private static int getPort() {
+        String portEnv = System.getenv("PORT");
+        if (portEnv != null && !portEnv.isEmpty()) {
+            try {
+                return Integer.parseInt(portEnv);
+            } catch (NumberFormatException e) {
+                LOGGER.warning("Porta inválida na variável PORT: " + portEnv + ". Usando 8080 como padrão.");
+            }
+        }
+        return 8080;
+    }
     
     // Cache simples para dados que mudam pouco (TTL de 30 segundos)
     private static final Map<String, CacheEntry> cache = new ConcurrentHashMap<>();
@@ -201,7 +213,7 @@ public class ControleSeServer {
                 SSLContext sslContext = SSLContext.getInstance("TLS");
                 sslContext.init(kmf.getKeyManagers(), tmf.getTrustManagers(), null);
                 
-                HttpsServer httpsServer = HttpsServer.create(new InetSocketAddress(PORT), 0);
+                HttpsServer httpsServer = HttpsServer.create(new InetSocketAddress(getPort()), 0);
                 httpsServer.setHttpsConfigurator(new HttpsConfigurator(sslContext) {
                     @Override
                     public void configure(HttpsParameters params) {
@@ -226,7 +238,7 @@ public class ControleSeServer {
         }
         
         LOGGER.warning("Variáveis TLS não configuradas. Servidor rodando em HTTP (somente para desenvolvimento).");
-        return HttpServer.create(new InetSocketAddress(PORT), 0);
+        return HttpServer.create(new InetSocketAddress(getPort()), 0);
     }
     
     /**
@@ -252,9 +264,10 @@ public class ControleSeServer {
      */
     private static void exibirInformacoesServidor() {
         LOGGER.info("=== SERVIDOR CONTROLE-SE INICIADO ===");
-        LOGGER.info("Servidor rodando em: http" + (server instanceof HttpsServer ? "s" : "") + "://localhost:" + PORT);
-        LOGGER.info("Frontend disponível em: http" + (server instanceof HttpsServer ? "s" : "") + "://localhost:" + PORT + "/");
-        LOGGER.info("API disponível em: http" + (server instanceof HttpsServer ? "s" : "") + "://localhost:" + PORT + "/api/");
+        int port = getPort();
+        LOGGER.info("Servidor rodando em: http" + (server instanceof HttpsServer ? "s" : "") + "://localhost:" + port);
+        LOGGER.info("Frontend disponível em: http" + (server instanceof HttpsServer ? "s" : "") + "://localhost:" + port + "/");
+        LOGGER.info("API disponível em: http" + (server instanceof HttpsServer ? "s" : "") + "://localhost:" + port + "/api/");
         LOGGER.info("Pressione Ctrl+C para parar o servidor");
     }
     
