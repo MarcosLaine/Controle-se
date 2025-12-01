@@ -16,6 +16,8 @@ import java.util.logging.Logger;
 import java.util.regex.*;
 import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLParameters;
+import javax.net.ssl.TrustManagerFactory;
 
 /**
  * Servidor HTTP simplificado para conectar Frontend com Backend Java
@@ -26,6 +28,87 @@ public class ControleSeServer {
     private static BancoDadosPostgreSQL bancoDados;
     private static HttpServer server;
     private static final int PORT = 8080;
+    
+    // Cache simples para dados que mudam pouco (TTL de 30 segundos)
+    private static final Map<String, CacheEntry> cache = new ConcurrentHashMap<>();
+    private static final long CACHE_TTL_MS = 30 * 1000; // 30 segundos
+    
+    private static class CacheEntry {
+        final Object data;
+        final long timestamp;
+        
+        CacheEntry(Object data) {
+            this.data = data;
+            this.timestamp = System.currentTimeMillis();
+        }
+        
+        boolean isExpired() {
+            return (System.currentTimeMillis() - timestamp) > CACHE_TTL_MS;
+        }
+    }
+    
+    private static <T> T getCached(String key) {
+        CacheEntry entry = cache.get(key);
+        if (entry != null && !entry.isExpired()) {
+            return (T) entry.data;
+        }
+        if (entry != null) {
+            cache.remove(key); // Remove entrada expirada
+        }
+        return null;
+    }
+    
+    private static void setCached(String key, Object data) {
+        cache.put(key, new CacheEntry(data));
+    }
+    
+    private static void invalidateCache(String pattern) {
+        if (pattern == null) {
+            cache.clear();
+        } else {
+            cache.entrySet().removeIf(entry -> entry.getKey().startsWith(pattern));
+        }
+    }
+    
+    /**
+     * Normaliza números no formato brasileiro (vírgula como separador decimal) 
+     * para formato internacional (ponto como separador decimal)
+     * Exemplos: "1.234,56" -> "1234.56", "1,5" -> "1.5", "1000" -> "1000"
+     */
+    private static String normalizeBrazilianNumber(String numberStr) {
+        if (numberStr == null || numberStr.trim().isEmpty()) {
+            return numberStr;
+        }
+        String trimmed = numberStr.trim();
+        // Remove separadores de milhar (pontos) e substitui vírgula por ponto
+        // Exemplo: "1.234,56" -> remove pontos -> "1234,56" -> substitui vírgula -> "1234.56"
+        if (trimmed.contains(",")) {
+            // Tem vírgula: formato brasileiro
+            // Remove pontos (separadores de milhar) e substitui vírgula por ponto
+            return trimmed.replace(".", "").replace(",", ".");
+        } else if (trimmed.contains(".")) {
+            // Tem ponto mas não vírgula: pode ser formato internacional ou separador de milhar
+            // Se tiver mais de um ponto, provavelmente é separador de milhar (formato brasileiro sem vírgula)
+            // Exemplo: "1.234" -> "1234"
+            long dotCount = trimmed.chars().filter(ch -> ch == '.').count();
+            if (dotCount > 1) {
+                // Múltiplos pontos: remove todos (separadores de milhar)
+                return trimmed.replace(".", "");
+            }
+            // Um ponto: pode ser decimal, mantém
+            return trimmed;
+        }
+        // Sem ponto nem vírgula: número inteiro
+        return trimmed;
+    }
+    
+    /**
+     * Parse de número com suporte a formato brasileiro
+     */
+    private static double parseDoubleBrazilian(String numberStr) throws NumberFormatException {
+        String normalized = normalizeBrazilianNumber(numberStr);
+        return Double.parseDouble(normalized);
+    }
     
     static {
         ConsoleHandler handler = new ConsoleHandler();
@@ -82,17 +165,30 @@ public class ControleSeServer {
                 KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
                 kmf.init(keyStore, passwordChars);
                 
+                // Usa TrustManager padrão do sistema (confia em CAs padrão)
+                TrustManagerFactory tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+                tmf.init((KeyStore) null); // Usa truststore padrão do sistema
+                
                 SSLContext sslContext = SSLContext.getInstance("TLS");
-                sslContext.init(kmf.getKeyManagers(), null, null);
+                sslContext.init(kmf.getKeyManagers(), tmf.getTrustManagers(), null);
                 
                 HttpsServer httpsServer = HttpsServer.create(new InetSocketAddress(PORT), 0);
                 httpsServer.setHttpsConfigurator(new HttpsConfigurator(sslContext) {
                     @Override
                     public void configure(HttpsParameters params) {
-                        params.setSSLParameters(sslContext.getDefaultSSLParameters());
+                        try {
+                            SSLParameters sslParams = sslContext.getDefaultSSLParameters();
+                            // Configura para não exigir autenticação de cliente (modo servidor padrão)
+                            sslParams.setNeedClientAuth(false);
+                            sslParams.setWantClientAuth(false);
+                            params.setSSLParameters(sslParams);
+                        } catch (Exception e) {
+                            LOGGER.log(Level.WARNING, "Erro ao configurar parâmetros SSL, usando padrão", e);
+                            params.setSSLParameters(sslContext.getDefaultSSLParameters());
+                        }
                     }
                 });
-                LOGGER.info("HTTPS habilitado com certificado fornecido");
+                LOGGER.info("HTTPS habilitado com certificado fornecido: " + keystorePath);
                 return httpsServer;
             } catch (Exception e) {
                 LOGGER.log(Level.SEVERE, "Falha ao configurar HTTPS", e);
@@ -538,50 +634,135 @@ public class ControleSeServer {
             try {
                 int userId = requireUserId(exchange);
                 
-                double totalIncome = bancoDados.calcularTotalReceitasUsuario(userId);
-                double totalExpense = bancoDados.calcularTotalGastosUsuario(userId);
-                double balance = bancoDados.calcularSaldoContasUsuarioSemInvestimento(userId); // Saldo sem investimentos
+                // Cache de valores totais (TTL curto pois podem mudar com frequência)
+                String cacheKeyIncome = "totalIncome_" + userId;
+                String cacheKeyExpense = "totalExpense_" + userId;
+                String cacheKeyBalance = "balance_" + userId;
+                String cacheKeyCredito = "totalCredito_" + userId;
                 
-                // Calcula valor total dos investimentos
-                List<Investimento> investments = bancoDados.buscarInvestimentosPorUsuario(userId);
-                double totalInvestmentsValue = 0;
-                QuoteService quoteService = QuoteService.getInstance();
+                Double totalIncome = getCached(cacheKeyIncome);
+                Double totalExpense = getCached(cacheKeyExpense);
+                Double balance = getCached(cacheKeyBalance);
+                Double totalCreditoDisponivel = getCached(cacheKeyCredito);
                 
-                for (Investimento inv : investments) {
-                    // Busca cotação atual
-                    QuoteService.QuoteResult quote = quoteService.getQuote(inv.getNome(), inv.getCategoria(), null);
-                    double currentPrice = quote != null && quote.success ? quote.price : inv.getPrecoAporte();
+                if (totalIncome == null) {
+                    totalIncome = bancoDados.calcularTotalReceitasUsuario(userId);
+                    setCached(cacheKeyIncome, totalIncome);
+                }
+                if (totalExpense == null) {
+                    totalExpense = bancoDados.calcularTotalGastosUsuario(userId);
+                    setCached(cacheKeyExpense, totalExpense);
+                }
+                if (balance == null) {
+                    balance = bancoDados.calcularSaldoContasUsuarioSemInvestimento(userId);
+                    setCached(cacheKeyBalance, balance);
+                }
+                if (totalCreditoDisponivel == null) {
+                    totalCreditoDisponivel = bancoDados.calcularTotalCreditoDisponivelCartoes(userId);
+                    setCached(cacheKeyCredito, totalCreditoDisponivel);
+                }
+                
+                // Calcula informações agregadas de faturas de cartões de crédito
+                // Reutiliza lista de contas do cache se disponível
+                String cacheKeyAccounts = "accounts_" + userId;
+                List<Conta> allAccounts = getCached(cacheKeyAccounts);
+                if (allAccounts == null) {
+                    allAccounts = bancoDados.buscarContasPorUsuario(userId);
+                    setCached(cacheKeyAccounts, allAccounts);
+                }
+                
+                List<Conta> contasCartao = new ArrayList<>(allAccounts);
+                contasCartao.removeIf(c -> !c.isCartaoCredito() || c.getDiaFechamento() == null || c.getDiaPagamento() == null);
+                
+                Map<String, Object> cartoesInfo = null;
+                if (!contasCartao.isEmpty()) {
+                    // Encontra o próximo pagamento mais próximo entre todos os cartões
+                    LocalDate proximoPagamentoMaisProximo = null;
+                    LocalDate proximoFechamentoMaisProximo = null;
+                    long menorDiasAtePagamento = Long.MAX_VALUE;
                     
-                    // Converte para BRL se necessário
-                    if (quote != null && quote.success && !"BRL".equals(quote.currency)) {
-                        double exchangeRate = quoteService.getExchangeRate(quote.currency, "BRL");
-                        currentPrice *= exchangeRate;
-                    } else if (!"BRL".equals(inv.getMoeda())) {
-                        // Se não houve cotação ou é fallback, e o ativo original não é BRL
-                        double exchangeRate = quoteService.getExchangeRate(inv.getMoeda(), "BRL");
-                        currentPrice *= exchangeRate;
+                    for (Conta cartao : contasCartao) {
+                        Map<String, Object> faturaInfo = calcularInfoFatura(cartao.getDiaFechamento(), cartao.getDiaPagamento());
+                        long diasAtePagamento = (Long) faturaInfo.get("diasAtePagamento");
+                        
+                        if (diasAtePagamento < menorDiasAtePagamento) {
+                            menorDiasAtePagamento = diasAtePagamento;
+                            proximoPagamentoMaisProximo = LocalDate.parse((String) faturaInfo.get("proximoPagamento"));
+                            proximoFechamentoMaisProximo = LocalDate.parse((String) faturaInfo.get("proximoFechamento"));
+                        }
                     }
                     
-                    totalInvestmentsValue += inv.getQuantidade() * currentPrice;
+                    if (proximoPagamentoMaisProximo != null) {
+                        cartoesInfo = new HashMap<>();
+                        cartoesInfo.put("proximoPagamento", proximoPagamentoMaisProximo.toString());
+                        cartoesInfo.put("proximoFechamento", proximoFechamentoMaisProximo.toString());
+                        cartoesInfo.put("diasAtePagamento", menorDiasAtePagamento);
+                        cartoesInfo.put("diasAteFechamento", ChronoUnit.DAYS.between(LocalDate.now(), proximoFechamentoMaisProximo));
+                    }
                 }
                 
-                double totalAccounts = bancoDados.calcularTotalSaldoContasUsuario(userId); // Inclui saldo em conta de corretora
+                // Calcula valor total dos investimentos (com cache)
+                String cacheKeyInvestments = "totalInvestments_" + userId;
+                Double totalInvestmentsValue = getCached(cacheKeyInvestments);
+                
+                if (totalInvestmentsValue == null) {
+                    totalInvestmentsValue = 0.0;
+                    List<Investimento> investments = bancoDados.buscarInvestimentosPorUsuario(userId);
+                    
+                    if (!investments.isEmpty()) {
+                        QuoteService quoteService = QuoteService.getInstance();
+                        
+                        for (Investimento inv : investments) {
+                            // Busca cotação atual
+                            QuoteService.QuoteResult quote = quoteService.getQuote(inv.getNome(), inv.getCategoria(), null);
+                            double currentPrice = quote != null && quote.success ? quote.price : inv.getPrecoAporte();
+                            
+                            // Converte para BRL se necessário
+                            if (quote != null && quote.success && !"BRL".equals(quote.currency)) {
+                                double exchangeRate = quoteService.getExchangeRate(quote.currency, "BRL");
+                                currentPrice *= exchangeRate;
+                            } else if (!"BRL".equals(inv.getMoeda())) {
+                                // Se não houve cotação ou é fallback, e o ativo original não é BRL
+                                double exchangeRate = quoteService.getExchangeRate(inv.getMoeda(), "BRL");
+                                currentPrice *= exchangeRate;
+                            }
+                            
+                            totalInvestmentsValue += inv.getQuantidade() * currentPrice;
+                        }
+                    }
+                    
+                    // Cache por 5 minutos (investimentos mudam menos frequentemente)
+                    setCached(cacheKeyInvestments, totalInvestmentsValue);
+                }
+                
+                String cacheKeyTotalAccounts = "totalAccounts_" + userId;
+                Double totalAccounts = getCached(cacheKeyTotalAccounts);
+                if (totalAccounts == null) {
+                    totalAccounts = bancoDados.calcularTotalSaldoContasUsuario(userId);
+                    setCached(cacheKeyTotalAccounts, totalAccounts);
+                }
+                
                 double netWorth = totalAccounts + totalInvestmentsValue; // Patrimônio = Contas + Ativos
                 
-                // Get category breakdown - otimizado: busca todas as categorias e calcula gastos em batch
-                List<Categoria> categories = bancoDados.buscarCategoriasPorUsuario(userId);
-                List<Map<String, Object>> categoryBreakdown = new ArrayList<>();
-                
-                // Cria um mapa de categorias para acesso rápido
-                Map<Integer, Categoria> categoryMap = new HashMap<>();
-                for (Categoria categoria : categories) {
-                    categoryMap.put(categoria.getIdCategoria(), categoria);
+                // Get category breakdown - OTIMIZADO: usa query agregada para evitar N+1 queries
+                String cacheKey = "categories_" + userId;
+                List<Categoria> categories = getCached(cacheKey);
+                if (categories == null) {
+                    categories = bancoDados.buscarCategoriasPorUsuario(userId);
+                    setCached(cacheKey, categories);
                 }
                 
-                // Calcula gastos por categoria de forma otimizada (uma query agregada seria melhor, mas mantemos compatibilidade)
+                // Busca todos os gastos por categoria de uma vez (query agregada)
+                Map<Integer, Double> gastosPorCategoria = bancoDados.calcularTotalGastosPorTodasCategoriasEUsuario(userId);
+                
+                // Busca a categoria "Sem Categoria" para incluir nos relatórios se houver gastos
+                int idCategoriaSemCategoria = bancoDados.obterOuCriarCategoriaSemCategoria(userId);
+                Categoria categoriaSemCategoria = bancoDados.buscarCategoria(idCategoriaSemCategoria);
+                
+                List<Map<String, Object>> categoryBreakdown = new ArrayList<>();
                 for (Categoria categoria : categories) {
-                    double categoryTotal = bancoDados.calcularTotalGastosPorCategoriaEUsuario(categoria.getIdCategoria(), userId);
-                    if (categoryTotal > 0) { // Só adiciona se houver gastos
+                    Double categoryTotal = gastosPorCategoria.get(categoria.getIdCategoria());
+                    if (categoryTotal != null && categoryTotal > 0) {
                         Map<String, Object> categoryData = new HashMap<>();
                         categoryData.put("name", categoria.getNome());
                         categoryData.put("value", categoryTotal);
@@ -589,15 +770,30 @@ public class ControleSeServer {
                     }
                 }
                 
+                // Inclui "Sem Categoria" nos relatórios se houver gastos nela
+                if (categoriaSemCategoria != null) {
+                    Double semCategoriaTotal = gastosPorCategoria.get(idCategoriaSemCategoria);
+                    if (semCategoriaTotal != null && semCategoriaTotal > 0) {
+                        Map<String, Object> categoryData = new HashMap<>();
+                        categoryData.put("name", categoriaSemCategoria.getNome());
+                        categoryData.put("value", semCategoriaTotal);
+                        categoryBreakdown.add(categoryData);
+                    }
+                }
+                
                 Map<String, Object> response = new HashMap<>();
                 response.put("success", true);
-                response.put("data", Map.of(
-                    "totalIncome", totalIncome,
-                    "totalExpense", totalExpense,
-                    "balance", balance,
-                    "netWorth", netWorth,
-                    "categoryBreakdown", categoryBreakdown
-                ));
+                Map<String, Object> dataMap = new HashMap<>();
+                dataMap.put("totalIncome", totalIncome);
+                dataMap.put("totalExpense", totalExpense);
+                dataMap.put("balance", balance);
+                dataMap.put("netWorth", netWorth);
+                dataMap.put("totalCreditoDisponivel", totalCreditoDisponivel);
+                if (cartoesInfo != null) {
+                    dataMap.put("cartoesInfo", cartoesInfo);
+                }
+                dataMap.put("categoryBreakdown", categoryBreakdown);
+                response.put("data", dataMap);
                 
                 sendJsonResponse(exchange, 200, response);
             } catch (UnauthorizedException e) {
@@ -693,7 +889,7 @@ public class ControleSeServer {
                         if (valueObj instanceof Number) {
                             value = ((Number) valueObj).doubleValue();
                         } else if (valueObj instanceof String) {
-                            value = Double.parseDouble((String) valueObj);
+                            value = parseDoubleBrazilian((String) valueObj);
                         }
                         
                         if (budgetData.containsKey("period")) {
@@ -703,7 +899,7 @@ public class ControleSeServer {
                         value = ((Number) budgetObj).doubleValue();
                     } else if (budgetObj instanceof String) {
                         try {
-                            value = Double.parseDouble((String) budgetObj);
+                            value = parseDoubleBrazilian((String) budgetObj);
                         } catch (NumberFormatException e) {
                             // ignore
                         }
@@ -832,16 +1028,34 @@ public class ControleSeServer {
                 String userIdParam = getQueryParam(exchange, "userId");
                 int userId = userIdParam != null ? Integer.parseInt(userIdParam) : 1;
                 
-                List<Conta> accounts = bancoDados.buscarContasPorUsuario(userId);
+                // Cache de contas (dados que mudam pouco)
+                String cacheKey = "accounts_" + userId;
+                List<Conta> accounts = getCached(cacheKey);
+                if (accounts == null) {
+                    accounts = bancoDados.buscarContasPorUsuario(userId);
+                    setCached(cacheKey, accounts);
+                }
                 
-                // Busca investimentos para calcular saldo de contas de investimento
-                List<Investimento> investments = bancoDados.buscarInvestimentosPorUsuario(userId);
-                QuoteService quoteService = QuoteService.getInstance();
+                // Verifica se há contas de investimento antes de buscar investimentos
+                boolean hasInvestmentAccounts = accounts.stream().anyMatch(c -> {
+                    String tipo = c.getTipo() != null ? c.getTipo().toLowerCase().trim() : "";
+                    return tipo.equals("investimento") || tipo.startsWith("investimento");
+                });
+                
+                // Busca investimentos apenas se houver contas de investimento
+                List<Investimento> investments = new ArrayList<>();
+                QuoteService quoteService = null;
+                if (hasInvestmentAccounts) {
+                    investments = bancoDados.buscarInvestimentosPorUsuario(userId);
+                    quoteService = QuoteService.getInstance();
+                }
                 
                 // Mapa para acumular valor dos investimentos por conta
                 Map<Integer, Double> investimentoPorConta = new HashMap<>();
                 
-                for (Investimento inv : investments) {
+                // Só processa investimentos se houver
+                if (hasInvestmentAccounts && quoteService != null) {
+                    for (Investimento inv : investments) {
                     double currentPrice = 0.0;
                     double currentValue = 0.0;
                     
@@ -881,8 +1095,9 @@ public class ControleSeServer {
                         currentValue = inv.getQuantidade() * currentPrice;
                     }
                     
-                    int contaId = inv.getIdConta();
-                    investimentoPorConta.put(contaId, investimentoPorConta.getOrDefault(contaId, 0.0) + currentValue);
+                        int contaId = inv.getIdConta();
+                        investimentoPorConta.put(contaId, investimentoPorConta.getOrDefault(contaId, 0.0) + currentValue);
+                    }
                 }
                 
                 List<Map<String, Object>> accountList = new ArrayList<>();
@@ -898,7 +1113,9 @@ public class ControleSeServer {
                     // Se for conta de investimento, substitui (ou soma?) o saldo pelo valor dos ativos
                     // O usuário pediu: "considere o valor investido como valor da conta"
                     // Assumindo que para conta de investimento, o valor relevante é o patrimônio nela
-                    if (conta.getTipo() != null && conta.getTipo().equalsIgnoreCase("Investimento")) {
+                    // Verifica se é conta de investimento (aceita "Investimento" ou "Investimento (Corretora)")
+                    String tipoConta = conta.getTipo() != null ? conta.getTipo().toLowerCase().trim() : "";
+                    if (tipoConta.equals("investimento") || tipoConta.equals("investimento (corretora)") || tipoConta.startsWith("investimento")) {
                         // Soma o saldo em conta (caixa) + valor dos ativos
                         double valorAtivos = investimentoPorConta.getOrDefault(conta.getIdConta(), 0.0);
                         // saldoExibicao = valorAtivos + conta.getSaldoAtual(); 
@@ -911,6 +1128,19 @@ public class ControleSeServer {
                     
                     accountData.put("saldoAtual", saldoExibicao);
                     accountData.put("idUsuario", conta.getIdUsuario());
+                    if (conta.getDiaFechamento() != null) {
+                        accountData.put("diaFechamento", conta.getDiaFechamento());
+                    }
+                    if (conta.getDiaPagamento() != null) {
+                        accountData.put("diaPagamento", conta.getDiaPagamento());
+                    }
+                    
+                    // Calcula informações de fatura para cartões de crédito
+                    if (conta.isCartaoCredito() && conta.getDiaFechamento() != null && conta.getDiaPagamento() != null) {
+                        Map<String, Object> faturaInfo = calcularInfoFatura(conta.getDiaFechamento(), conta.getDiaPagamento());
+                        accountData.put("faturaInfo", faturaInfo);
+                    }
+                    
                     accountList.add(accountData);
                 }
                 
@@ -947,9 +1177,25 @@ public class ControleSeServer {
                 if (balanceStr == null) {
                     throw new IllegalArgumentException("Saldo é obrigatório");
                 }
-                double balance = Double.parseDouble(balanceStr);
+                double balance = parseDoubleBrazilian(balanceStr);
                 
-                int accountId = bancoDados.cadastrarConta(name, type, balance, userId);
+                // Lê campos opcionais de cartão de crédito
+                Integer diaFechamento = null;
+                Integer diaPagamento = null;
+                String diaFechamentoStr = data.get("diaFechamento");
+                if (diaFechamentoStr != null && !diaFechamentoStr.isEmpty()) {
+                    diaFechamento = Integer.parseInt(diaFechamentoStr);
+                }
+                String diaPagamentoStr = data.get("diaPagamento");
+                if (diaPagamentoStr != null && !diaPagamentoStr.isEmpty()) {
+                    diaPagamento = Integer.parseInt(diaPagamentoStr);
+                }
+                
+                int accountId = bancoDados.cadastrarConta(name, type, balance, userId, diaFechamento, diaPagamento);
+                
+                // Invalida cache de contas e overview
+                invalidateCache("accounts_" + userId);
+                invalidateCache("overview_" + userId);
                 
                 Map<String, Object> response = new HashMap<>();
                 response.put("success", true);
@@ -1002,9 +1248,29 @@ public class ControleSeServer {
                     balanceStr = data.get("saldoInicial");
                 }
                 if (balanceStr == null) throw new IllegalArgumentException("Saldo é obrigatório");
-                double balance = Double.parseDouble(balanceStr);
+                double balance = parseDoubleBrazilian(balanceStr);
                 
-                bancoDados.atualizarConta(accountId, name, type, balance);
+                // Lê campos opcionais de cartão de crédito
+                Integer diaFechamento = null;
+                Integer diaPagamento = null;
+                String diaFechamentoStr = data.get("diaFechamento");
+                if (diaFechamentoStr != null && !diaFechamentoStr.isEmpty()) {
+                    diaFechamento = Integer.parseInt(diaFechamentoStr);
+                }
+                String diaPagamentoStr = data.get("diaPagamento");
+                if (diaPagamentoStr != null && !diaPagamentoStr.isEmpty()) {
+                    diaPagamento = Integer.parseInt(diaPagamentoStr);
+                }
+                
+                // Busca userId da conta antes de atualizar para invalidar cache
+                Conta conta = bancoDados.buscarConta(accountId);
+                int userId = conta != null ? conta.getIdUsuario() : requireUserId(exchange);
+                
+                bancoDados.atualizarConta(accountId, name, type, balance, diaFechamento, diaPagamento);
+                
+                // Invalida cache de contas e overview
+                invalidateCache("accounts_" + userId);
+                invalidateCache("overview_" + userId);
                 
                 Map<String, Object> response = new HashMap<>();
                 response.put("success", true);
@@ -1045,7 +1311,16 @@ public class ControleSeServer {
                 }
                 
                 int accountId = Integer.parseInt(idParam);
+                
+                // Busca userId da conta antes de excluir para invalidar cache
+                Conta conta = bancoDados.buscarConta(accountId);
+                int userId = conta != null ? conta.getIdUsuario() : requireUserId(exchange);
+                
                 bancoDados.excluirConta(accountId);
+                
+                // Invalida cache de contas e overview
+                invalidateCache("accounts_" + userId);
+                invalidateCache("overview_" + userId);
                 
                 Map<String, Object> response = new HashMap<>();
                 response.put("success", true);
@@ -1189,12 +1464,30 @@ public class ControleSeServer {
                 List<Gasto> expenses = bancoDados.buscarGastosComFiltros(userId, categoryId, date);
                 List<Receita> incomes = bancoDados.buscarReceitasComFiltros(userId, date);
                 
+                // OTIMIZAÇÃO: Busca todas as categorias, tags e observações em batch (evita N+1 queries)
+                List<Integer> idsGastos = new ArrayList<>();
+                for (Gasto gasto : expenses) {
+                    idsGastos.add(gasto.getIdGasto());
+                }
+                
+                Map<Integer, List<Categoria>> categoriasPorGasto = bancoDados.buscarCategoriasDeGastos(idsGastos);
+                Map<Integer, List<Tag>> tagsPorGasto = bancoDados.buscarTagsDeGastos(idsGastos);
+                Map<Integer, String[]> observacoesPorGasto = bancoDados.buscarObservacoesDeGastos(idsGastos);
+                
+                List<Integer> idsReceitas = new ArrayList<>();
+                for (Receita receita : incomes) {
+                    idsReceitas.add(receita.getIdReceita());
+                }
+                
+                Map<Integer, List<Tag>> tagsPorReceita = bancoDados.buscarTagsDeReceitas(idsReceitas);
+                Map<Integer, String[]> observacoesPorReceita = bancoDados.buscarObservacoesDeReceitas(idsReceitas);
+                
                 List<Map<String, Object>> transactions = new ArrayList<>();
                 
                 // Add expenses
                 for (Gasto gasto : expenses) {
-                    // Busca todas as categorias do gasto (relacionamento N:N)
-                    List<Categoria> categorias = bancoDados.buscarCategoriasDoGasto(gasto.getIdGasto());
+                    // Busca categorias do mapa (já carregadas em batch)
+                    List<Categoria> categorias = categoriasPorGasto.getOrDefault(gasto.getIdGasto(), new ArrayList<>());
                     List<String> nomesCategorias = new ArrayList<>();
                     List<Integer> idsCategorias = new ArrayList<>();
                     
@@ -1205,8 +1498,8 @@ public class ControleSeServer {
                     
                     String categoriasStr = nomesCategorias.isEmpty() ? "Sem Categoria" : String.join(", ", nomesCategorias);
                     
-                    // Busca tags do gasto
-                    List<Tag> tags = bancoDados.buscarTagsGasto(gasto.getIdGasto());
+                    // Busca tags do mapa (já carregadas em batch)
+                    List<Tag> tags = tagsPorGasto.getOrDefault(gasto.getIdGasto(), new ArrayList<>());
                     List<Map<String, Object>> tagsList = new ArrayList<>();
                     for (Tag tag : tags) {
                         Map<String, Object> tagMap = new HashMap<>();
@@ -1214,6 +1507,13 @@ public class ControleSeServer {
                         tagMap.put("nome", tag.getNome());
                         tagMap.put("cor", tag.getCor());
                         tagsList.add(tagMap);
+                    }
+                    
+                    // Busca observações do mapa (já carregadas em batch)
+                    String[] observacoes = observacoesPorGasto.getOrDefault(gasto.getIdGasto(), new String[0]);
+                    List<String> observacoesList = new ArrayList<>();
+                    for (String obs : observacoes) {
+                        observacoesList.add(obs);
                     }
                     
                     Map<String, Object> transaction = new HashMap<>();
@@ -1226,21 +1526,14 @@ public class ControleSeServer {
                     transaction.put("categoryIds", idsCategorias);
                     transaction.put("categories", nomesCategorias);
                     transaction.put("tags", tagsList);
-                    // Converte array de observações para lista
-                    List<String> observacoesList = new ArrayList<>();
-                    if (gasto.getObservacoes() != null) {
-                        for (String obs : gasto.getObservacoes()) {
-                            observacoesList.add(obs);
-                        }
-                    }
                     transaction.put("observacoes", observacoesList);
                     transactions.add(transaction);
                 }
                 
                 // Add incomes (não são filtradas por categoria)
                 for (Receita receita : incomes) {
-                    // Busca tags da receita
-                    List<Tag> tags = bancoDados.buscarTagsReceita(receita.getIdReceita());
+                    // Busca tags do mapa (já carregadas em batch)
+                    List<Tag> tags = tagsPorReceita.getOrDefault(receita.getIdReceita(), new ArrayList<>());
                     List<Map<String, Object>> tagsList = new ArrayList<>();
                     for (Tag tag : tags) {
                         Map<String, Object> tagMap = new HashMap<>();
@@ -1248,6 +1541,13 @@ public class ControleSeServer {
                         tagMap.put("nome", tag.getNome());
                         tagMap.put("cor", tag.getCor());
                         tagsList.add(tagMap);
+                    }
+                    
+                    // Busca observações do mapa (já carregadas em batch)
+                    String[] observacoes = observacoesPorReceita.getOrDefault(receita.getIdReceita(), new String[0]);
+                    List<String> observacoesList = new ArrayList<>();
+                    for (String obs : observacoes) {
+                        observacoesList.add(obs);
                     }
                     
                     Map<String, Object> transaction = new HashMap<>();
@@ -1259,12 +1559,6 @@ public class ControleSeServer {
                     transaction.put("category", "Receita");
                     transaction.put("categoryId", null);
                     transaction.put("tags", tagsList);
-                    List<String> observacoesList = new ArrayList<>();
-                    if (receita.getObservacoes() != null) {
-                        for (String obs : receita.getObservacoes()) {
-                            observacoesList.add(obs);
-                        }
-                    }
                     transaction.put("observacoes", observacoesList);
                     transactions.add(transaction);
                 }
@@ -1439,7 +1733,9 @@ public class ControleSeServer {
                     sendJsonResponse(exchange, 400, response);
                     return;
                 }
-                if (conta.getTipo() != null && conta.getTipo().equalsIgnoreCase("INVESTIMENTO")) {
+                // Verifica se é conta de investimento (aceita "Investimento" ou "Investimento (Corretora)")
+                String tipoConta = conta.getTipo() != null ? conta.getTipo().toLowerCase().trim() : "";
+                if (tipoConta.equals("investimento") || tipoConta.equals("investimento (corretora)") || tipoConta.startsWith("investimento")) {
                     Map<String, Object> response = new HashMap<>();
                     response.put("success", false);
                     response.put("message", "Contas de investimento não podem ser usadas para gastos");
@@ -1453,6 +1749,10 @@ public class ControleSeServer {
                 for (int tagId : tagIds) {
                     bancoDados.associarTagTransacao(expenseId, "GASTO", tagId);
                 }
+                
+                // Invalida cache de overview e categorias
+                invalidateCache("overview_" + userId);
+                invalidateCache("categories_" + userId);
                 
                 Map<String, Object> response = new HashMap<>();
                 response.put("success", true);
@@ -1488,7 +1788,18 @@ public class ControleSeServer {
                 }
                 
                 int expenseId = Integer.parseInt(idParam);
+                
+                // Busca userId do gasto antes de excluir para invalidar cache
+                Gasto gasto = bancoDados.buscarGasto(expenseId);
+                int userId = gasto != null ? gasto.getIdUsuario() : requireUserId(exchange);
+                
                 bancoDados.excluirGasto(expenseId);
+                
+                // Invalida cache de overview e categorias
+                invalidateCache("overview_" + userId);
+                invalidateCache("categories_" + userId);
+                invalidateCache("totalExpense_" + userId);
+                invalidateCache("balance_" + userId);
                 
                 Map<String, Object> response = new HashMap<>();
                 response.put("success", true);
@@ -1624,7 +1935,9 @@ public class ControleSeServer {
                     sendJsonResponse(exchange, 400, response);
                     return;
                 }
-                if (conta.getTipo() != null && conta.getTipo().equalsIgnoreCase("INVESTIMENTO")) {
+                // Verifica se é conta de investimento (aceita "Investimento" ou "Investimento (Corretora)")
+                String tipoConta = conta.getTipo() != null ? conta.getTipo().toLowerCase().trim() : "";
+                if (tipoConta.equals("investimento") || tipoConta.equals("investimento (corretora)") || tipoConta.startsWith("investimento")) {
                     Map<String, Object> response = new HashMap<>();
                     response.put("success", false);
                     response.put("message", "Contas de investimento não podem ser usadas para receitas");
@@ -1633,6 +1946,11 @@ public class ControleSeServer {
                 }
                 
                 int incomeId = bancoDados.cadastrarReceita(description, value, date, userId, accountId, observacoes);
+                
+                // Invalida cache de overview
+                invalidateCache("overview_" + userId);
+                invalidateCache("totalIncome_" + userId);
+                invalidateCache("balance_" + userId);
                 
                 // Associa tags se houver
                 for (int tagId : tagIds) {
@@ -1669,7 +1987,16 @@ public class ControleSeServer {
                 }
                 
                 int incomeId = Integer.parseInt(idParam);
+                // Busca userId da receita antes de excluir para invalidar cache
+                Receita receita = bancoDados.buscarReceita(incomeId);
+                int userId = receita != null ? receita.getIdUsuario() : requireUserId(exchange);
+                
                 bancoDados.excluirReceita(incomeId);
+                
+                // Invalida cache de overview
+                invalidateCache("overview_" + userId);
+                invalidateCache("totalIncome_" + userId);
+                invalidateCache("balance_" + userId);
                 
                 Map<String, Object> response = new HashMap<>();
                 response.put("success", true);
@@ -1771,7 +2098,7 @@ public class ControleSeServer {
                 
                 String valueStr = data.get("value");
                 if (valueStr == null) throw new IllegalArgumentException("Valor é obrigatório");
-                double value = Double.parseDouble(valueStr);
+                double value = parseDoubleBrazilian(valueStr);
                 
                 String period = data.get("period");
                 
@@ -1806,7 +2133,7 @@ public class ControleSeServer {
                 
                 String valueStr = data.get("value");
                 if (valueStr == null) throw new IllegalArgumentException("Valor é obrigatório");
-                double value = Double.parseDouble(valueStr);
+                double value = parseDoubleBrazilian(valueStr);
                 
                 String period = data.get("period");
                 
@@ -2503,7 +2830,9 @@ public class ControleSeServer {
                     return;
                 }
                 
-                if (!conta.getTipo().equalsIgnoreCase("Investimento")) {
+                // Aceita tanto "Investimento" quanto "Investimento (Corretora)"
+                String tipoConta = conta.getTipo().toLowerCase().trim();
+                if (!tipoConta.equals("investimento") && !tipoConta.equals("investimento (corretora)") && !tipoConta.startsWith("investimento")) {
                     Map<String, Object> response = new HashMap<>();
                     response.put("success", false);
                     response.put("message", "Apenas contas do tipo 'Investimento' podem ser utilizadas para criar investimentos");
@@ -2576,7 +2905,7 @@ public class ControleSeServer {
                                 String percentStr = ((String) percentObj).trim();
                                 if (!percentStr.isEmpty() && !percentStr.equalsIgnoreCase("null")) {
                                     try {
-                                        percentualIndice = Double.parseDouble(percentStr);
+                                        percentualIndice = parseDoubleBrazilian(percentStr);
                                     } catch (NumberFormatException e) {
                                         // Ignora valores inválidos
                                     }
@@ -2594,7 +2923,7 @@ public class ControleSeServer {
                                 String taxaStr = ((String) taxaObj).trim();
                                 if (!taxaStr.isEmpty() && !taxaStr.equalsIgnoreCase("null")) {
                                     try {
-                                        taxaFixa = Double.parseDouble(taxaStr);
+                                        taxaFixa = parseDoubleBrazilian(taxaStr);
                                     } catch (NumberFormatException e) {
                                         // Ignora valores inválidos
                                     }
@@ -2726,6 +3055,7 @@ public class ControleSeServer {
     
     static class InvestmentEvolutionHandler implements HttpHandler {
         private static final DateTimeFormatter LABEL_FORMATTER = DateTimeFormatter.ofPattern("dd/MM");
+        private static final DateTimeFormatter LABEL_FORMATTER_WITH_YEAR = DateTimeFormatter.ofPattern("dd/MM/yyyy");
         private static final DateTimeFormatter HOURLY_LABEL_FORMATTER = DateTimeFormatter.ofPattern("HH:mm");
         private static final int MAX_DAYS = 3650; // ~10 anos
 
@@ -2768,7 +3098,28 @@ public class ControleSeServer {
                     return;
                 }
 
-                Map<String, Object> data = buildEvolutionSeries(transactions, startDate, endDate, twoHourResolution);
+                // Otimização: reduz granularidade para períodos longos
+                // Limita número máximo de pontos para evitar sobrecarga
+                int maxPoints = 200; // Reduzido para 200 pontos para carregar mais rápido na primeira vez
+                int dayStep = 1;
+                if (totalDays > maxPoints) {
+                    dayStep = (int) Math.ceil((double) totalDays / maxPoints);
+                    // Ajusta para valores "redondos"
+                    if (dayStep <= 2) dayStep = 1;
+                    else if (dayStep <= 5) dayStep = 3;
+                    else if (dayStep <= 10) dayStep = 7;
+                    else if (dayStep <= 20) dayStep = 14; // 2 semanas
+                    else if (dayStep <= 30) dayStep = 30; // 1 mês
+                    else dayStep = 60; // 2 meses para períodos extremamente longos
+                } else if (totalDays > 730) { // > 2 anos
+                    dayStep = 7; // Semanal
+                } else if (totalDays > 180) { // > 6 meses
+                    dayStep = 3; // A cada 3 dias
+                }
+
+                // Determina se deve mostrar o ano (período > 1 ano)
+                boolean showYear = totalDays > 365;
+                Map<String, Object> data = buildEvolutionSeries(transactions, startDate, endDate, twoHourResolution, dayStep, showYear);
 
                 Map<String, Object> response = new HashMap<>();
                 response.put("success", true);
@@ -2825,10 +3176,24 @@ public class ControleSeServer {
         }
 
         private Map<String, Object> buildEvolutionSeries(List<Investimento> transactions, LocalDate startDate, LocalDate endDate, boolean useTwoHourSteps) {
+            return buildEvolutionSeries(transactions, startDate, endDate, useTwoHourSteps, 1, false);
+        }
+        
+        private Map<String, Object> buildEvolutionSeries(List<Investimento> transactions, LocalDate startDate, LocalDate endDate, boolean useTwoHourSteps, int dayStep) {
+            return buildEvolutionSeries(transactions, startDate, endDate, useTwoHourSteps, dayStep, false);
+        }
+        
+        private Map<String, Object> buildEvolutionSeries(List<Investimento> transactions, LocalDate startDate, LocalDate endDate, boolean useTwoHourSteps, int dayStep, boolean showYear) {
             Map<String, Object> data = new HashMap<>();
             List<String> labels = new ArrayList<>();
             List<Double> investedPoints = new ArrayList<>();
             List<Double> currentPoints = new ArrayList<>();
+            
+            // Mapas para rastrear valores por categoria
+            Map<String, List<Double>> categoryInvested = new HashMap<>();
+            Map<String, List<Double>> categoryCurrent = new HashMap<>();
+            // Set para rastrear todas as categorias que já apareceram (para garantir continuidade)
+            Set<String> allCategoriesSeen = new HashSet<>();
 
             data.put("labels", labels);
             data.put("invested", investedPoints);
@@ -2847,8 +3212,32 @@ public class ControleSeServer {
             QuoteService quoteService = QuoteService.getInstance();
             Map<String, AssetState> assetState = new LinkedHashMap<>();
             Map<String, Double> priceCache = new HashMap<>();
+            
+            // Otimização: para períodos muito longos, reduz busca de preços
+            long totalDays = ChronoUnit.DAYS.between(startDate, endDate);
+            int priceLookupInterval = 1; // Busca preço a cada N dias (padrão: diário)
+            if (totalDays > 730) { // > 2 anos
+                priceLookupInterval = 14; // Busca preço a cada 2 semanas para períodos muito longos
+            } else if (totalDays > 365) { // > 1 ano
+                priceLookupInterval = 7; // Busca preço semanalmente
+            } else if (totalDays > 180) { // > 6 meses
+                priceLookupInterval = 3; // Busca preço a cada 3 dias
+            }
 
             int txIndex = 0;
+            
+            // OTIMIZAÇÃO CRÍTICA: Pre-busca cotações em batch para períodos grandes
+            // Processa transações primeiro para identificar ativos, depois busca cotações
+            if (totalDays > 365) {
+                // Processa todas as transações até a data final para identificar todos os ativos
+                Map<String, AssetState> tempAssetState = new LinkedHashMap<>();
+                int tempTxIndex = 0;
+                for (LocalDate date = startDate; !date.isAfter(endDate); date = date.plusDays(1)) {
+                    tempTxIndex = consumeTransactions(transactions, tempAssetState, tempTxIndex, date);
+                }
+                // Agora pre-busca cotações baseado nos ativos identificados
+                preFetchQuotesInBatch(tempAssetState, startDate, endDate, priceLookupInterval, quoteService, priceCache);
+            }
 
             if (useTwoHourSteps) {
                 LocalDateTime cursor = startDate.atStartOfDay();
@@ -2861,16 +3250,51 @@ public class ControleSeServer {
                     LocalDate currentDate = cursor.toLocalDate();
                     txIndex = consumeTransactions(transactions, assetState, txIndex, currentDate);
                     accumulatePoint(assetState, quoteService, priceCache, labels, investedPoints, currentPoints,
-                        cursor.format(HOURLY_LABEL_FORMATTER), currentDate);
+                        categoryInvested, categoryCurrent, allCategoriesSeen, cursor.format(HOURLY_LABEL_FORMATTER), currentDate, cursor, 1);
                     cursor = cursor.plusHours(2);
                 }
             } else {
-                for (LocalDate date = startDate; !date.isAfter(endDate); date = date.plusDays(1)) {
+                // Usa step passado como parâmetro (já calculado no handler)
+                // Se não foi passado, calcula baseado no período
+                if (dayStep <= 0) {
+                    dayStep = 1; // Padrão: diário
+                    if (totalDays > 730) { // > 2 anos
+                        dayStep = 7; // Semanal
+                    } else if (totalDays > 180) { // > 6 meses
+                        dayStep = 3; // A cada 3 dias
+                    }
+                }
+                
+                DateTimeFormatter labelFormatter = showYear ? LABEL_FORMATTER_WITH_YEAR : LABEL_FORMATTER;
+                for (LocalDate date = startDate; !date.isAfter(endDate); date = date.plusDays(dayStep)) {
                     txIndex = consumeTransactions(transactions, assetState, txIndex, date);
                     accumulatePoint(assetState, quoteService, priceCache, labels, investedPoints, currentPoints,
-                        date.format(LABEL_FORMATTER), date);
+                        categoryInvested, categoryCurrent, allCategoriesSeen, date.format(labelFormatter), date, date.atStartOfDay(), priceLookupInterval);
                 }
             }
+
+            // Adiciona dados por categoria ao response
+            // Garante que todas as categorias tenham o mesmo número de pontos que os labels
+            int expectedSize = labels.size();
+            Map<String, Map<String, List<Double>>> categoriesData = new HashMap<>();
+            for (String category : allCategoriesSeen) {
+                List<Double> investedList = categoryInvested.getOrDefault(category, new ArrayList<>());
+                List<Double> currentList = categoryCurrent.getOrDefault(category, new ArrayList<>());
+                
+                // Preenche com zeros se a lista estiver menor que o esperado
+                while (investedList.size() < expectedSize) {
+                    investedList.add(0.0);
+                }
+                while (currentList.size() < expectedSize) {
+                    currentList.add(0.0);
+                }
+                
+                Map<String, List<Double>> catData = new HashMap<>();
+                catData.put("invested", investedList);
+                catData.put("current", currentList);
+                categoriesData.put(category, catData);
+            }
+            data.put("categories", categoriesData);
 
             data.put("points", labels.size());
             return data;
@@ -2879,14 +3303,26 @@ public class ControleSeServer {
         private int consumeTransactions(List<Investimento> transactions, Map<String, AssetState> assetState, int txIndex, LocalDate cutoffDate) {
             while (txIndex < transactions.size() && !transactions.get(txIndex).getDataAporte().isAfter(cutoffDate)) {
                 Investimento inv = transactions.get(txIndex);
+                
+                // IMPORTANTE: Ignora transações inválidas (quantidade zero)
+                double qty = inv.getQuantidade();
+                if (qty == 0.0 || Double.isNaN(qty) || Double.isInfinite(qty)) {
+                    txIndex++;
+                    continue;
+                }
+                
                 String key = buildAssetKey(inv);
                 AssetState state = assetState.computeIfAbsent(key, k -> AssetState.fromInvestment(inv));
                 state.updateMetadata(inv);
                 state.applyTransaction(inv);
 
-                if (state.isEmpty()) {
-                    assetState.remove(key);
-                }
+                // IMPORTANTE: NÃO remove estados vazios durante o processamento do gráfico
+                // Isso pode causar problemas se houver transações futuras que recriam o estado
+                // O estado será naturalmente ignorado em accumulatePoint se estiver vazio
+                // Mas manter no map permite que seja recriado por transações futuras
+                // if (state.isEmpty()) {
+                //     assetState.remove(key);
+                // }
                 txIndex++;
             }
             return txIndex;
@@ -2900,26 +3336,150 @@ public class ControleSeServer {
             List<Double> investedPoints,
             List<Double> currentPoints,
             String label,
-            LocalDate dateForPricing
+            LocalDate dateForPricing,
+            LocalDateTime dateTimeForPricing
+        ) {
+            accumulatePoint(assetState, quoteService, priceCache, labels, investedPoints, currentPoints,
+                new HashMap<>(), new HashMap<>(), new HashSet<>(), label, dateForPricing, dateTimeForPricing, 1);
+        }
+        
+        private void accumulatePoint(
+            Map<String, AssetState> assetState,
+            QuoteService quoteService,
+            Map<String, Double> priceCache,
+            List<String> labels,
+            List<Double> investedPoints,
+            List<Double> currentPoints,
+            Map<String, List<Double>> categoryInvested,
+            Map<String, List<Double>> categoryCurrent,
+            Set<String> allCategoriesSeen,
+            String label,
+            LocalDate dateForPricing,
+            LocalDateTime dateTimeForPricing,
+            int priceLookupInterval
         ) {
             double totalInvested = 0;
             double totalCurrent = 0;
+            
+            // Mapas para rastrear valores por categoria
+            Map<String, Double> categoryInvestedMap = new HashMap<>();
+            Map<String, Double> categoryCurrentMap = new HashMap<>();
 
+            // IMPORTANTE: Não remove estados vazios durante accumulatePoint
+            // Isso pode causar problemas se houver transações futuras que recriam o estado
+            // Em vez disso, apenas ignora estados vazios no cálculo, mas mantém no map
             Iterator<Map.Entry<String, AssetState>> iterator = assetState.entrySet().iterator();
             while (iterator.hasNext()) {
-                AssetState state = iterator.next().getValue();
-                if (state.isEmpty()) {
-                    iterator.remove();
+                Map.Entry<String, AssetState> entry = iterator.next();
+                AssetState state = entry.getValue();
+                
+                // Verifica se o estado está vazio ANTES de processar
+                // Se estiver vazio, não calcula valores mas mantém a categoria rastreada
+                boolean isEmpty = state.isEmpty();
+                
+                String category = state.category != null ? state.category : "OUTROS";
+                // IMPORTANTE: Marca a categoria como vista ANTES de calcular valores
+                // Isso garante que mesmo se houver algum problema no cálculo, a categoria será rastreada
+                allCategoriesSeen.add(category);
+                
+                // Se o estado está vazio, pula o cálculo mas mantém a categoria rastreada
+                if (isEmpty) {
                     continue;
                 }
-                totalInvested += state.getTotalCostBasis();
-                double price = resolvePriceForDate(state, dateForPricing, quoteService, priceCache);
-                totalCurrent += state.getTotalQuantity() * price;
+                
+                double invested = state.getTotalCostBasis();
+                totalInvested += invested;
+                
+                // Otimização: para períodos longos, reutiliza preço de dias próximos
+                // Isso reduz drasticamente o número de requisições à API
+                LocalDate priceLookupDate = dateForPricing;
+                if (priceLookupInterval > 1) {
+                    // Arredonda para o dia mais próximo que é múltiplo do intervalo
+                    // Exemplo: se intervalo=7, busca preço apenas às segundas-feiras, reutiliza para outros dias
+                    long daysSinceEpoch = dateForPricing.toEpochDay();
+                    long roundedDays = (daysSinceEpoch / priceLookupInterval) * priceLookupInterval;
+                    priceLookupDate = LocalDate.ofEpochDay(roundedDays);
+                    // Se arredondou para frente, volta um intervalo
+                    if (priceLookupDate.isAfter(dateForPricing)) {
+                        priceLookupDate = priceLookupDate.minusDays(priceLookupInterval);
+                    }
+                }
+                
+                double price = resolvePriceForDate(state, priceLookupDate, 
+                    priceLookupDate.equals(dateForPricing) ? dateTimeForPricing : null, 
+                    quoteService, priceCache);
+                
+                // Para períodos muito longos, usa interpolação linear entre pontos conhecidos
+                if (priceLookupInterval > 1 && !priceLookupDate.equals(dateForPricing)) {
+                    // Tenta encontrar preços próximos para interpolar
+                    LocalDate prevDate = priceLookupDate;
+                    LocalDate nextDate = priceLookupDate.plusDays(priceLookupInterval);
+                    
+                    String prevKey = state.symbol + "|" + state.category + "|" + prevDate.toString();
+                    String nextKey = state.symbol + "|" + state.category + "|" + nextDate.toString();
+                    
+                    Double prevPrice = priceCache.get(prevKey);
+                    Double nextPrice = priceCache.get(nextKey);
+                    
+                    if (prevPrice != null && nextPrice != null) {
+                        // Interpolação linear
+                        long daysBetween = ChronoUnit.DAYS.between(prevDate, nextDate);
+                        long daysFromPrev = ChronoUnit.DAYS.between(prevDate, dateForPricing);
+                        if (daysBetween > 0) {
+                            double ratio = (double) daysFromPrev / daysBetween;
+                            price = prevPrice + (nextPrice - prevPrice) * ratio;
+                        }
+                    } else if (prevPrice != null) {
+                        price = prevPrice; // Usa o preço anterior se não tiver próximo
+                    }
+                }
+                
+                double current = state.getTotalQuantity() * price;
+                totalCurrent += current;
+                
+                // Acumula valores por categoria
+                categoryInvestedMap.put(category, categoryInvestedMap.getOrDefault(category, 0.0) + invested);
+                categoryCurrentMap.put(category, categoryCurrentMap.getOrDefault(category, 0.0) + current);
             }
 
             labels.add(label);
             investedPoints.add(roundMoney(totalInvested));
             currentPoints.add(roundMoney(totalCurrent));
+            
+            // Adiciona valores por categoria
+            // Processa TODAS as categorias que já foram vistas, garantindo uma entrada por categoria por ponto
+            for (String category : allCategoriesSeen) {
+                if (categoryInvestedMap.containsKey(category)) {
+                    // Categoria tem ativos neste ponto
+                    categoryInvested.computeIfAbsent(category, k -> new ArrayList<>()).add(roundMoney(categoryInvestedMap.get(category)));
+                    categoryCurrent.computeIfAbsent(category, k -> new ArrayList<>()).add(roundMoney(categoryCurrentMap.get(category)));
+                } else {
+                    // Categoria não tem mais ativos neste ponto, adiciona zero para manter continuidade
+                    categoryInvested.computeIfAbsent(category, k -> new ArrayList<>()).add(0.0);
+                    categoryCurrent.computeIfAbsent(category, k -> new ArrayList<>()).add(0.0);
+                }
+            }
+            
+            // IMPORTANTE: Processa categorias que apareceram pela primeira vez neste ponto
+            // (não estavam em allCategoriesSeen antes)
+            for (String category : categoryInvestedMap.keySet()) {
+                if (!allCategoriesSeen.contains(category)) {
+                    // Nova categoria que apareceu pela primeira vez
+                    allCategoriesSeen.add(category);
+                    // Preenche com zeros para pontos anteriores
+                    List<Double> investedList = categoryInvested.computeIfAbsent(category, k -> new ArrayList<>());
+                    List<Double> currentList = categoryCurrent.computeIfAbsent(category, k -> new ArrayList<>());
+                    while (investedList.size() < labels.size() - 1) {
+                        investedList.add(0.0);
+                    }
+                    while (currentList.size() < labels.size() - 1) {
+                        currentList.add(0.0);
+                    }
+                    // Adiciona o valor atual
+                    investedList.add(roundMoney(categoryInvestedMap.get(category)));
+                    currentList.add(roundMoney(categoryCurrentMap.get(category)));
+                }
+            }
         }
 
         private String buildAssetKey(Investimento inv) {
@@ -2934,6 +3494,10 @@ public class ControleSeServer {
         }
 
         private double resolvePriceForDate(AssetState state, LocalDate date, QuoteService quoteService, Map<String, Double> priceCache) {
+            return resolvePriceForDate(state, date, null, quoteService, priceCache);
+        }
+        
+        private double resolvePriceForDate(AssetState state, LocalDate date, LocalDateTime dateTime, QuoteService quoteService, Map<String, Double> priceCache) {
             if ("RENDA_FIXA".equalsIgnoreCase(state.category)) {
                 double totalValue = 0.0;
                 for (PositionLayer layer : state.layers) {
@@ -2958,33 +3522,132 @@ public class ControleSeServer {
                 return price;
             }
 
-            String cacheKey = state.symbol + "|" + state.category + "|" + date;
+            // IMPORTANTE: Para datas futuras, usa sempre a última cotação conhecida
+            LocalDate today = LocalDate.now();
+            boolean isFuture = date != null && date.isAfter(today);
+            
+            String cacheKey = state.symbol + "|" + state.category + "|" + (dateTime != null ? dateTime.toString() : date.toString());
             if (priceCache.containsKey(cacheKey)) {
                 return priceCache.get(cacheKey);
             }
 
             double price = 0.0;
-            QuoteService.QuoteResult quote = quoteService.getQuote(state.symbol, state.category, date);
-            if (quote != null && quote.success && quote.price > 0) {
-                price = quote.price;
-                String currency = quote.currency != null ? quote.currency : state.currency;
-                if (currency != null && !"BRL".equalsIgnoreCase(currency)) {
-                    double exchangeRate = quoteService.getExchangeRate(currency, "BRL");
-                    price *= exchangeRate;
+            
+            // Para datas futuras, tenta buscar a cotação atual primeiro (mais recente disponível)
+            if (isFuture) {
+                // Busca cotação atual para usar como referência para datas futuras
+                QuoteService.QuoteResult currentQuote = quoteService.getQuote(state.symbol, state.category, null, null);
+                if (currentQuote != null && currentQuote.success && currentQuote.price > 0) {
+                    price = currentQuote.price;
+                    String currency = currentQuote.currency != null ? currentQuote.currency : state.currency;
+                    if (currency != null && !"BRL".equalsIgnoreCase(currency)) {
+                        double exchangeRate = quoteService.getExchangeRate(currency, "BRL");
+                        price *= exchangeRate;
+                    }
+                }
+            } else {
+                // Para datas passadas ou atuais, busca cotação normalmente
+                QuoteService.QuoteResult quote = quoteService.getQuote(state.symbol, state.category, date, dateTime);
+                if (quote != null && quote.success && quote.price > 0) {
+                    price = quote.price;
+                    String currency = quote.currency != null ? quote.currency : state.currency;
+                    if (currency != null && !"BRL".equalsIgnoreCase(currency)) {
+                        double exchangeRate = quoteService.getExchangeRate(currency, "BRL");
+                        price *= exchangeRate;
+                    }
                 }
             }
 
+            // Se não conseguiu cotação, usa fallback
             if (price <= 0) {
-                price = state.lastKnownPrice > 0 ? state.lastKnownPrice : state.getAverageCost();
+                if (isFuture && state.lastKnownPrice > 0) {
+                    // Para datas futuras, usa a última cotação conhecida
+                    price = state.lastKnownPrice;
+                } else {
+                    // Para datas passadas sem cotação, usa última conhecida ou preço médio
+                    price = state.lastKnownPrice > 0 ? state.lastKnownPrice : state.getAverageCost();
+                }
             }
 
-            state.lastKnownPrice = price;
+            // IMPORTANTE: Atualiza lastKnownPrice apenas se conseguiu uma cotação válida
+            // Para datas futuras, mantém a última cotação conhecida atualizada
+            if (price > 0) {
+                if (!isFuture) {
+                    // Para datas passadas/atuais, atualiza lastKnownPrice
+                    state.lastKnownPrice = price;
+                } else if (state.lastKnownPrice <= 0) {
+                    // Se é futura e não tinha última cotação, atualiza com a cotação atual
+                    state.lastKnownPrice = price;
+                }
+            }
+            
             priceCache.put(cacheKey, price);
             return price;
         }
 
         private double roundMoney(double value) {
             return Math.round(value * 100.0) / 100.0;
+        }
+        
+        /**
+         * Pre-busca cotações em batch para otimizar carregamento de gráficos grandes
+         * Busca apenas as cotações necessárias baseado no intervalo de preços
+         */
+        private void preFetchQuotesInBatch(
+            Map<String, AssetState> assetState,
+            LocalDate startDate,
+            LocalDate endDate,
+            int priceLookupInterval,
+            QuoteService quoteService,
+            Map<String, Double> priceCache
+        ) {
+            // Para cada ativo único, busca cotações apenas nos intervalos necessários
+            Set<String> processedAssets = new HashSet<>();
+            for (AssetState state : assetState.values()) {
+                if (state.isEmpty() || "RENDA_FIXA".equalsIgnoreCase(state.category)) {
+                    continue; // Pula renda fixa (não precisa de cotação externa)
+                }
+                
+                String symbol = state.symbol;
+                String category = state.category != null ? state.category : "OUTROS";
+                
+                // Evita processar o mesmo ativo múltiplas vezes
+                String assetKey = category + "_" + symbol;
+                if (processedAssets.contains(assetKey)) {
+                    continue;
+                }
+                processedAssets.add(assetKey);
+                
+                // Busca cotações apenas nos pontos de intervalo
+                int fetched = 0;
+                int maxFetches = 100; // Limita requisições por ativo
+                for (LocalDate date = startDate; !date.isAfter(endDate) && fetched < maxFetches; date = date.plusDays(priceLookupInterval)) {
+                    String cacheKey = symbol + "|" + category + "|" + date.toString();
+                    if (!priceCache.containsKey(cacheKey)) {
+                        // Busca a cotação e armazena no cache
+                        QuoteService.QuoteResult quote = quoteService.getQuote(symbol, category, date, null);
+                        if (quote != null && quote.success && quote.price > 0) {
+                            double price = quote.price;
+                            String currency = quote.currency != null ? quote.currency : (state.currency != null ? state.currency : "BRL");
+                            if (currency != null && !"BRL".equalsIgnoreCase(currency)) {
+                                double exchangeRate = quoteService.getExchangeRate(currency, "BRL");
+                                price *= exchangeRate;
+                            }
+                            priceCache.put(cacheKey, price);
+                            fetched++;
+                        }
+                        // Pequena pausa para não sobrecarregar a API
+                        if (fetched % 10 == 0 && fetched > 0) {
+                            try {
+                                Thread.sleep(50); // 50ms de pausa a cada 10 requisições
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         private static class AssetState {
@@ -3030,9 +3693,16 @@ public class ControleSeServer {
 
             void applyTransaction(Investimento inv) {
                 double qty = inv.getQuantidade();
+                
+                // Ignora transações com quantidade zero (não devem existir, mas protege contra bugs)
+                if (qty == 0.0 || Double.isNaN(qty) || Double.isInfinite(qty)) {
+                    return;
+                }
+                
                 double unitCost = (qty != 0) ? Math.abs(inv.getValorAporte()) / Math.abs(qty) : 0.0;
 
                 if (qty > 0) {
+                    // Compra: adiciona nova camada
                     PositionLayer layer = new PositionLayer();
                     layer.qty = qty;
                     layer.unitCost = unitCost;
@@ -3040,6 +3710,7 @@ public class ControleSeServer {
                     layer.originalAmount = Math.abs(inv.getValorAporte());
                     layers.add(layer);
                 } else if (qty < 0) {
+                    // Venda: remove quantidade das camadas existentes (FIFO)
                     double remaining = Math.abs(qty);
                     Iterator<PositionLayer> iterator = layers.iterator();
                     while (iterator.hasNext() && remaining > 0) {
@@ -3047,6 +3718,7 @@ public class ControleSeServer {
                         double qtyToUse = Math.min(remaining, layer.qty);
                         layer.qty -= qtyToUse;
                         remaining -= qtyToUse;
+                        // Remove camada se quantidade ficou muito pequena (arredondamento)
                         if (layer.qty <= 0.000001) {
                             iterator.remove();
                         }
@@ -3323,11 +3995,13 @@ public class ControleSeServer {
                     String valueStr = json.substring(i, valueEnd).trim();
                     
                     // Tenta converter para número
+                    // IMPORTANTE: Normaliza formato brasileiro (vírgula) para formato internacional (ponto)
                     try {
-                        if (valueStr.contains(".")) {
-                            value = Double.parseDouble(valueStr);
+                        String normalizedStr = normalizeBrazilianNumber(valueStr);
+                        if (normalizedStr.contains(".")) {
+                            value = Double.parseDouble(normalizedStr);
                         } else {
-                            value = Integer.parseInt(valueStr);
+                            value = Integer.parseInt(normalizedStr);
                         }
                     } catch (NumberFormatException e) {
                         value = valueStr;
@@ -3470,11 +4144,13 @@ public class ControleSeServer {
                     String valueStr = json.substring(i, valueEnd).trim();
                     
                     // Tenta converter para número
+                    // IMPORTANTE: Normaliza formato brasileiro (vírgula) para formato internacional (ponto)
                     try {
-                        if (valueStr.contains(".")) {
-                            value = Double.parseDouble(valueStr);
+                        String normalizedStr = normalizeBrazilianNumber(valueStr);
+                        if (normalizedStr.contains(".")) {
+                            value = Double.parseDouble(normalizedStr);
                         } else {
-                            value = Integer.parseInt(valueStr);
+                            value = Integer.parseInt(normalizedStr);
                         }
                     } catch (NumberFormatException e) {
                         if (valueStr.equalsIgnoreCase("true")) {
@@ -3547,6 +4223,119 @@ public class ControleSeServer {
         try (OutputStream os = exchange.getResponseBody()) {
             os.write(jsonResponse.getBytes("UTF-8"));
         }
+    }
+    
+    /**
+     * Calcula informações da fatura de cartão de crédito baseado nos dias de fechamento e pagamento
+     * @param diaFechamento Dia do mês em que a fatura fecha (1-31)
+     * @param diaPagamento Dia do mês em que a fatura deve ser paga (1-31)
+     * @return Map com informações da fatura (próximo fechamento, próximo pagamento, status, etc.)
+     */
+    private static Map<String, Object> calcularInfoFatura(int diaFechamento, int diaPagamento) {
+        Map<String, Object> info = new HashMap<>();
+        LocalDate hoje = LocalDate.now();
+        
+        // Calcula a próxima data de fechamento
+        LocalDate proximoFechamento;
+        
+        // Tenta criar a data de fechamento no mês atual
+        try {
+            LocalDate fechamentoEsteMes = LocalDate.of(hoje.getYear(), hoje.getMonthValue(), diaFechamento);
+            if (hoje.isBefore(fechamentoEsteMes) || hoje.isEqual(fechamentoEsteMes)) {
+                // Ainda não fechou este mês (ou fecha hoje)
+                proximoFechamento = fechamentoEsteMes;
+            } else {
+                // Já fechou este mês, próximo fechamento é no próximo mês
+                // Calcula o próximo mês a partir do mês atual, não do fechamento
+                LocalDate proximoMes = LocalDate.of(hoje.getYear(), hoje.getMonthValue(), 1).plusMonths(1);
+                try {
+                    proximoFechamento = proximoMes.withDayOfMonth(diaFechamento);
+                } catch (java.time.DateTimeException e) {
+                    // Se o dia não existe no próximo mês (ex: 31 de fevereiro), usa o último dia do mês
+                    proximoFechamento = proximoMes.withDayOfMonth(proximoMes.lengthOfMonth());
+                }
+            }
+        } catch (java.time.DateTimeException e) {
+            // Se o dia não existe no mês atual (ex: 31 de fevereiro), usa o último dia do mês
+            int ultimoDia = LocalDate.of(hoje.getYear(), hoje.getMonthValue(), 1).lengthOfMonth();
+            LocalDate fechamentoEsteMes = LocalDate.of(hoje.getYear(), hoje.getMonthValue(), ultimoDia);
+            if (hoje.isBefore(fechamentoEsteMes) || hoje.isEqual(fechamentoEsteMes)) {
+                proximoFechamento = fechamentoEsteMes;
+            } else {
+                // Próximo mês
+                LocalDate proximoMes = LocalDate.of(hoje.getYear(), hoje.getMonthValue(), 1).plusMonths(1);
+                try {
+                    proximoFechamento = proximoMes.withDayOfMonth(diaFechamento);
+                } catch (java.time.DateTimeException e2) {
+                    proximoFechamento = proximoMes.withDayOfMonth(proximoMes.lengthOfMonth());
+                }
+            }
+        }
+        
+        // Calcula a próxima data de pagamento
+        // Regra: o pagamento sempre acontece APÓS o fechamento
+        // Se diaPagamento < diaFechamento, o pagamento é no mês seguinte ao fechamento
+        // Exemplo: fechamento dia 29, pagamento dia 1 -> fecha dia 29/nov, paga dia 1/dez
+        LocalDate proximoPagamento;
+        if (diaPagamento < diaFechamento) {
+            // Pagamento é no mês seguinte ao fechamento
+            LocalDate mesPagamento = proximoFechamento.plusMonths(1);
+            try {
+                proximoPagamento = mesPagamento.withDayOfMonth(diaPagamento);
+            } catch (java.time.DateTimeException e) {
+                // Se o dia não existe no mês (ex: 31 de fevereiro), usa o último dia do mês
+                proximoPagamento = mesPagamento.withDayOfMonth(mesPagamento.lengthOfMonth());
+            }
+        } else {
+            // Pagamento é no mesmo mês do fechamento, mas sempre depois do fechamento
+            try {
+                proximoPagamento = proximoFechamento.withDayOfMonth(diaPagamento);
+                // Se o pagamento calculado é antes ou igual ao fechamento, ajusta para o mês seguinte
+                if (proximoPagamento.isBefore(proximoFechamento) || proximoPagamento.equals(proximoFechamento)) {
+                    LocalDate mesPagamento = proximoFechamento.plusMonths(1);
+                    try {
+                        proximoPagamento = mesPagamento.withDayOfMonth(diaPagamento);
+                    } catch (java.time.DateTimeException e) {
+                        proximoPagamento = mesPagamento.withDayOfMonth(mesPagamento.lengthOfMonth());
+                    }
+                }
+            } catch (java.time.DateTimeException e) {
+                // Se o dia não existe no mês, vai para o próximo mês
+                LocalDate mesPagamento = proximoFechamento.plusMonths(1);
+                try {
+                    proximoPagamento = mesPagamento.withDayOfMonth(diaPagamento);
+                } catch (java.time.DateTimeException e2) {
+                    proximoPagamento = mesPagamento.withDayOfMonth(mesPagamento.lengthOfMonth());
+                }
+            }
+        }
+        
+        // Calcula a data do último fechamento (fechamento anterior)
+        LocalDate ultimoFechamento;
+        LocalDate mesAnterior = proximoFechamento.minusMonths(1);
+        try {
+            ultimoFechamento = mesAnterior.withDayOfMonth(diaFechamento);
+        } catch (java.time.DateTimeException e) {
+            // Se o dia não existe no mês (ex: 31 de fevereiro), usa o último dia do mês
+            ultimoFechamento = mesAnterior.withDayOfMonth(mesAnterior.lengthOfMonth());
+        }
+        
+        // Determina se a fatura atual está aberta ou fechada
+        // Fatura está aberta se hoje está entre o último fechamento (inclusive) e o próximo fechamento (exclusive)
+        boolean faturaAberta = !hoje.isBefore(ultimoFechamento) && hoje.isBefore(proximoFechamento);
+        
+        // Calcula dias até próximo fechamento e pagamento
+        long diasAteFechamento = ChronoUnit.DAYS.between(hoje, proximoFechamento);
+        long diasAtePagamento = ChronoUnit.DAYS.between(hoje, proximoPagamento);
+        
+        info.put("proximoFechamento", proximoFechamento.toString());
+        info.put("proximoPagamento", proximoPagamento.toString());
+        info.put("ultimoFechamento", ultimoFechamento.toString());
+        info.put("faturaAberta", faturaAberta);
+        info.put("diasAteFechamento", diasAteFechamento);
+        info.put("diasAtePagamento", diasAtePagamento);
+        
+        return info;
     }
     
     private static void sendErrorResponse(HttpExchange exchange, int statusCode, String message) throws IOException {

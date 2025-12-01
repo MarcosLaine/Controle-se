@@ -57,6 +57,30 @@
   }
 }
 
+/* Toast blur styles - outside @layer for better specificity */
+.toast-blur {
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+}
+
+.dark .toast-blur {
+  background: rgba(31, 41, 55, 0.85) !important;
+  color: #f9fafb !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+.dark .toast-success {
+  background: rgba(34, 197, 94, 0.2) !important;
+  color: #f9fafb !important;
+  border-color: rgba(34, 197, 94, 0.4) !important;
+}
+
+.dark .toast-error {
+  background: rgba(239, 68, 68, 0.2) !important;
+  color: #f9fafb !important;
+  border-color: rgba(239, 68, 68, 0.4) !important;
+}
+
 /* Scrollbar styling */
 ::-webkit-scrollbar {
   width: 8px;
@@ -106,5 +130,29 @@
     #1f2937 100%
   );
   background-size: 1000px 100%;
+}
+
+/* Toast blur styles */
+.toast-blur {
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+}
+
+.dark .toast-blur {
+  background: rgba(31, 41, 55, 0.85) !important;
+  color: #f9fafb !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+.dark .toast-success {
+  background: rgba(34, 197, 94, 0.2) !important;
+  color: #f9fafb !important;
+  border-color: rgba(34, 197, 94, 0.4) !important;
+}
+
+.dark .toast-error {
+  background: rgba(239, 68, 68, 0.2) !important;
+  color: #f9fafb !important;
+  border-color: rgba(239, 68, 68, 0.4) !important;
 }
 

@@ -4,7 +4,8 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "test:e2e": "node --test tests/e2e/sequence.test.mjs"
+    "test:e2e": "node --test tests/e2e/sequence.test.mjs",
+    "build": "cd frontend && npm run build"
   },
   "dependencies": {
     "axios": "^1.6.8"

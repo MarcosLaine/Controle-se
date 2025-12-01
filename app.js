@@ -64,7 +64,10 @@ class ControleSeApp {
         document.getElementById('add-income-btn').addEventListener('click', () => this.showAddIncomeModal());
         document.getElementById('add-budget-btn').addEventListener('click', () => this.showAddBudgetModal());
         document.getElementById('add-tag-btn').addEventListener('click', () => this.showAddTagModal());
-        document.getElementById('add-investment-btn').addEventListener('click', () => this.showAddInvestmentModal());
+        document.getElementById('add-investment-btn').addEventListener('click', () => {
+            console.log('Botão adicionar investimento clicado!');
+            this.showAddInvestmentModal();
+        });
 
         // Filters
         document.getElementById('category-filter').addEventListener('change', () => this.filterTransactions());
@@ -418,13 +421,18 @@ class ControleSeApp {
     }
 
     async loadAccounts() {
+        console.log('loadAccounts chamado');
         try {
             const userId = this.currentUser ? this.currentUser.id : 1;
+            console.log('Buscando contas para userId:', userId);
             const response = await this.apiCall(`/accounts?userId=${userId}`, 'GET');
+            console.log('Resposta da API de contas:', response);
             if (response.success) {
                 this.accountsCache = response.data || []; // Atualiza o cache, garantindo que seja um array
+                console.log('Cache atualizado com', this.accountsCache.length, 'contas:', this.accountsCache);
                 this.renderAccounts(this.accountsCache);
             } else {
+                console.log('Resposta não foi bem-sucedida');
                 // Se a resposta não foi bem-sucedida, inicializa como array vazio
                 this.accountsCache = [];
             }
@@ -787,9 +795,9 @@ class ControleSeApp {
                         <option value="Corrente">Conta Corrente</option>
                         <option value="Poupança">Poupança</option>
                         <option value="Cartão">Cartão de Crédito</option>
-                        <option value="Investimento (Corretora)" ${preselectedType === 'Investimento (Corretora)' ? 'selected' : ''}>Investimento (Corretora)</option>
+                        <option value="Investimento" ${preselectedType === 'Investimento' || preselectedType === 'Investimento (Corretora)' ? 'selected' : ''}>Investimento (Corretora)</option>
                     </select>
-                    <small id="account-type-help" style="color: var(--neutral-600); margin-top: 4px; display: ${preselectedType === 'Investimento (Corretora)' ? 'block' : 'none'};">
+                    <small id="account-type-help" style="color: var(--neutral-600); margin-top: 4px; display: ${preselectedType === 'Investimento' || preselectedType === 'Investimento (Corretora)' ? 'block' : 'none'};">
                         <i class="fas fa-info-circle"></i> Esta conta será usada como corretora ao criar investimentos
                     </small>
                 </div>
@@ -811,7 +819,7 @@ class ControleSeApp {
         
         if (accountTypeSelect && accountTypeHelp) {
             accountTypeSelect.addEventListener('change', () => {
-                if (accountTypeSelect.value === 'Investimento (Corretora)') {
+                if (accountTypeSelect.value === 'Investimento') {
                     accountTypeHelp.style.display = 'block';
                 } else {
                     accountTypeHelp.style.display = 'none';
@@ -832,7 +840,7 @@ class ControleSeApp {
                         
                         // Recarrega as contas do cache atualizado
                         const investmentAccounts = this.accountsCache.filter(acc => 
-                            acc.tipo && acc.tipo.toLowerCase() === 'investimento (corretora)'
+                            this.isInvestmentAccount(acc)
                         );
                         
                         investmentAccounts.forEach(account => {
@@ -1194,16 +1202,30 @@ class ControleSeApp {
 
     async addAccount(returnToInvestment = false) {
         const name = document.getElementById('account-name').value;
-        const type = document.getElementById('account-type').value;
+        let type = document.getElementById('account-type').value;
         const balance = parseFloat(document.getElementById('account-balance').value);
+        
+        // Normaliza o tipo: se for "Investimento (Corretora)" ou qualquer variação, salva como "Investimento"
+        if (type && type.toLowerCase().includes('investimento')) {
+            type = 'Investimento';
+        }
         
         try {
             const userId = this.currentUser ? this.currentUser.id : 1;
+            console.log('Criando conta com dados:', { name, type, balance, userId });
             const response = await this.apiCall('/accounts', 'POST', { name, type, balance, userId });
+            console.log('Resposta ao criar conta:', response);
             if (response.success) {
                 this.showToast('Conta adicionada com sucesso!', 'success');
                 this.closeModal();
+                // Recarrega contas e aguarda para garantir que o cache está atualizado
+                console.log('Recarregando contas após criar nova conta...');
                 await this.loadAccounts();
+                
+                // Log para debug
+                console.log('Contas após criar nova conta:', this.accountsCache);
+                const investmentAccounts = this.accountsCache.filter(acc => this.isInvestmentAccount(acc));
+                console.log('Contas de investimento encontradas após criar conta:', investmentAccounts);
                 
                 // Retorna o ID da conta criada se solicitado
                 if (returnToInvestment) {
@@ -1573,6 +1595,27 @@ class ControleSeApp {
         return checkboxes;
     }
 
+    /**
+     * Verifica se uma conta é do tipo investimento
+     * Aceita tanto "Investimento" quanto "Investimento (Corretora)"
+     * Funciona com qualquer variação de maiúsculas/minúsculas
+     */
+    isInvestmentAccount(account) {
+        console.log('isInvestmentAccount chamada com:', account);
+        if (!account || !account.tipo) {
+            console.log('isInvestmentAccount: account ou tipo inválido');
+            return false;
+        }
+        // Normaliza o tipo: remove espaços extras, converte para minúsculas
+        const tipoNormalized = String(account.tipo).toLowerCase().trim().replace(/\s+/g, ' ');
+        console.log('isInvestmentAccount - tipo original:', account.tipo, 'normalizado:', tipoNormalized);
+        
+        // Verifica se começa com "investimento" (aceita "investimento", "investimento (corretora)", etc)
+        const result = tipoNormalized.startsWith('investimento');
+        console.log('isInvestmentAccount - resultado:', result);
+        return result;
+    }
+
     getAccountsForSelect(excludeInvestment = false) {
         if (this.accountsCache.length === 0) {
             return '<option value="">Nenhuma conta disponível</option>';
@@ -1581,7 +1624,7 @@ class ControleSeApp {
         let options = '';
         this.accountsCache.forEach(account => {
             // Filtra contas de investimento se solicitado
-            if (excludeInvestment && account.tipo && account.tipo.toLowerCase() === 'investimento') {
+            if (excludeInvestment && this.isInvestmentAccount(account)) {
                 return;
             }
             const tipoDisplay = account.tipo ? ` (${account.tipo})` : '';
@@ -2768,7 +2811,12 @@ class ControleSeApp {
             
             // Preenche os campos com os dados da conta
             document.getElementById('edit-account-name').value = account.nome || '';
-            document.getElementById('edit-account-type').value = account.tipo || '';
+            // Normaliza o tipo: se for "INVESTIMENTO (CORRETORA)" ou qualquer variação, mostra como "Investimento"
+            let accountType = account.tipo || '';
+            if (accountType && accountType.toLowerCase().includes('investimento')) {
+                accountType = 'Investimento';
+            }
+            document.getElementById('edit-account-type').value = accountType;
             document.getElementById('edit-account-balance').value = account.saldo || 0;
             
             if (editAccountTypeSelect && editAccountTypeHelp) {
@@ -2789,8 +2837,13 @@ class ControleSeApp {
             document.getElementById('edit-account-form').addEventListener('submit', async (e) => {
                 e.preventDefault();
                 const name = document.getElementById('edit-account-name').value;
-                const type = document.getElementById('edit-account-type').value;
+                let type = document.getElementById('edit-account-type').value;
                 const balance = parseFloat(document.getElementById('edit-account-balance').value);
+                
+                // Normaliza o tipo: se for "Investimento (Corretora)" ou qualquer variação, salva como "Investimento"
+                if (type && type.toLowerCase().includes('investimento')) {
+                    type = 'Investimento';
+                }
                 
                 try {
                     const response = await this.apiCall('/accounts', 'PUT', { id: accountId, name, type, balance });
@@ -3551,8 +3604,10 @@ class ControleSeApp {
     }
     
     showAddInvestmentModal() {
+        console.log('showAddInvestmentModal chamado. Cache:', this.accountsCache);
         // Garante que as contas estão carregadas
         if (!this.accountsCache || this.accountsCache.length === 0) {
+            console.log('Cache vazio, carregando contas...');
             // Evita loop infinito: verifica se já está carregando
             if (this._loadingAccounts) {
                 return;
@@ -3561,10 +3616,13 @@ class ControleSeApp {
             this._loadingAccounts = true;
             this.loadAccounts().then(() => {
                 this._loadingAccounts = false;
+                // Log para debug
+                console.log('Contas carregadas:', this.accountsCache);
                 // Verifica se há contas do tipo "Investimento"
                 const investmentAccounts = this.accountsCache.filter(acc => 
-                    acc.tipo && acc.tipo.toLowerCase() === 'investimento'
+                    this.isInvestmentAccount(acc)
                 );
+                console.log('Contas de investimento encontradas:', investmentAccounts);
                 
                 if (investmentAccounts.length === 0) {
                     this.showToast('Você precisa criar pelo menos uma conta do tipo "Investimento" antes de registrar um investimento!', 'warning');
@@ -3583,11 +3641,14 @@ class ControleSeApp {
         }
         
         // Filtra apenas contas do tipo "Investimento"
+        console.log('Filtrando contas de investimento. Total de contas:', this.accountsCache.length);
         const investmentAccounts = this.accountsCache.filter(acc => 
-            acc.tipo && acc.tipo.toLowerCase() === 'investimento'
+            this.isInvestmentAccount(acc)
         );
+        console.log('Contas de investimento encontradas (após filtro):', investmentAccounts.length, investmentAccounts);
         
         if (investmentAccounts.length === 0) {
+            console.log('Nenhuma conta de investimento encontrada!');
             this.showToast('Você precisa criar pelo menos uma conta do tipo "Investimento" antes de registrar um investimento!', 'warning');
             setTimeout(() => {
                 document.querySelector('[data-section="accounts"]')?.click();
@@ -3664,10 +3725,13 @@ class ControleSeApp {
             // Preenche select de contas - apenas contas do tipo "Investimento"
             const accountSelect = document.getElementById('investment-account');
             if (accountSelect && this.accountsCache) {
+                // Log para debug
+                console.log('Preenchendo select de contas. Cache:', this.accountsCache);
                 // Filtra apenas contas do tipo "Investimento"
                 const investmentAccounts = this.accountsCache.filter(acc => 
-                    acc.tipo && acc.tipo.toLowerCase() === 'investimento'
+                    this.isInvestmentAccount(acc)
                 );
+                console.log('Contas de investimento para select:', investmentAccounts);
                 
                 if (investmentAccounts.length === 0) {
                     const option = document.createElement('option');
@@ -3762,7 +3826,7 @@ class ControleSeApp {
         
         // Filtra apenas contas do tipo "Investimento"
         const investmentAccounts = this.accountsCache.filter(acc => 
-            acc.tipo && acc.tipo.toLowerCase() === 'investimento'
+            this.isInvestmentAccount(acc)
         );
         
         if (investmentAccounts.length === 0) {
@@ -4100,7 +4164,7 @@ class ControleSeApp {
         let selectedAccount = null;
         if (accountId) {
             selectedAccount = this.accountsCache.find(acc => acc.idConta === accountId);
-            if (!selectedAccount || !selectedAccount.tipo || selectedAccount.tipo.toLowerCase() !== 'investimento') {
+            if (!selectedAccount || !this.isInvestmentAccount(selectedAccount)) {
                 this.showToast('Apenas contas do tipo "Investimento" podem ser utilizadas para criar investimentos!', 'error');
                 return;
             }
@@ -4325,7 +4389,7 @@ class ControleSeApp {
             
             // Filtra apenas contas do tipo "Investimento"
             const investmentAccounts = this.accountsCache.filter(acc => 
-                acc.tipo && acc.tipo.toLowerCase() === 'investimento'
+                this.isInvestmentAccount(acc)
             );
             
             if (investmentAccounts.length === 0) {

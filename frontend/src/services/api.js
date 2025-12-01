@@ -29,23 +29,31 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response.data,
   (error) => {
+    // Ignora erros de cancelamento (AbortController)
+    if (axios.isCancel(error) || error.name === 'CanceledError' || error.name === 'AbortError') {
+      return Promise.reject(error);
+    }
+    
     if (error.response) {
       // Erro da API
       return Promise.reject({
         message: error.response.data?.message || 'Erro na requisição',
         status: error.response.status,
+        name: error.name,
       });
     } else if (error.request) {
       // Erro de rede
       return Promise.reject({
         message: 'Erro de conexão. Verifique se o backend está rodando.',
         status: 0,
+        name: error.name,
       });
     } else {
       // Outro erro
       return Promise.reject({
         message: error.message || 'Erro desconhecido',
         status: 0,
+        name: error.name,
       });
     }
   }
