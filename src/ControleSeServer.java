@@ -404,6 +404,8 @@ public class ControleSeServer {
             withRateLimit(secure(new server.handlers.InvestmentEvolutionHandler(investmentRepository)), "/api/investments/evolution", apiCircuitBreaker));
         server.createContext("/api/investments/quote", 
             withRateLimit(secure(new server.handlers.InvestmentQuoteHandler()), "/api/investments/quote", apiCircuitBreaker));
+        server.createContext("/api/tools/compound-interest", 
+            withRateLimit(secure(new server.handlers.CompoundInterestHandler()), "/api/tools/compound-interest", apiCircuitBreaker));
         
         // Health check
         server.createContext("/health", new server.handlers.HealthHandler());

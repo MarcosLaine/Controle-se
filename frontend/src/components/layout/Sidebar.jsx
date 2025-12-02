@@ -1,6 +1,7 @@
 import {
   ArrowLeftRight,
   Building2,
+  Calculator,
   FileText,
   LayoutDashboard,
   PieChart,
@@ -16,6 +17,7 @@ const menuItems = [
   { id: 'categories', label: 'Categorias e Tags', icon: Tag },
   { id: 'accounts', label: 'Contas', icon: Building2 },
   { id: 'reports', label: 'Relatórios', icon: FileText },
+  { id: 'tools', label: 'Ferramentas', icon: Calculator },
 ];
 
 export default function Sidebar({ activeSection, onSectionChange, onSectionHover, isOpen, onClose }) {

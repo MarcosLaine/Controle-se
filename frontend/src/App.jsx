@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { DataProvider } from './contexts/DataContext';
 import LoginPage from './pages/LoginPage';
 import Dashboard from './pages/Dashboard';
+import CompoundInterestCalculatorPage from './pages/CompoundInterestCalculatorPage';
 import SkeletonScreen from './components/common/SkeletonScreen';
 import ThemeProvider from './contexts/ThemeContext';
 
@@ -42,6 +43,10 @@ function AppRoutes() {
             <Dashboard />
           </ProtectedRoute>
         }
+      />
+      <Route
+        path="/calculadora-juros-compostos"
+        element={<CompoundInterestCalculatorPage />}
       />
       <Route path="/" element={<Navigate to="/dashboard" replace />} />
     </Routes>

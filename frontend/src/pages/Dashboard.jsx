@@ -16,6 +16,7 @@ const sectionComponents = {
   transactions: lazyWithPreload(() => import('../components/sections/Transactions')),
   reports: lazyWithPreload(() => import('../components/sections/Reports')),
   investments: lazyWithPreload(() => import('../components/sections/Investments')),
+  tools: lazyWithPreload(() => import('../components/sections/Tools')),
 };
 
 const SectionFallback = ({ sectionType }) => (

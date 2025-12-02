@@ -66,61 +66,130 @@ export default function Reports() {
     }
 
     try {
+      // Detectar tema atual
+      const isDark = document.documentElement.classList.contains('dark') || 
+                     localStorage.getItem('theme') === 'dark';
+      
       const doc = new jsPDF();
       const pageWidth = doc.internal.pageSize.getWidth();
       const margin = 14;
-      const palette = {
-        primary: [59, 130, 246],
-        emerald: [16, 185, 129],
-        amber: [245, 158, 11],
-        purple: [99, 102, 241],
-        slate: [15, 23, 42],
-        gray: [55, 65, 81],
-        red: [239, 68, 68],
-        green: [34, 197, 94]
-      };
+      let yPos = margin;
 
-      let yPos = 48;
+      // Definir cor de fundo da página baseado no tema
+      if (isDark) {
+        doc.setFillColor(17, 24, 39); // gray-900
+        doc.rect(0, 0, pageWidth, doc.internal.pageSize.getHeight(), 'F');
+      }
+
+      // Paleta de cores baseada no tema
+      const palette = isDark ? {
+        // Modo Escuro
+        primary: [34, 197, 94],              // green-500
+        primaryLight: [22, 101, 52],        // green-900/30
+        green: [34, 197, 94],               // green-500
+        greenLight: [22, 101, 52],          // green-900/30
+        red: [248, 113, 113],              // red-400 (mais claro)
+        redLight: [127, 29, 29],            // red-900/30
+        blue: [96, 165, 250],               // blue-400
+        blueLight: [30, 58, 138],          // blue-900/30
+        purple: [196, 181, 253],           // purple-300
+        purpleLight: [88, 28, 135],        // purple-900/30
+        amber: [251, 191, 36],             // amber-400
+        amberLight: [120, 53, 15],         // amber-900/30
+        emerald: [52, 211, 153],           // emerald-400
+        emeraldLight: [6, 78, 59],         // emerald-900/30
+        gray: [156, 163, 175],            // gray-400
+        grayLight: [55, 65, 81],          // gray-700 (cabeçalhos mais visíveis)
+        grayBorder: [75, 85, 101],       // gray-600 (bordas mais visíveis)
+        textPrimary: [243, 244, 246],     // gray-100
+        textSecondary: [209, 213, 219],   // gray-300 (mais visível)
+        white: [31, 41, 55],               // gray-800
+        whiteAlt: [39, 49, 63],            // gray-750 (linhas alternadas)
+        pageBg: [17, 24, 39],             // gray-900
+      } : {
+        // Modo Claro
+        primary: [22, 163, 74],            // primary-600
+        primaryLight: [240, 253, 244],     // primary-50
+        green: [34, 197, 94],              // green-500
+        greenLight: [240, 253, 244],       // green-50
+        red: [239, 68, 68],                // red-500
+        redLight: [254, 242, 242],         // red-50
+        blue: [59, 130, 246],              // blue-500
+        blueLight: [239, 246, 255],       // blue-50
+        purple: [168, 85, 247],           // purple-500
+        purpleLight: [250, 245, 255],    // purple-50
+        amber: [245, 158, 11],             // amber-500
+        amberLight: [255, 251, 235],      // amber-50
+        emerald: [16, 185, 129],          // emerald-500
+        emeraldLight: [236, 253, 245],    // emerald-50
+        gray: [107, 114, 128],            // gray-500
+        grayLight: [249, 250, 251],       // gray-50
+        grayBorder: [229, 231, 235],      // gray-200
+        textPrimary: [17, 24, 39],        // gray-900
+        textSecondary: [107, 114, 128],   // gray-500
+        white: [255, 255, 255],
+        pageBg: [255, 255, 255],
+      };
 
       const ensureSpace = (space = 20) => {
         if (yPos + space > doc.internal.pageSize.getHeight() - 20) {
           doc.addPage();
-          yPos = 20;
+          yPos = margin;
         }
       };
 
-      const drawSectionTitle = (title, color = palette.primary) => {
-        ensureSpace(16);
-        doc.setFillColor(...color);
-        doc.setTextColor(255, 255, 255);
-        doc.roundedRect(margin, yPos, pageWidth - margin * 2, 10, 2, 2, 'F');
-        doc.setFontSize(11);
-        doc.text(title, margin + 4, yPos + 7);
-        yPos += 16;
-        doc.setTextColor(...palette.slate);
-      };
-
-      const drawSummaryCard = (label, value, subtitle, x, y, width, color) => {
-        doc.setFillColor(...color);
-        doc.roundedRect(x, y, width, 28, 3, 3, 'F');
-        doc.setTextColor(255, 255, 255);
-        doc.setFontSize(9);
-        doc.text(label.toUpperCase(), x + 4, y + 8);
+      // Função para desenhar card estilo SummaryCard
+      const drawSummaryCard = (label, value, subtitle, x, y, width, bgColor, borderColor, textColor) => {
+        // Fundo do card
+        doc.setFillColor(...bgColor);
+        doc.roundedRect(x, y, width, 32, 4, 4, 'F');
+        
+        // Borda sutil
+        doc.setDrawColor(...borderColor);
+        doc.setLineWidth(0.5);
+        doc.roundedRect(x, y, width, 32, 4, 4, 'S');
+        
+        // Label
+        doc.setFontSize(7);
+        doc.setFont(undefined, 'normal');
+        doc.setTextColor(...textColor);
+        doc.text(label, x + 6, y + 8);
+        
+        // Valor
         doc.setFontSize(12);
-        doc.text(value, x + 4, y + 17);
+        doc.setFont(undefined, 'bold');
+        doc.setTextColor(...palette.textPrimary);
+        doc.text(value, x + 6, y + 18);
+        
+        // Subtitle
         if (subtitle) {
-          doc.setFontSize(9);
-          doc.text(subtitle, x + 4, y + 24);
+          doc.setFontSize(6);
+          doc.setFont(undefined, 'normal');
+          doc.setTextColor(...palette.textSecondary);
+          doc.text(subtitle, x + 6, y + 26);
         }
       };
 
-      // Hero header
-      doc.setFillColor(...palette.primary);
-      doc.rect(0, 0, pageWidth, 38, 'F');
-      doc.setFontSize(20);
-      doc.setTextColor(255, 255, 255);
-      doc.text('Relatório Financeiro', margin, 20);
-      doc.setFontSize(10);
+      // Função para desenhar título de seção
+      const drawSectionTitle = (title) => {
+        ensureSpace(16);
+        doc.setFontSize(14);
+        doc.setFont(undefined, 'bold');
+        doc.setTextColor(...palette.textPrimary);
+        doc.text(title, margin, yPos);
+        yPos += 10;
+      };
+
+      // Header minimalista estilo app
+      doc.setFontSize(24);
+      doc.setFont(undefined, 'bold');
+      doc.setTextColor(...palette.textPrimary);
+      doc.text('Relatório Financeiro', margin, yPos);
+      yPos += 8;
+      
+      doc.setFontSize(9);
+      doc.setFont(undefined, 'normal');
+      doc.setTextColor(...palette.textSecondary);
       
       const periodText = period === 'custom' && startDate && endDate
         ? `${formatDate(startDate)} a ${formatDate(endDate)}`
@@ -130,12 +199,13 @@ export default function Reports() {
         ? 'Este Ano'
         : 'Período selecionado';
       
-      doc.text(`Gerado em: ${formatDate(new Date().toISOString())}`, margin, 30);
-      doc.setFontSize(9);
-      doc.text(`Período: ${periodText}`, margin, 36);
+      doc.text(`Gerado em ${formatDate(new Date().toISOString())} • Período: ${periodText}`, margin, yPos);
+      yPos += 16;
 
-      // Summary cards
-      const cardWidth = (pageWidth - margin * 2 - 8) / 3;
+      // Summary cards estilo SummaryCard
+      const cardWidth = (pageWidth - margin * 2 - 12) / 3;
+      const cardSpacing = 4;
+      
       drawSummaryCard(
         'Total Receitas',
         formatCurrency(reportData.totalIncomes || 0),
@@ -143,31 +213,41 @@ export default function Reports() {
         margin,
         yPos,
         cardWidth,
-        palette.green
+        palette.greenLight,
+        isDark ? [34, 197, 94] : [34, 197, 94],
+        palette.textSecondary
       );
+      
       drawSummaryCard(
         'Total Gastos',
         formatCurrency(reportData.totalExpenses || 0),
         `${reportData.expenseCount || 0} transações`,
-        margin + cardWidth + 4,
+        margin + cardWidth + cardSpacing,
         yPos,
         cardWidth,
-        palette.red
+        palette.redLight,
+        isDark ? [248, 113, 113] : [239, 68, 68],
+        palette.textSecondary
       );
+      
       drawSummaryCard(
         'Saldo',
         formatCurrency(reportData.balance || 0),
         'Receitas - Gastos',
-        margin + (cardWidth + 4) * 2,
+        margin + (cardWidth + cardSpacing) * 2,
         yPos,
         cardWidth,
-        palette.primary
+        palette.blueLight,
+        isDark ? [96, 165, 250] : [59, 130, 246],
+        palette.textSecondary
       );
-      yPos += 42;
+      
+      yPos += 40;
 
       // Gastos por Categoria
       if (categoryData.length > 0) {
-        drawSectionTitle('Gastos por Categoria', palette.purple);
+        ensureSpace(30);
+        drawSectionTitle('Gastos por Categoria');
         const categoryRows = categoryData
           .sort((a, b) => b.total - a.total)
           .slice(0, 15)
@@ -183,16 +263,35 @@ export default function Reports() {
           startY: yPos,
           head: [['Categoria', 'Valor', 'Participação']],
           body: categoryRows,
-          styles: { fontSize: 8 },
-          headStyles: { fillColor: palette.purple },
-          alternateRowStyles: { fillColor: [248, 250, 252] },
+          styles: { 
+            fontSize: 9,
+            cellPadding: 3,
+            fillColor: isDark ? palette.white : palette.white,
+            textColor: palette.textPrimary,
+            lineColor: palette.grayBorder,
+            lineWidth: isDark ? 0.5 : 0.3,
+          },
+          headStyles: { 
+            fillColor: palette.grayLight,
+            textColor: palette.textPrimary,
+            fontStyle: 'bold',
+            lineColor: palette.grayBorder,
+            lineWidth: isDark ? 0.7 : 0.5,
+          },
+          alternateRowStyles: { fillColor: isDark ? palette.whiteAlt : [249, 250, 251] },
+          columnStyles: {
+            0: { textColor: palette.textPrimary },
+            1: { halign: 'right', textColor: palette.textSecondary },
+            2: { halign: 'right', textColor: palette.textSecondary },
+          },
         });
         yPos = doc.lastAutoTable.finalY + 12;
       }
 
       // Gastos por Conta
       if (reportData.accountAnalysis && Object.keys(reportData.accountAnalysis).length > 0) {
-        drawSectionTitle('Gastos por Conta', palette.amber);
+        ensureSpace(30);
+        drawSectionTitle('Gastos por Conta');
         const accountRows = Object.entries(reportData.accountAnalysis)
           .sort((a, b) => b[1] - a[1])
           .slice(0, 10)
@@ -208,16 +307,35 @@ export default function Reports() {
           startY: yPos,
           head: [['Conta', 'Valor', 'Participação']],
           body: accountRows,
-          styles: { fontSize: 8 },
-          headStyles: { fillColor: palette.amber },
-          alternateRowStyles: { fillColor: [248, 250, 252] },
+          styles: { 
+            fontSize: 9,
+            cellPadding: 3,
+            fillColor: isDark ? palette.white : palette.white,
+            textColor: palette.textPrimary,
+            lineColor: palette.grayBorder,
+            lineWidth: isDark ? 0.5 : 0.3,
+          },
+          headStyles: { 
+            fillColor: palette.grayLight,
+            textColor: palette.textPrimary,
+            fontStyle: 'bold',
+            lineColor: palette.grayBorder,
+            lineWidth: isDark ? 0.7 : 0.5,
+          },
+          alternateRowStyles: { fillColor: isDark ? palette.whiteAlt : [249, 250, 251] },
+          columnStyles: {
+            0: { textColor: palette.textPrimary },
+            1: { halign: 'right', textColor: palette.textSecondary },
+            2: { halign: 'right', textColor: palette.textSecondary },
+          },
         });
         yPos = doc.lastAutoTable.finalY + 12;
       }
 
       // Evolução Mensal
       if (monthlyData.length > 0) {
-        drawSectionTitle('Evolução Mensal', palette.emerald);
+        ensureSpace(30);
+        drawSectionTitle('Evolução Mensal');
         const monthNames = [
           'Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun',
           'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'
@@ -235,16 +353,36 @@ export default function Reports() {
           startY: yPos,
           head: [['Mês', 'Receitas', 'Gastos', 'Saldo']],
           body: monthlyRows,
-          styles: { fontSize: 8 },
-          headStyles: { fillColor: palette.emerald },
-          alternateRowStyles: { fillColor: [248, 250, 252] },
+          styles: { 
+            fontSize: 9,
+            cellPadding: 3,
+            fillColor: isDark ? palette.white : palette.white,
+            textColor: palette.textPrimary,
+            lineColor: palette.grayBorder,
+            lineWidth: isDark ? 0.5 : 0.3,
+          },
+          headStyles: { 
+            fillColor: palette.grayLight,
+            textColor: palette.textPrimary,
+            fontStyle: 'bold',
+            lineColor: palette.grayBorder,
+            lineWidth: isDark ? 0.7 : 0.5,
+          },
+          alternateRowStyles: { fillColor: isDark ? palette.whiteAlt : [249, 250, 251] },
+          columnStyles: {
+            0: { textColor: palette.textPrimary },
+            1: { halign: 'right', textColor: [34, 197, 94] },
+            2: { halign: 'right', textColor: [239, 68, 68] },
+            3: { halign: 'right', fontStyle: 'bold', textColor: [59, 130, 246] },
+          },
         });
         yPos = doc.lastAutoTable.finalY + 12;
       }
 
       // Top Gastos
       if (reportData.topExpenses && reportData.topExpenses.length > 0) {
-        drawSectionTitle('Maiores Gastos', palette.red);
+        ensureSpace(30);
+        drawSectionTitle('Maiores Gastos');
         const topExpensesRows = reportData.topExpenses
           .slice(0, 15)
           .map(expense => [
@@ -258,16 +396,38 @@ export default function Reports() {
           startY: yPos,
           head: [['Data', 'Descrição', 'Categoria', 'Valor']],
           body: topExpensesRows,
-          styles: { fontSize: 8 },
-          headStyles: { fillColor: palette.red },
-          alternateRowStyles: { fillColor: [248, 250, 252] },
+          styles: { 
+            fontSize: 9,
+            cellPadding: 3,
+            fillColor: isDark ? palette.white : palette.white,
+            textColor: palette.textPrimary,
+            lineColor: palette.grayBorder,
+            lineWidth: isDark ? 0.5 : 0.3,
+          },
+          headStyles: { 
+            fillColor: palette.grayLight,
+            textColor: palette.textPrimary,
+            fontStyle: 'bold',
+            lineColor: palette.grayBorder,
+            lineWidth: isDark ? 0.7 : 0.5,
+          },
+          alternateRowStyles: { fillColor: isDark ? palette.whiteAlt : [249, 250, 251] },
+          columnStyles: {
+            0: { textColor: palette.textSecondary },
+            1: { textColor: palette.textPrimary },
+            2: { textColor: palette.textSecondary },
+            3: { halign: 'right', fontStyle: 'bold', textColor: [239, 68, 68] },
+          },
         });
         yPos = doc.lastAutoTable.finalY + 12;
       }
 
       // Detalhes Adicionais
-      drawSectionTitle('Detalhes Adicionais', palette.gray);
-      doc.setFontSize(10);
+      ensureSpace(20);
+      drawSectionTitle('Detalhes Adicionais');
+      doc.setFontSize(9);
+      doc.setFont(undefined, 'normal');
+      doc.setTextColor(...palette.textSecondary);
       doc.text(`Total de transações: ${(reportData.incomeCount || 0) + (reportData.expenseCount || 0)}`, margin, yPos);
       yPos += 6;
       if (reportData.startDate && reportData.endDate) {
@@ -275,6 +435,21 @@ export default function Reports() {
         yPos += 6;
       }
       doc.text('Este relatório foi gerado automaticamente pelo Controle-se.', margin, yPos);
+      yPos += 8;
+
+      // Rodapé
+      const totalPages = doc.internal.pages.length - 1;
+      for (let i = 1; i <= totalPages; i++) {
+        doc.setPage(i);
+        doc.setFontSize(8);
+        doc.setTextColor(...palette.gray);
+        doc.text(
+          `Página ${i} de ${totalPages} - Controle-se - Relatório Financeiro`,
+          pageWidth / 2,
+          doc.internal.pageSize.getHeight() - 10,
+          { align: 'center' }
+        );
+      }
 
       const fileName = period === 'custom' && startDate && endDate
         ? `relatorio_${startDate}_${endDate}.pdf`

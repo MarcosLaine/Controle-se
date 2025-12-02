@@ -31,7 +31,7 @@ import toast from 'react-hot-toast';
 import * as XLSX from 'xlsx';
 import { useAuth } from '../../contexts/AuthContext';
 import api from '../../services/api';
-import { formatCurrency, formatDate } from '../../utils/formatters';
+import { formatCurrency, formatDate, parseFloatBrazilian } from '../../utils/formatters';
 import Modal from '../common/Modal';
 import SkeletonSection from '../common/SkeletonSection';
 import SummaryCard from '../common/SummaryCard';
@@ -354,6 +354,7 @@ export default function Investments() {
   const [evolutionLoading, setEvolutionLoading] = useState(false);
   const [evolutionError, setEvolutionError] = useState(null);
   const [showReturnInfo, setShowReturnInfo] = useState(false);
+  const [showExportMenu, setShowExportMenu] = useState(false);
   
   // Ref para armazenar o AbortController da requisição atual
   const abortControllerRef = useRef(null);
@@ -727,64 +728,144 @@ const {
   const displaySummary = calculatedSummary;
 
   const exportInvestmentReport = async (format = 'xlsx') => {
+    console.log('exportInvestmentReport chamado com format:', format);
+    console.log('investments:', investments);
+    console.log('calculatedSummary:', calculatedSummary);
+    console.log('groupedInvestments:', groupedInvestments);
+    
     try {
       if (format === 'pdf') {
+        console.log('Iniciando exportação PDF...');
+        // Detectar tema atual
+        const isDark = document.documentElement.classList.contains('dark') || 
+                       localStorage.getItem('theme') === 'dark';
+        
         const doc = new jsPDF();
         const pageWidth = doc.internal.pageSize.getWidth();
         const margin = 14;
-        const palette = {
-          primary: [59, 130, 246],
-          emerald: [16, 185, 129],
-          amber: [245, 158, 11],
-          purple: [99, 102, 241],
-          slate: [15, 23, 42],
-          gray: [55, 65, 81]
+        let yPos = margin;
+
+        // Definir cor de fundo da página baseado no tema
+        if (isDark) {
+          doc.setFillColor(17, 24, 39); // gray-900
+          doc.rect(0, 0, pageWidth, doc.internal.pageSize.getHeight(), 'F');
+        }
+
+        // Paleta de cores baseada no tema
+        const palette = isDark ? {
+          // Modo Escuro
+          primary: [34, 197, 94],              // green-500
+          primaryLight: [22, 101, 52],        // green-900/30
+          green: [34, 197, 94],               // green-500
+          greenLight: [22, 101, 52],          // green-900/30
+          blue: [96, 165, 250],               // blue-400
+          blueLight: [30, 58, 138],          // blue-900/30
+          purple: [196, 181, 253],           // purple-300
+          purpleLight: [88, 28, 135],        // purple-900/30
+          amber: [251, 191, 36],             // amber-400
+          amberLight: [120, 53, 15],         // amber-900/30
+          emerald: [52, 211, 153],           // emerald-400
+          emeraldLight: [6, 78, 59],         // emerald-900/30
+          gray: [156, 163, 175],            // gray-400
+          grayLight: [55, 65, 81],          // gray-700 (cabeçalhos mais visíveis)
+          grayBorder: [75, 85, 101],       // gray-600 (bordas mais visíveis)
+          textPrimary: [243, 244, 246],     // gray-100
+          textSecondary: [209, 213, 219],   // gray-300 (mais visível)
+          white: [31, 41, 55],               // gray-800
+          whiteAlt: [39, 49, 63],            // gray-750 (linhas alternadas)
+          pageBg: [17, 24, 39],             // gray-900
+        } : {
+          // Modo Claro
+          primary: [22, 163, 74],            // primary-600
+          primaryLight: [240, 253, 244],     // primary-50
+          green: [34, 197, 94],              // green-500
+          greenLight: [240, 253, 244],       // green-50
+          blue: [59, 130, 246],              // blue-500
+          blueLight: [239, 246, 255],        // blue-50
+          purple: [168, 85, 247],            // purple-500
+          purpleLight: [250, 245, 255],      // purple-50
+          amber: [245, 158, 11],             // amber-500
+          amberLight: [255, 251, 235],       // amber-50
+          emerald: [16, 185, 129],           // emerald-500
+          emeraldLight: [236, 253, 245],     // emerald-50
+          gray: [107, 114, 128],             // gray-500
+          grayLight: [249, 250, 251],        // gray-50
+          grayBorder: [229, 231, 235],       // gray-200
+          textPrimary: [17, 24, 39],         // gray-900
+          textSecondary: [107, 114, 128],    // gray-500
+          white: [255, 255, 255],
+          pageBg: [255, 255, 255],
         };
 
         const ensureSpace = (space = 20) => {
           if (yPos + space > doc.internal.pageSize.getHeight() - 20) {
             doc.addPage();
-            yPos = 20;
+            yPos = margin;
           }
         };
 
-        const drawSectionTitle = (title, color = palette.primary) => {
-          ensureSpace(16);
-          doc.setFillColor(...color);
-          doc.setTextColor(255, 255, 255);
-          doc.roundedRect(margin, yPos, pageWidth - margin * 2, 10, 2, 2, 'F');
-          doc.setFontSize(11);
-          doc.text(title, margin + 4, yPos + 7);
-          yPos += 16;
-          doc.setTextColor(...palette.slate);
-        };
-
-        const drawSummaryCard = (label, value, subtitle, x, y, width, color) => {
-          doc.setFillColor(...color);
-          doc.roundedRect(x, y, width, 28, 3, 3, 'F');
-          doc.setTextColor(255, 255, 255);
-          doc.setFontSize(9);
-          doc.text(label.toUpperCase(), x + 4, y + 8);
+        // Função para desenhar card estilo SummaryCard
+        const drawSummaryCard = (label, value, subtitle, x, y, width, bgColor, borderColor, textColor) => {
+          // Fundo do card
+          doc.setFillColor(...bgColor);
+          doc.roundedRect(x, y, width, 32, 4, 4, 'F');
+          
+          // Borda sutil
+          doc.setDrawColor(...borderColor);
+          doc.setLineWidth(0.5);
+          doc.roundedRect(x, y, width, 32, 4, 4, 'S');
+          
+          // Label
+          doc.setFontSize(7);
+          doc.setFont(undefined, 'normal');
+          doc.setTextColor(...textColor);
+          doc.text(label, x + 6, y + 8);
+          
+          // Valor
           doc.setFontSize(12);
-          doc.text(value, x + 4, y + 17);
+          doc.setFont(undefined, 'bold');
+          doc.setTextColor(...palette.textPrimary);
+          doc.text(value, x + 6, y + 18);
+          
+          // Subtitle
           if (subtitle) {
-            doc.setFontSize(9);
-            doc.text(subtitle, x + 4, y + 24);
+            doc.setFontSize(6);
+            doc.setFont(undefined, 'normal');
+            doc.setTextColor(...palette.textSecondary);
+            const subtitleLines = doc.splitTextToSize(subtitle, width - 12);
+            subtitleLines.forEach((line, idx) => {
+              doc.text(line, x + 6, y + 26 + idx * 4);
+            });
           }
         };
 
-        // Hero header
-        doc.setFillColor(...palette.primary);
-        doc.rect(0, 0, pageWidth, 38, 'F');
-        doc.setFontSize(20);
-        doc.setTextColor(255, 255, 255);
-        doc.text('Relatório de Investimentos', margin, 20);
-        doc.setFontSize(10);
-        doc.text(`Gerado em: ${formatDate(new Date().toISOString())}`, margin, 30);
+        // Função para desenhar título de seção
+        const drawSectionTitle = (title) => {
+          ensureSpace(16);
+          doc.setFontSize(14);
+          doc.setFont(undefined, 'bold');
+          doc.setTextColor(...palette.textPrimary);
+          doc.text(title, margin, yPos);
+          yPos += 10;
+        };
 
-        // Summary cards
-        let yPos = 48;
-        const cardWidth = (pageWidth - margin * 2 - 8) / 3;
+        // Header minimalista estilo app
+        doc.setFontSize(24);
+        doc.setFont(undefined, 'bold');
+        doc.setTextColor(...palette.textPrimary);
+        doc.text('Relatório de Investimentos', margin, yPos);
+        yPos += 8;
+        
+        doc.setFontSize(9);
+        doc.setFont(undefined, 'normal');
+        doc.setTextColor(...palette.textSecondary);
+        doc.text(`Gerado em ${formatDate(new Date().toISOString())}`, margin, yPos);
+        yPos += 16;
+
+        // Summary cards estilo SummaryCard
+        const cardWidth = (pageWidth - margin * 2 - 12) / 3;
+        const cardSpacing = 4;
+        
         drawSummaryCard(
           'Total Investido',
           formatCurrency(displaySummary.totalInvested),
@@ -792,43 +873,39 @@ const {
           margin,
           yPos,
           cardWidth,
-          [6, 78, 59]
+          palette.white,
+          palette.grayBorder,
+          palette.textSecondary
         );
+        
         drawSummaryCard(
           'Valor Atual',
           formatCurrency(displaySummary.totalCurrent),
           'Posições vivas no dia',
-          margin + cardWidth + 4,
+          margin + cardWidth + cardSpacing,
           yPos,
           cardWidth,
-          palette.primary
+          palette.blueLight,
+          isDark ? [96, 165, 250] : [59, 130, 246],
+          palette.textSecondary
         );
+        
         drawSummaryCard(
           'Retorno Total',
           formatCurrency(displaySummary.totalReturn),
           `${displaySummary.totalReturnPercent.toFixed(2)}% (inclui valores realizados)`,
-          margin + (cardWidth + 4) * 2,
+          margin + (cardWidth + cardSpacing) * 2,
           yPos,
           cardWidth,
-          palette.emerald
+          palette.emeraldLight,
+          isDark ? [52, 211, 153] : [16, 185, 129],
+          palette.textSecondary
         );
-        yPos += 42;
-
-        // Nota
-        ensureSpace(18);
-        doc.setFontSize(9);
-        doc.setTextColor(120, 113, 108);
-        doc.text(
-          'O retorno mostra a soma dos ganhos/perdas já realizados e o que ainda está em carteira – por isso pode diferir de Valor Atual - Investido.',
-          margin,
-          yPos,
-          { maxWidth: pageWidth - margin * 2 }
-        );
-        doc.setTextColor(...palette.slate);
-        yPos += 14;
+        
+        yPos += 40;
 
         // Seções principais
-        drawSectionTitle('Posições Ativas', palette.purple);
+        drawSectionTitle('Posições Ativas');
         const positions = [];
         Object.keys(groupedInvestments).forEach(cat => {
           Object.values(groupedInvestments[cat]).forEach(group => {
@@ -855,17 +932,41 @@ const {
               const valA = a[4].replace(/[^\d,-]/g, '');
               return parseFloatBrazilian(valB) - parseFloatBrazilian(valA);
             }).slice(0, 18),
-            styles: { fontSize: 8 },
-            headStyles: { fillColor: palette.purple },
+            styles: { 
+              fontSize: 9,
+              cellPadding: 3,
+              fillColor: isDark ? palette.white : palette.white,
+              textColor: palette.textPrimary,
+              lineColor: palette.grayBorder,
+              lineWidth: isDark ? 0.5 : 0.3,
+            },
+            headStyles: { 
+              fillColor: palette.grayLight,
+              textColor: palette.textPrimary,
+              fontStyle: 'bold',
+              lineColor: palette.grayBorder,
+              lineWidth: isDark ? 0.7 : 0.5,
+            },
+            alternateRowStyles: { fillColor: isDark ? palette.whiteAlt : [249, 250, 251] },
+            columnStyles: {
+              0: { textColor: palette.textSecondary },
+              1: { textColor: palette.textPrimary },
+              2: { halign: 'right', textColor: palette.textSecondary },
+              3: { halign: 'right', textColor: palette.textSecondary },
+              4: { halign: 'right', fontStyle: 'bold', textColor: [59, 130, 246] },
+              5: { halign: 'right', textColor: palette.textSecondary },
+              6: { halign: 'right', textColor: [34, 197, 94] },
+            },
           });
           yPos = doc.lastAutoTable.finalY + 12;
         } else {
           doc.setFontSize(10);
+          doc.setTextColor(...palette.textSecondary);
           doc.text('Nenhuma posição ativa no momento.', margin, yPos);
           yPos += 10;
         }
 
-        drawSectionTitle('Distribuição por Categoria', palette.amber);
+        drawSectionTitle('Distribuição por Categoria');
         const allocationRows = allocationData.map(item => {
           const percent = displaySummary.totalCurrent > 0
             ? (item.value / displaySummary.totalCurrent) * 100
@@ -881,17 +982,37 @@ const {
             startY: yPos,
             head: [['Categoria', 'Valor', 'Participação']],
             body: allocationRows.slice(0, 10),
-            styles: { fontSize: 8 },
-            headStyles: { fillColor: palette.amber },
+            styles: { 
+              fontSize: 9,
+              cellPadding: 3,
+              fillColor: isDark ? palette.white : palette.white,
+              textColor: palette.textPrimary,
+              lineColor: palette.grayBorder,
+              lineWidth: isDark ? 0.5 : 0.3,
+            },
+            headStyles: { 
+              fillColor: palette.grayLight,
+              textColor: palette.textPrimary,
+              fontStyle: 'bold',
+              lineColor: palette.grayBorder,
+              lineWidth: isDark ? 0.7 : 0.5,
+            },
+            alternateRowStyles: { fillColor: isDark ? palette.whiteAlt : [249, 250, 251] },
+            columnStyles: {
+              0: { textColor: palette.textPrimary },
+              1: { halign: 'right', textColor: palette.textSecondary },
+              2: { halign: 'right', textColor: palette.textSecondary },
+            },
           });
           yPos = doc.lastAutoTable.finalY + 12;
         } else {
           doc.setFontSize(10);
+          doc.setTextColor(...palette.textSecondary);
           doc.text('Não há distribuição para exibir.', margin, yPos);
           yPos += 10;
         }
 
-        drawSectionTitle('Operações Recentes', palette.primary);
+        drawSectionTitle('Operações Recentes');
         const recentOperations = investments
           .slice()
           .sort((a, b) => new Date(b.dataAporte) - new Date(a.dataAporte))
@@ -909,27 +1030,70 @@ const {
             startY: yPos,
             head: [['Data', 'Tipo', 'Ativo', 'Qtd.', 'Preço', 'Valor Total']],
             body: recentOperations,
-            styles: { fontSize: 8 },
-            headStyles: { fillColor: palette.primary },
+            styles: { 
+              fontSize: 9,
+              cellPadding: 3,
+              fillColor: isDark ? palette.white : palette.white,
+              textColor: palette.textPrimary,
+              lineColor: palette.grayBorder,
+              lineWidth: isDark ? 0.5 : 0.3,
+            },
+            headStyles: { 
+              fillColor: palette.grayLight,
+              textColor: palette.textPrimary,
+              fontStyle: 'bold',
+              lineColor: palette.grayBorder,
+              lineWidth: isDark ? 0.7 : 0.5,
+            },
+            alternateRowStyles: { fillColor: isDark ? palette.whiteAlt : [249, 250, 251] },
+            columnStyles: {
+              0: { textColor: palette.textSecondary },
+              1: { textColor: palette.textPrimary },
+              2: { textColor: palette.textPrimary },
+              3: { textColor: palette.textSecondary },
+              4: { halign: 'right', textColor: palette.textSecondary },
+              5: { halign: 'right', textColor: palette.textSecondary },
+              6: { halign: 'right', fontStyle: 'bold', textColor: palette.textPrimary },
+            },
           });
           yPos = doc.lastAutoTable.finalY + 12;
         } else {
           doc.setFontSize(10);
+          doc.setTextColor(...palette.textSecondary);
           doc.text('Nenhuma operação registrada recentemente.', margin, yPos);
           yPos += 10;
         }
 
-        drawSectionTitle('Detalhes Adicionais', palette.gray);
-        doc.setFontSize(10);
+        drawSectionTitle('Detalhes Adicionais');
+        doc.setFontSize(9);
+        doc.setFont(undefined, 'normal');
+        doc.setTextColor(...palette.textSecondary);
         doc.text(`Lucro/Prejuízo Realizado acumulado: ${formatCurrency(calculatedSummary.realizedProfitLoss || 0)}`, margin, yPos);
         yPos += 6;
         doc.text(`Total de operações registradas: ${investments.length}`, margin, yPos);
         yPos += 6;
         doc.text('Este relatório foi gerado automaticamente pelo Controle-se.', margin, yPos);
+        yPos += 8;
 
+        // Rodapé
+        const totalPages = doc.internal.pages.length - 1;
+        for (let i = 1; i <= totalPages; i++) {
+          doc.setPage(i);
+          doc.setFontSize(8);
+          doc.setTextColor(...palette.gray);
+          doc.text(
+            `Página ${i} de ${totalPages} - Controle-se - Relatório de Investimentos`,
+            pageWidth / 2,
+            doc.internal.pageSize.getHeight() - 10,
+            { align: 'center' }
+          );
+        }
+
+        console.log('PDF gerado com sucesso, salvando...');
         doc.save(`relatorio_investimentos_${new Date().toISOString().split('T')[0]}.pdf`);
         toast.success('Relatório exportado como PDF!');
       } else if (format === 'xlsx') {
+        console.log('Iniciando exportação XLSX...');
         // Export as XLSX
         const wb = XLSX.utils.book_new();
         
@@ -986,9 +1150,11 @@ const {
         const transactionsWs = XLSX.utils.json_to_sheet(transactionsData);
         XLSX.utils.book_append_sheet(wb, transactionsWs, 'Transações');
 
+        console.log('XLSX gerado com sucesso, salvando...');
         XLSX.writeFile(wb, `relatorio_investimentos_${new Date().toISOString().split('T')[0]}.xlsx`);
         toast.success('Relatório exportado como XLSX!');
       } else if (format === 'csv') {
+        console.log('Iniciando exportação CSV...');
         // Export as CSV
         const data = [];
         Object.keys(groupedInvestments).forEach(cat => {
@@ -1017,11 +1183,21 @@ const {
         link.href = URL.createObjectURL(blob);
         link.download = `relatorio_investimentos_${new Date().toISOString().split('T')[0]}.csv`;
         link.click();
+        console.log('CSV gerado com sucesso');
         toast.success('Relatório exportado como CSV!');
       }
     } catch (error) {
       console.error('Erro ao exportar relatório:', error);
-      toast.error('Erro ao exportar relatório');
+      console.error('Stack trace:', error.stack);
+      console.error('Detalhes do erro:', {
+        message: error.message,
+        name: error.name,
+        format: format,
+        investmentsLength: investments?.length,
+        calculatedSummary: calculatedSummary,
+        groupedInvestments: groupedInvestments
+      });
+      toast.error(`Erro ao exportar relatório: ${error.message || 'Erro desconhecido'}`);
     }
   };
 
@@ -1047,28 +1223,58 @@ const {
           <div className="relative group">
             <button 
               className="btn-secondary flex items-center gap-2 text-sm sm:text-base px-3 sm:px-4 py-2"
+              onClick={(e) => {
+                e.stopPropagation();
+                console.log('Botão exportar clicado');
+                setShowExportMenu(!showExportMenu);
+              }}
+              onBlur={() => {
+                // Fecha o menu quando perde o foco (após um pequeno delay para permitir cliques nos itens)
+                setTimeout(() => setShowExportMenu(false), 200);
+              }}
             >
               <Download className="w-4 h-4" />
               <span className="hidden sm:inline">Exportar Relatório</span>
               <span className="sm:hidden">Exportar</span>
             </button>
-            <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10">
+            <div 
+              className={`absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 transition-all z-50 ${
+                showExportMenu ? 'opacity-100 visible' : 'opacity-0 invisible group-hover:opacity-100 group-hover:visible'
+              }`}
+              onMouseEnter={() => setShowExportMenu(true)}
+              onMouseLeave={() => setShowExportMenu(false)}
+            >
               <button
-                onClick={() => exportInvestmentReport('pdf')}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  console.log('Botão PDF clicado');
+                  setShowExportMenu(false);
+                  exportInvestmentReport('pdf');
+                }}
                 className="w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-t-lg flex items-center gap-2"
               >
                 <FileText size={16} />
                 PDF
               </button>
               <button
-                onClick={() => exportInvestmentReport('xlsx')}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  console.log('Botão XLSX clicado');
+                  setShowExportMenu(false);
+                  exportInvestmentReport('xlsx');
+                }}
                 className="w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
               >
                 <FileSpreadsheet size={16} />
                 XLSX
               </button>
               <button
-                onClick={() => exportInvestmentReport('csv')}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  console.log('Botão CSV clicado');
+                  setShowExportMenu(false);
+                  exportInvestmentReport('csv');
+                }}
                 className="w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-b-lg flex items-center gap-2"
               >
                 <File size={16} />

@@ -1,7 +1,8 @@
 import React, { useState, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { useNavigate } from 'react-router-dom';
-import { Wallet, Mail, Lock, User, Moon, Sun } from 'lucide-react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Wallet, Mail, Lock, User, Moon, Sun, Calculator, TrendingUp } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { useTheme } from '../contexts/ThemeContext';
 import ReCaptcha from '../components/common/ReCaptcha';
 
@@ -16,7 +17,9 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const { login, register } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { theme, toggleTheme } = useTheme();
+  const redirectTo = searchParams.get('redirect') || '/dashboard';
 
   // Login form state
   const [loginEmail, setLoginEmail] = useState('');
@@ -47,7 +50,7 @@ export default function LoginPage() {
       // Limpa estado do CAPTCHA em caso de sucesso
       setRequiresCaptcha(false);
       setCaptchaToken(null);
-      navigate('/dashboard');
+      navigate(redirectTo);
     } else if (result.requiresCaptcha) {
       // Se o servidor requer CAPTCHA, mostra o componente
       console.log('CAPTCHA requerido - ativando componente');
@@ -76,8 +79,8 @@ export default function LoginPage() {
     const result = await register(registerName, registerEmail, registerPassword);
     setLoading(false);
     if (result.success) {
-      // Navega para o dashboard após cadastro bem-sucedido
-      navigate('/dashboard');
+      // Navega para o redirect ou dashboard após cadastro bem-sucedido
+      navigate(redirectTo);
     }
   };
 
@@ -264,6 +267,23 @@ export default function LoginPage() {
               </button>
             </form>
           )}
+
+          {/* Divisor com link para ferramentas */}
+          <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
+            <div className="text-center">
+              <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                Ou acesse nossas ferramentas gratuitas
+              </p>
+              <Link
+                to="/calculadora-juros-compostos"
+                className="inline-flex items-center gap-2 text-sm text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 font-medium transition-colors"
+              >
+                <Calculator className="w-4 h-4" />
+                Calculadora de Juros Compostos
+                <TrendingUp className="w-3 h-3" />
+              </Link>
+            </div>
+          </div>
         </div>
       </div>
     </div>

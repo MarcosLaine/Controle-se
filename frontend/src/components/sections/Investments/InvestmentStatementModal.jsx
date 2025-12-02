@@ -146,86 +146,198 @@ export default function InvestmentStatementModal({ isOpen, onClose, investments,
 
   const exportToPDF = () => {
     try {
+      // Detectar tema atual
+      const isDark = document.documentElement.classList.contains('dark') || 
+                     localStorage.getItem('theme') === 'dark';
+      
       const doc = new jsPDF();
       const pageWidth = doc.internal.pageSize.getWidth();
       const margin = 14;
-      const palette = {
-        primary: [59, 130, 246],
-        emerald: [16, 185, 129],
-        amber: [245, 158, 11],
-        slate: [15, 23, 42],
-        gray: [75, 85, 99],
-      };
+      let yPos = margin;
 
-      let yPos = 48;
+      // Definir cor de fundo da página baseado no tema
+      if (isDark) {
+        doc.setFillColor(17, 24, 39); // gray-900
+        doc.rect(0, 0, pageWidth, doc.internal.pageSize.getHeight(), 'F');
+      }
+
+      // Paleta de cores baseada no tema
+      const palette = isDark ? {
+        // Modo Escuro
+        primary: [34, 197, 94],              // green-500
+        primaryLight: [22, 101, 52],        // green-900/30
+        green: [34, 197, 94],               // green-500
+        greenLight: [22, 101, 52],          // green-900/30
+        blue: [96, 165, 250],               // blue-400
+        blueLight: [30, 58, 138],          // blue-900/30
+        purple: [196, 181, 253],           // purple-300
+        purpleLight: [88, 28, 135],        // purple-900/30
+        amber: [251, 191, 36],             // amber-400
+        amberLight: [120, 53, 15],         // amber-900/30
+        emerald: [52, 211, 153],           // emerald-400
+        emeraldLight: [6, 78, 59],         // emerald-900/30
+        gray: [156, 163, 175],            // gray-400
+        grayLight: [55, 65, 81],          // gray-700 (cabeçalhos mais visíveis)
+        grayBorder: [75, 85, 101],       // gray-600 (bordas mais visíveis)
+        textPrimary: [243, 244, 246],     // gray-100
+        textSecondary: [209, 213, 219],   // gray-300 (mais visível)
+        white: [31, 41, 55],               // gray-800
+        whiteAlt: [39, 49, 63],            // gray-750 (linhas alternadas)
+        pageBg: [17, 24, 39],             // gray-900
+      } : {
+        // Modo Claro
+        primary: [22, 163, 74],            // primary-600
+        primaryLight: [240, 253, 244],     // primary-50
+        green: [34, 197, 94],              // green-500
+        greenLight: [240, 253, 244],       // green-50
+        blue: [59, 130, 246],              // blue-500
+        blueLight: [239, 246, 255],        // blue-50
+        purple: [168, 85, 247],            // purple-500
+        purpleLight: [250, 245, 255],      // purple-50
+        amber: [245, 158, 11],             // amber-500
+        amberLight: [255, 251, 235],       // amber-50
+        emerald: [16, 185, 129],           // emerald-500
+        emeraldLight: [236, 253, 245],     // emerald-50
+        gray: [107, 114, 128],             // gray-500
+        grayLight: [249, 250, 251],        // gray-50
+        grayBorder: [229, 231, 235],       // gray-200
+        textPrimary: [17, 24, 39],         // gray-900
+        textSecondary: [107, 114, 128],    // gray-500
+        white: [255, 255, 255],
+        pageBg: [255, 255, 255],
+      };
 
       const ensureSpace = (space = 20) => {
         if (yPos + space > doc.internal.pageSize.getHeight() - 20) {
           doc.addPage();
-          yPos = 20;
+          yPos = margin;
         }
       };
 
-      const drawSectionTitle = (title, color = palette.primary) => {
-        ensureSpace(16);
-        doc.setFillColor(...color);
-        doc.setTextColor(255, 255, 255);
-        doc.roundedRect(margin, yPos, pageWidth - margin * 2, 10, 2, 2, 'F');
-        doc.setFontSize(11);
-        doc.text(title, margin + 4, yPos + 7);
-        yPos += 16;
-        doc.setTextColor(...palette.slate);
+      // Função para desenhar card estilo SummaryCard
+      const drawSummaryCard = (label, value, subtitle, x, y, width, bgColor, borderColor, textColor) => {
+        // Fundo do card
+        doc.setFillColor(...bgColor);
+        doc.roundedRect(x, y, width, 32, 4, 4, 'F');
+        
+        // Borda sutil
+        doc.setDrawColor(...borderColor);
+        doc.setLineWidth(0.5);
+        doc.roundedRect(x, y, width, 32, 4, 4, 'S');
+        
+        // Label
+        doc.setFontSize(7);
+        doc.setFont(undefined, 'normal');
+        doc.setTextColor(...textColor);
+        doc.text(label, x + 6, y + 8);
+        
+        // Valor
+        doc.setFontSize(12);
+        doc.setFont(undefined, 'bold');
+        doc.setTextColor(...palette.textPrimary);
+        doc.text(value, x + 6, y + 18);
+        
+        // Subtitle
+        if (subtitle) {
+          doc.setFontSize(6);
+          doc.setFont(undefined, 'normal');
+          doc.setTextColor(...palette.textSecondary);
+          const subtitleLines = doc.splitTextToSize(subtitle, width - 12);
+          subtitleLines.forEach((line, idx) => {
+            doc.text(line, x + 6, y + 26 + idx * 4);
+          });
+        }
       };
 
-      // Header
-      doc.setFillColor(...palette.primary);
-      doc.rect(0, 0, pageWidth, 42, 'F');
-      doc.setFontSize(18);
-      doc.setTextColor(255, 255, 255);
-      doc.text('Extrato de Investimentos', margin, 20);
-      doc.setFontSize(10);
-      doc.text(`Gerado em: ${formatDate(new Date().toISOString())}`, margin, 29);
+      // Função para desenhar título de seção
+      const drawSectionTitle = (title) => {
+        ensureSpace(16);
+        doc.setFontSize(14);
+        doc.setFont(undefined, 'bold');
+        doc.setTextColor(...palette.textPrimary);
+        doc.text(title, margin, yPos);
+        yPos += 10;
+      };
+
+      // Header minimalista estilo app
+      doc.setFontSize(24);
+      doc.setFont(undefined, 'bold');
+      doc.setTextColor(...palette.textPrimary);
+      doc.text('Extrato de Investimentos', margin, yPos);
+      yPos += 8;
+      
+      doc.setFontSize(9);
+      doc.setFont(undefined, 'normal');
+      doc.setTextColor(...palette.textSecondary);
+      doc.text(`Gerado em ${formatDate(new Date().toISOString())}`, margin, yPos);
+      yPos += 6;
 
       const filterRange = filters.startDate || filters.endDate
         ? `${filters.startDate || 'Início'} → ${filters.endDate || 'Hoje'}`
         : 'Todo o período';
       const filterBroker = filters.broker || 'Todas';
       const filterCategory = filters.category ? (categoryNames[filters.category] || filters.category) : 'Todas';
-      const filterLine = `Filtros: ${filterRange} • Corretora: ${filterBroker} • Categoria: ${filterCategory}`;
-      const wrappedFilter = doc.splitTextToSize(filterLine, pageWidth - margin * 2);
-      wrappedFilter.forEach((line, idx) => {
-        doc.text(line, margin, 36 + idx * 6);
-      });
-      yPos = 36 + wrappedFilter.length * 6 + 12;
+      doc.text(`Filtros: ${filterRange} • Corretora: ${filterBroker} • Categoria: ${filterCategory}`, margin, yPos);
+      yPos += 16;
 
-      // Destaques
-      const highlightWidth = (pageWidth - margin * 2 - 6) / 2;
-      const drawHighlight = (label, value, x, color) => {
-        doc.setFillColor(...color);
-        doc.roundedRect(x, yPos, highlightWidth, 24, 3, 3, 'F');
-        doc.setTextColor(255, 255, 255);
-        doc.setFontSize(9);
-        doc.text(label, x + 4, yPos + 8);
-        doc.setFontSize(12);
-        doc.text(value, x + 4, yPos + 18);
-      };
-
-      drawHighlight('Total Investido no Período', formatCurrency(summaryTotals.totalInvested), margin, [14, 116, 144]);
-      drawHighlight('Total Recebido em Vendas', formatCurrency(summaryTotals.totalReceived), margin + highlightWidth + 6, palette.emerald);
-      yPos += 32;
-
-      drawHighlight('Total em Corretagem', formatCurrency(summaryTotals.totalBrokerage), margin, palette.amber);
-      drawHighlight(
+      // Cards de resumo estilo SummaryCard
+      const cardWidth = (pageWidth - margin * 2 - 12) / 2;
+      const cardSpacing = 4;
+      
+      drawSummaryCard(
+        'Total Investido no Período',
+        formatCurrency(summaryTotals.totalInvested),
+        'Aportes realizados',
+        margin,
+        yPos,
+        cardWidth,
+        palette.blueLight,
+        isDark ? [96, 165, 250] : [59, 130, 246],
+        palette.textSecondary
+      );
+      
+      drawSummaryCard(
+        'Total Recebido em Vendas',
+        formatCurrency(summaryTotals.totalReceived),
+        'Valor recebido',
+        margin + cardWidth + cardSpacing,
+        yPos,
+        cardWidth,
+        palette.emeraldLight,
+        isDark ? [52, 211, 153] : [16, 185, 129],
+        palette.textSecondary
+      );
+      
+      yPos += 40;
+      
+      drawSummaryCard(
+        'Total em Corretagem',
+        formatCurrency(summaryTotals.totalBrokerage),
+        'Taxas pagas',
+        margin,
+        yPos,
+        cardWidth,
+        palette.amberLight,
+        isDark ? [251, 191, 36] : [245, 158, 11],
+        palette.textSecondary
+      );
+      
+      drawSummaryCard(
         'Operações Realizadas',
         `${summaryTotals.buyCount} compras • ${summaryTotals.sellCount} vendas`,
-        margin + highlightWidth + 6,
-        palette.gray
+        'Total de transações',
+        margin + cardWidth + cardSpacing,
+        yPos,
+        cardWidth,
+        palette.white,
+        palette.grayBorder,
+        palette.textSecondary
       );
-      yPos += 36;
-      doc.setTextColor(...palette.slate);
+      
+      yPos += 40;
 
       // Tabela principal
-      drawSectionTitle('Operações Filtradas', palette.primary);
+      drawSectionTitle('Operações Filtradas');
       const tableData = filteredInvestments.map(inv => {
         const { total } = getOperationTotals(inv);
         return [
@@ -248,15 +360,42 @@ export default function InvestmentStatementModal({ isOpen, onClose, investments,
           ['Data', 'Ativo', 'Categoria', 'Tipo', 'Quantidade', 'Preço', 'Corretagem', 'Valor Total', 'Corretora', 'Lucro Realizado'],
         ],
         body: tableData,
-        styles: { fontSize: 8 },
-        headStyles: { fillColor: palette.primary },
-        alternateRowStyles: { fillColor: [248, 250, 252] },
+        styles: { 
+          fontSize: 8,
+          cellPadding: 2,
+          fillColor: isDark ? palette.white : palette.white,
+          textColor: palette.textPrimary,
+          lineColor: palette.grayBorder,
+          lineWidth: isDark ? 0.5 : 0.3,
+        },
+        headStyles: { 
+          fillColor: palette.grayLight,
+          textColor: palette.textPrimary,
+          fontStyle: 'bold',
+          lineColor: palette.grayBorder,
+          lineWidth: isDark ? 0.7 : 0.5,
+        },
+        alternateRowStyles: { fillColor: isDark ? palette.whiteAlt : [249, 250, 251] },
+        columnStyles: {
+          0: { textColor: palette.textSecondary },
+          1: { textColor: palette.textPrimary },
+          2: { textColor: palette.textSecondary },
+          3: { textColor: palette.textPrimary },
+          4: { halign: 'right', textColor: palette.textSecondary },
+          5: { halign: 'right', textColor: palette.textSecondary },
+          6: { halign: 'right', textColor: palette.textSecondary },
+          7: { halign: 'right', fontStyle: 'bold', textColor: palette.textPrimary },
+          8: { textColor: palette.textSecondary },
+          9: { halign: 'right', fontStyle: 'bold', textColor: [34, 197, 94] },
+        },
       });
       yPos = doc.lastAutoTable.finalY + 12;
 
       // Insights rápidos
-      drawSectionTitle('Insights Rápidos', palette.emerald);
-      doc.setFontSize(10);
+      drawSectionTitle('Insights Rápidos');
+      doc.setFontSize(9);
+      doc.setFont(undefined, 'normal');
+      doc.setTextColor(...palette.textSecondary);
       if (filteredInvestments.length === 0) {
         doc.text('Nenhuma operação encontrada com os filtros selecionados.', margin, yPos);
         yPos += 8;
@@ -267,6 +406,21 @@ export default function InvestmentStatementModal({ isOpen, onClose, investments,
         yPos += 6;
         doc.text('Lucros realizados listados apenas em vendas (coluna final).', margin, yPos);
         yPos += 6;
+      }
+      yPos += 8;
+
+      // Rodapé
+      const totalPages = doc.internal.pages.length - 1;
+      for (let i = 1; i <= totalPages; i++) {
+        doc.setPage(i);
+        doc.setFontSize(8);
+        doc.setTextColor(...palette.gray);
+        doc.text(
+          `Página ${i} de ${totalPages} - Controle-se - Extrato de Investimentos`,
+          pageWidth / 2,
+          doc.internal.pageSize.getHeight() - 10,
+          { align: 'center' }
+        );
       }
 
       doc.save(`extrato_investimentos_${new Date().toISOString().split('T')[0]}.pdf`);
