@@ -376,8 +376,12 @@ public class QuoteService {
         // Tenta Binance primeiro
         QuoteResult result = fetchCryptoQuoteFromBinance(symbol, date, dateTime);
         
-        // Se Binance falhar, tenta CoinGecko como fallback
+        // Se Binance falhar (incluindo erro 451 - bloqueio geográfico), tenta CoinGecko como fallback
         if (result == null || !result.success) {
+            // Log apenas uma vez para evitar spam quando Binance está bloqueada
+            if (result == null) {
+                // O erro 451 já foi logado no httpGet, então não precisa logar novamente aqui
+            }
             result = fetchCryptoQuoteFromCoinGecko(symbol, date, dateTime);
         }
         
@@ -386,8 +390,34 @@ public class QuoteService {
     
     /**
      * Busca cotação de criptomoedas usando Binance API
+     * Tenta primeiro api.binance.com, depois data.binance.com se houver erro 451
      */
     private QuoteResult fetchCryptoQuoteFromBinance(String symbol, LocalDate date, LocalDateTime dateTime) {
+        // Tenta primeiro com api.binance.com
+        QuoteResult result = fetchCryptoQuoteFromBinanceEndpoint(symbol, date, dateTime, "https://api.binance.com");
+        
+        // Se falhou com erro 451 (bloqueio geográfico), tenta com data.binance.com
+        if (result == null) {
+            // Verifica se o erro foi 451 antes de tentar o endpoint alternativo
+            String domain = extractDomain("https://api.binance.com");
+            if (generalFailureCache.contains(domain + "_451")) {
+                // Tenta o endpoint alternativo data.binance.com que pode funcionar em regiões restritas
+                // Este endpoint é especificamente para dados públicos e pode contornar restrições geográficas
+                System.err.println("Tentando endpoint alternativo data.binance.com devido a bloqueio geográfico (451)");
+                result = fetchCryptoQuoteFromBinanceEndpoint(symbol, date, dateTime, "https://data.binance.com");
+                if (result != null && result.success) {
+                    System.err.println("Sucesso ao usar endpoint alternativo data.binance.com");
+                }
+            }
+        }
+        
+        return result;
+    }
+    
+    /**
+     * Busca cotação de criptomoedas usando um endpoint específico da Binance
+     */
+    private QuoteResult fetchCryptoQuoteFromBinanceEndpoint(String symbol, LocalDate date, LocalDateTime dateTime, String baseUrl) {
         try {
             // Mapeamento de símbolos para pares Binance (formato: BTCUSDT, ETHUSDT, etc)
             Map<String, String> binanceSymbols = getBinanceSymbolMap();
@@ -417,24 +447,24 @@ public class QuoteService {
                     }
                 }
                 // Busca candles de 1 hora do dia específico (até 24 candles)
-                urlStr = String.format("https://api.binance.com/api/v3/klines?symbol=%s&interval=1h&startTime=%d&endTime=%d&limit=24", 
-                                     binancePair, timestampStart, timestampEnd);
+                urlStr = String.format("%s/api/v3/klines?symbol=%s&interval=1h&startTime=%d&endTime=%d&limit=24", 
+                                     baseUrl, binancePair, timestampStart, timestampEnd);
             } else if (date != null && !date.equals(today)) {
                 // Dados históricos de dias passados: busca o candle do dia específico (fechamento diário)
                 long timestampStart = date.atStartOfDay().toEpochSecond(ZoneOffset.UTC) * 1000;
                 long timestampEnd = timestampStart + (24 * 60 * 60 * 1000) - 1;
                 // Binance klines: retorna candles OHLCV com intervalo diário
-                urlStr = String.format("https://api.binance.com/api/v3/klines?symbol=%s&interval=1d&startTime=%d&endTime=%d&limit=1", 
-                                     binancePair, timestampStart, timestampEnd);
+                urlStr = String.format("%s/api/v3/klines?symbol=%s&interval=1d&startTime=%d&endTime=%d&limit=1", 
+                                     baseUrl, binancePair, timestampStart, timestampEnd);
             } else if (date != null && date.equals(today)) {
                 // Para o dia atual sem horário específico: busca dados horários das últimas 24h
                 long timestampEnd = System.currentTimeMillis();
                 long timestampStart = timestampEnd - (24 * 60 * 60 * 1000);
-                urlStr = String.format("https://api.binance.com/api/v3/klines?symbol=%s&interval=1h&startTime=%d&endTime=%d&limit=24", 
-                                     binancePair, timestampStart, timestampEnd);
+                urlStr = String.format("%s/api/v3/klines?symbol=%s&interval=1h&startTime=%d&endTime=%d&limit=24", 
+                                     baseUrl, binancePair, timestampStart, timestampEnd);
             } else {
                 // Cotação atual: usa endpoint de ticker
-                urlStr = String.format("https://api.binance.com/api/v3/ticker/price?symbol=%s", binancePair);
+                urlStr = String.format("%s/api/v3/ticker/price?symbol=%s", baseUrl, binancePair);
             }
             
             String response = httpGet(urlStr);
@@ -466,12 +496,13 @@ public class QuoteService {
             }
             
             if (price > 0) {
-                return new QuoteResult(true, "Cotação obtida com sucesso (Binance)", price, "USD", assetName);
+                String source = baseUrl.contains("data.binance.com") ? "Binance (data endpoint)" : "Binance";
+                return new QuoteResult(true, "Cotação obtida com sucesso (" + source + ")", price, "USD", assetName);
             }
             
             return null;
         } catch (Exception e) {
-            System.err.println("Erro ao buscar cotação da Binance: " + e.getMessage());
+            System.err.println("Erro ao buscar cotação da Binance (" + baseUrl + "): " + e.getMessage());
             return null; // Retorna null para tentar fallback
         }
     }
@@ -1052,6 +1083,25 @@ public class QuoteService {
                     return null;
                 }
                 
+                // Trata erro 451 (Unavailable For Legal Reasons) - Bloqueio geográfico/legal
+                if (responseCode == 451) {
+                    // Adiciona ao cache de falhas gerais para evitar múltiplas tentativas
+                    String failureKey = domain + "_451";
+                    if (!generalFailureCache.contains(failureKey)) {
+                        generalFailureCache.add(failureKey);
+                        new Thread(() -> {
+                            try {
+                                Thread.sleep(GENERAL_FAILURE_CACHE_DURATION_MS);
+                                generalFailureCache.remove(failureKey);
+                            } catch (InterruptedException ie) {
+                                Thread.currentThread().interrupt();
+                            }
+                        }).start();
+                        System.err.println("Erro 451 (Bloqueio geográfico/legal) para " + domain + ". A API Binance está bloqueada nesta região. Usando fallback (CoinGecko).");
+                    }
+                    return null; // Retorna null para que o código use o fallback (CoinGecko)
+                }
+                
                 // Log reduzido para debug
                 if (responseCode != 200 && responseCode != 404) {
                     System.err.println("Erro HTTP " + responseCode + " para: " + domain);
@@ -1069,6 +1119,24 @@ public class QuoteService {
                             Thread.currentThread().interrupt();
                         }
                     }).start();
+                    return null;
+                }
+                
+                // Trata erro 451 também quando não há inputStream
+                if (responseCode == 451) {
+                    String failureKey = domain + "_451";
+                    if (!generalFailureCache.contains(failureKey)) {
+                        generalFailureCache.add(failureKey);
+                        new Thread(() -> {
+                            try {
+                                Thread.sleep(GENERAL_FAILURE_CACHE_DURATION_MS);
+                                generalFailureCache.remove(failureKey);
+                            } catch (InterruptedException ie) {
+                                Thread.currentThread().interrupt();
+                            }
+                        }).start();
+                        System.err.println("Erro 451 (Bloqueio geográfico/legal) para " + domain + ". A API Binance está bloqueada nesta região. Usando fallback (CoinGecko).");
+                    }
                     return null;
                 }
                 

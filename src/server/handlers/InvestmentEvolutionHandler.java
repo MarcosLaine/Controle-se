@@ -338,6 +338,20 @@ public class InvestmentEvolutionHandler implements HttpHandler {
                 priceLookupDate.equals(dateForPricing) ? dateTimeForPricing : null, 
                 quoteService, priceCache);
             
+            // Garante que o preço nunca seja 0 se há investimentos válidos
+            // Se o preço for 0 mas há quantidade, usa o último preço conhecido ou preço médio
+            if (price <= 0 && state.getTotalQuantity() > 0) {
+                if (state.lastKnownPrice > 0) {
+                    price = state.lastKnownPrice;
+                } else {
+                    price = state.getAverageCost();
+                }
+                // Atualiza lastKnownPrice para que próximas datas usem esse valor
+                if (price > 0) {
+                    state.lastKnownPrice = price;
+                }
+            }
+            
             // Para períodos muito longos, usa interpolação linear entre pontos conhecidos
             if (priceLookupInterval > 1 && !priceLookupDate.equals(dateForPricing)) {
                 // Tenta encontrar preços próximos para interpolar
@@ -488,14 +502,36 @@ public class InvestmentEvolutionHandler implements HttpHandler {
                 price = state.lastKnownPrice;
             } else {
                 // Para datas passadas sem cotação, usa última conhecida ou preço médio
-                price = state.lastKnownPrice > 0 ? state.lastKnownPrice : state.getAverageCost();
+                double fallbackPrice = state.lastKnownPrice > 0 ? state.lastKnownPrice : state.getAverageCost();
+                if (fallbackPrice > 0) {
+                    price = fallbackPrice;
+                } else {
+                    // Se nem o fallback funcionou, tenta buscar cotação atual como último recurso
+                    // Isso pode acontecer se é a primeira vez que processamos este ativo
+                    QuoteService.QuoteResult currentQuote = quoteService.getQuote(state.symbol, state.category, null, null);
+                    if (currentQuote != null && currentQuote.success && currentQuote.price > 0) {
+                        price = currentQuote.price;
+                        String currency = currentQuote.currency != null ? currentQuote.currency : state.currency;
+                        if (currency != null && !"BRL".equalsIgnoreCase(currency)) {
+                            double exchangeRate = quoteService.getExchangeRate(currency, "BRL");
+                            price *= exchangeRate;
+                        }
+                    } else {
+                        // Último recurso: se não conseguiu nada, usa o preço médio mesmo que seja 0
+                        // Mas isso não deveria acontecer se há investimentos válidos
+                        price = state.getAverageCost();
+                    }
+                }
             }
         }
 
-        // IMPORTANTE: Atualiza lastKnownPrice apenas se conseguiu uma cotação válida
+        // IMPORTANTE: Atualiza lastKnownPrice sempre que temos um preço válido
+        // Isso garante que próximas datas usem esse valor quando a cotação falhar
         if (price > 0) {
             if (!isFuture) {
-                // Para datas passadas/atuais, atualiza lastKnownPrice
+                // Para datas passadas/atuais, sempre atualiza lastKnownPrice
+                // Isso garante que se a cotação foi encontrada OU se usamos um fallback válido,
+                // o próximo ponto no gráfico terá um preço válido mesmo se a cotação falhar
                 state.lastKnownPrice = price;
             } else if (state.lastKnownPrice <= 0) {
                 // Se é futura e não tinha última cotação, atualiza com a cotação atual
@@ -503,7 +539,12 @@ public class InvestmentEvolutionHandler implements HttpHandler {
             }
         }
         
-        priceCache.put(cacheKey, price);
+        // Armazena no cache apenas se o preço for válido
+        // Se o preço for 0, não armazena para forçar nova tentativa na próxima vez
+        // Mas sempre retorna o preço (mesmo que seja 0) para não quebrar o cálculo
+        if (price > 0) {
+            priceCache.put(cacheKey, price);
+        }
         return price;
     }
 
