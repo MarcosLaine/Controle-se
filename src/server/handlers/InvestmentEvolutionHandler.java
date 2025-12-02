@@ -184,16 +184,30 @@ public class InvestmentEvolutionHandler implements HttpHandler {
 
         int txIndex = 0;
         
+        // CRÍTICO: Processa TODAS as transações ANTES do startDate para ter o estado inicial correto
+        // Isso garante que investimentos existentes antes do período do gráfico sejam considerados
+        // e evita valores zerados no início do gráfico
+        LocalDate firstTransactionDate = transactions.isEmpty() ? startDate : transactions.get(0).getDataAporte();
+        if (firstTransactionDate.isBefore(startDate)) {
+            // Há transações antes do startDate - processa todas até o startDate para ter estado inicial
+            for (LocalDate date = firstTransactionDate; date.isBefore(startDate); date = date.plusDays(1)) {
+                txIndex = consumeTransactions(transactions, assetState, txIndex, date);
+            }
+        }
+        
         // OTIMIZAÇÃO CRÍTICA: Pre-busca cotações em batch para períodos grandes
-        // Processa transações primeiro para identificar ativos, depois busca cotações
+        // Processa todas as transações até a data final em um estado temporário para identificar todos os ativos
+        // Isso é apenas para identificar ativos para pre-busca, não afeta o assetState principal
         if (totalDays > 365) {
-            // Processa todas as transações até a data final para identificar todos os ativos
             Map<String, AssetState> tempAssetState = new LinkedHashMap<>();
             int tempTxIndex = 0;
-            for (LocalDate date = startDate; !date.isAfter(endDate); date = date.plusDays(1)) {
+            // Processa todas as transações do início ao fim para identificar todos os ativos
+            LocalDate tempStart = transactions.isEmpty() ? startDate : transactions.get(0).getDataAporte();
+            if (tempStart.isAfter(startDate)) tempStart = startDate;
+            for (LocalDate date = tempStart; !date.isAfter(endDate); date = date.plusDays(1)) {
                 tempTxIndex = consumeTransactions(transactions, tempAssetState, tempTxIndex, date);
             }
-            // Agora pre-busca cotações baseado nos ativos identificados
+            // Pre-busca cotações baseado nos ativos identificados
             preFetchQuotesInBatch(tempAssetState, startDate, endDate, priceLookupInterval, quoteService, priceCache);
         }
 
@@ -225,9 +239,18 @@ public class InvestmentEvolutionHandler implements HttpHandler {
             
             DateTimeFormatter labelFormatter = showYear ? LABEL_FORMATTER_WITH_YEAR : LABEL_FORMATTER;
             for (LocalDate date = startDate; !date.isAfter(endDate); date = date.plusDays(dayStep)) {
+                // IMPORTANTE: Processa TODAS as transações até a data atual, não apenas até o último ponto processado
+                // Isso garante que o estado dos ativos esteja correto mesmo quando há dayStep > 1
+                // O txIndex é mantido entre iterações para evitar reprocessar transações
                 txIndex = consumeTransactions(transactions, assetState, txIndex, date);
                 accumulatePoint(assetState, quoteService, priceCache, labels, investedPoints, currentPoints,
                     categoryInvested, categoryCurrent, allCategoriesSeen, date.format(labelFormatter), date, date.atStartOfDay(), priceLookupInterval);
+            }
+            
+            // GARANTIA CRÍTICA: Processa todas as transações restantes até a data final
+            // Isso garante que o estado final esteja correto mesmo se houver transações após o último ponto processado
+            if (txIndex < transactions.size()) {
+                consumeTransactions(transactions, assetState, txIndex, endDate);
             }
         }
 
@@ -306,12 +329,22 @@ public class InvestmentEvolutionHandler implements HttpHandler {
             Map.Entry<String, AssetState> entry = iterator.next();
             AssetState state = entry.getValue();
             
-            // Verifica se o estado está vazio ANTES de processar
-            boolean isEmpty = state.isEmpty();
-            
             String category = state.category != null ? state.category : "OUTROS";
             // IMPORTANTE: Marca a categoria como vista ANTES de calcular valores
             allCategoriesSeen.add(category);
+            
+            // Verifica se o estado está vazio ANTES de processar
+            // IMPORTANTE: Verifica isEmpty DEPOIS de marcar a categoria como vista
+            // para garantir que a categoria seja rastreada mesmo se estiver vazia temporariamente
+            boolean isEmpty = state.isEmpty();
+            
+            // Se o estado está vazio, verifica se há quantidade total (pode ter sido vendida parcialmente)
+            // Se há quantidade, não está vazio mesmo que as camadas estejam vazias (não deveria acontecer, mas protege)
+            if (isEmpty && state.getTotalQuantity() > 0.000001) {
+                // Estado inconsistente: isEmpty retorna true mas há quantidade
+                // Isso não deveria acontecer, mas se acontecer, processa normalmente
+                isEmpty = false;
+            }
             
             // Se o estado está vazio, pula o cálculo mas mantém a categoria rastreada
             if (isEmpty) {
@@ -396,9 +429,24 @@ public class InvestmentEvolutionHandler implements HttpHandler {
                 categoryInvested.computeIfAbsent(category, k -> new ArrayList<>()).add(roundMoney(categoryInvestedMap.get(category)));
                 categoryCurrent.computeIfAbsent(category, k -> new ArrayList<>()).add(roundMoney(categoryCurrentMap.get(category)));
             } else {
-                // Categoria não tem mais ativos neste ponto, adiciona zero para manter continuidade
-                categoryInvested.computeIfAbsent(category, k -> new ArrayList<>()).add(0.0);
-                categoryCurrent.computeIfAbsent(category, k -> new ArrayList<>()).add(0.0);
+                // Categoria não tem ativos neste ponto específico
+                // IMPORTANTE: Mantém o último valor conhecido em vez de zerar
+                // Isso evita que o gráfico mostre valores zerados quando há dayStep > 1
+                List<Double> investedList = categoryInvested.get(category);
+                List<Double> currentList = categoryCurrent.get(category);
+                
+                if (investedList != null && !investedList.isEmpty()) {
+                    // Usa o último valor conhecido
+                    double lastInvested = investedList.get(investedList.size() - 1);
+                    double lastCurrent = currentList != null && !currentList.isEmpty() 
+                        ? currentList.get(currentList.size() - 1) : 0.0;
+                    categoryInvested.computeIfAbsent(category, k -> new ArrayList<>()).add(roundMoney(lastInvested));
+                    categoryCurrent.computeIfAbsent(category, k -> new ArrayList<>()).add(roundMoney(lastCurrent));
+                } else {
+                    // Se nunca teve valor, adiciona zero
+                    categoryInvested.computeIfAbsent(category, k -> new ArrayList<>()).add(0.0);
+                    categoryCurrent.computeIfAbsent(category, k -> new ArrayList<>()).add(0.0);
+                }
             }
         }
         
