@@ -94,7 +94,8 @@ const computeHoldingStats = (transactions = []) => {
     }
 
     if (qty > 0) {
-      const unitCost = qty !== 0 ? (trade.valorAporte || 0) / qty : 0;
+      // Para compras, valorAporte deve ser positivo, mas usamos Math.abs para garantir
+      const unitCost = qty !== 0 ? Math.abs(trade.valorAporte || 0) / qty : 0;
       buyLayers.push({ qty, unitCost });
     } else {
       let remaining = Math.abs(qty);
@@ -586,34 +587,12 @@ const {
             valorAporteTotal: 0, // Basis cost of current holdings
             valorAtualTotal: 0,
             retornoTotal: 0,
-            aportes: [],
-            // Aux variables for PM calculation
-            totalBuyQty: 0,
-            totalBuyCost: 0
+            aportes: []
         };
     }
     
     const group = acc[category][assetName];
-    const quantity = inv.quantidade || 0;
-    const isBuy = quantity > 0;
-    const isSell = quantity < 0;
-    const absQuantity = Math.abs(quantity);
     
-    // Update Portfolio Quantity
-    group.quantidadeTotal += quantity;
-    
-    // Update PM Logic
-    if (isBuy) {
-        group.totalBuyQty += absQuantity;
-        group.totalBuyCost += (inv.valorAporte || 0);
-    }
-    // Sales do not affect PM (weighted average price of buys), they only reduce quantity held.
-    
-    // Calculate Current PM (Preço Médio)
-    // Avoid division by zero
-    const currentPM = group.totalBuyQty > 0 ? group.totalBuyCost / group.totalBuyQty : 0;
-    group.precoMedio = currentPM;
-
     // Add to transactions list
     group.aportes.push(inv);
     

@@ -223,9 +223,98 @@ public class InvestmentRepository {
         }
     }
 
+    /**
+     * Classe auxiliar para representar uma camada de posição (FIFO)
+     */
+    private static class PositionLayer {
+        double qty;
+        double unitCost;
+        int idInvestimento; // ID da transação que criou esta camada
+    }
+    
+    /**
+     * Calcula quanto de um investimento específico ainda está na carteira
+     * processando todas as transações do mesmo ativo em ordem cronológica (FIFO)
+     */
+    private double calcularValorRemanescenteNaCarteira(Investimento invParaExcluir, List<Investimento> todasTransacoes) {
+        // Filtra transações do mesmo ativo (mesmo nome e categoria)
+        List<Investimento> transacoesAtivo = new ArrayList<>();
+        for (Investimento inv : todasTransacoes) {
+            if (inv.getNome().equals(invParaExcluir.getNome()) && 
+                inv.getCategoria().equals(invParaExcluir.getCategoria())) {
+                transacoesAtivo.add(inv);
+            }
+        }
+        
+        // Ordena por data (mais antiga primeiro) para processar em ordem cronológica
+        transacoesAtivo.sort((a, b) -> {
+            int dateCompare = a.getDataAporte().compareTo(b.getDataAporte());
+            if (dateCompare != 0) return dateCompare;
+            // Se mesma data, compras antes de vendas
+            if (a.getQuantidade() > 0 && b.getQuantidade() < 0) return -1;
+            if (a.getQuantidade() < 0 && b.getQuantidade() > 0) return 1;
+            return Integer.compare(a.getIdInvestimento(), b.getIdInvestimento());
+        });
+        
+        // Simula FIFO para calcular quanto da transação excluída ainda está na carteira
+        List<PositionLayer> buyLayers = new ArrayList<>();
+        double qtyExcluir = invParaExcluir.getQuantidade();
+        double valorAEstornar = 0.0;
+        
+        if (qtyExcluir > 0) {
+            // É uma COMPRA: processa todas as transações simulando FIFO
+            for (Investimento trans : transacoesAtivo) {
+                double qty = trans.getQuantidade();
+                
+                if (trans.getIdInvestimento() == invParaExcluir.getIdInvestimento()) {
+                    // Esta é a transação que será excluída - adiciona à lista de camadas
+                    double unitCost = qty != 0 ? Math.abs(trans.getValorAporte()) / qty : 0.0;
+                    PositionLayer layer = new PositionLayer();
+                    layer.qty = qty;
+                    layer.unitCost = unitCost;
+                    layer.idInvestimento = trans.getIdInvestimento();
+                    buyLayers.add(layer);
+                } else if (qty > 0) {
+                    // Outra compra: adiciona camada
+                    double unitCost = qty != 0 ? Math.abs(trans.getValorAporte()) / qty : 0.0;
+                    PositionLayer layer = new PositionLayer();
+                    layer.qty = qty;
+                    layer.unitCost = unitCost;
+                    layer.idInvestimento = trans.getIdInvestimento();
+                    buyLayers.add(layer);
+                } else if (qty < 0) {
+                    // Venda: remove das camadas usando FIFO
+                    double remaining = Math.abs(qty);
+                    java.util.Iterator<PositionLayer> iterator = buyLayers.iterator();
+                    while (iterator.hasNext() && remaining > 0) {
+                        PositionLayer layer = iterator.next();
+                        double qtyToUse = Math.min(remaining, layer.qty);
+                        layer.qty -= qtyToUse;
+                        remaining -= qtyToUse;
+                        if (layer.qty <= 0.000001) {
+                            iterator.remove();
+                        }
+                    }
+                }
+            }
+            
+            // Calcula quanto da transação excluída ainda está na carteira
+            for (PositionLayer layer : buyLayers) {
+                if (layer.idInvestimento == invParaExcluir.getIdInvestimento()) {
+                    valorAEstornar = layer.qty * layer.unitCost;
+                    break;
+                }
+            }
+        } else {
+            // É uma VENDA: precisa reverter o crédito que foi feito na conta
+            // O valor a estornar é negativo (subtrai da conta)
+            valorAEstornar = -Math.abs(invParaExcluir.getValorAporte());
+        }
+        
+        return valorAEstornar;
+    }
+
     public void excluirInvestimento(int idInvestimento) {
-        // Should reverse balance? Usually yes.
-        // I'll implement delete logic.
         Investimento inv = buscarInvestimento(idInvestimento);
         if (inv == null) throw new IllegalArgumentException("Investimento não encontrado");
         
@@ -234,18 +323,27 @@ public class InvestmentRepository {
             conn = getConnection();
             conn.setAutoCommit(false);
             
+            // Busca todas as transações do usuário para calcular o valor correto a estornar
+            List<Investimento> todasTransacoes = buscarInvestimentosPorUsuario(inv.getIdUsuario());
+            
+            // Calcula quanto ainda está na carteira (ou valor a reverter para vendas)
+            double valorAEstornar = calcularValorRemanescenteNaCarteira(inv, todasTransacoes);
+            
+            // Remove o investimento
             String sqlDelete = "DELETE FROM investimentos WHERE id_investimento = ?";
             try (PreparedStatement pstmt = conn.prepareStatement(sqlDelete)) {
                 pstmt.setInt(1, idInvestimento);
                 pstmt.executeUpdate();
             }
             
-            // Estorna valor na conta
-            String sqlConta = "UPDATE contas SET saldo_atual = saldo_atual + ? WHERE id_conta = ?";
-            try (PreparedStatement pstmt = conn.prepareStatement(sqlConta)) {
-                pstmt.setDouble(1, inv.getValorAporte());
-                pstmt.setInt(2, inv.getIdConta());
-                pstmt.executeUpdate();
+            // Estorna valor na conta (pode ser positivo para compras ou negativo para vendas)
+            if (Math.abs(valorAEstornar) > 0.01) { // Evita estornos muito pequenos por arredondamento
+                String sqlConta = "UPDATE contas SET saldo_atual = saldo_atual + ? WHERE id_conta = ?";
+                try (PreparedStatement pstmt = conn.prepareStatement(sqlConta)) {
+                    pstmt.setDouble(1, valorAEstornar);
+                    pstmt.setInt(2, inv.getIdConta());
+                    pstmt.executeUpdate();
+                }
             }
             
             conn.commit();
