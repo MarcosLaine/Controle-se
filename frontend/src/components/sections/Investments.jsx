@@ -452,10 +452,11 @@ export default function Investments() {
     setLoading(true);
     try {
       const response = await api.get(`/investments?userId=${user.id}`);
-      if (response.success) {
+      if (response && response.success) {
         setInvestments(response.data || []);
       }
     } catch (error) {
+      console.error('Erro ao carregar investimentos:', error);
       toast.error('Erro ao carregar investimentos');
     } finally {
       setLoading(false);
@@ -782,7 +783,7 @@ const {
         doc.setTextColor(255, 255, 255);
         doc.text('Relatório de Investimentos', margin, 20);
         doc.setFontSize(10);
-        doc.text(`Gerado em: ${new Date().toLocaleDateString('pt-BR')}`, margin, 30);
+        doc.text(`Gerado em: ${formatDate(new Date().toISOString())}`, margin, 30);
 
         // Summary cards
         let yPos = 48;
@@ -938,7 +939,7 @@ const {
         // Summary sheet
         const summaryData = [
           ['Relatório de Investimentos'],
-          [`Gerado em: ${new Date().toLocaleDateString('pt-BR')}`],
+          [`Gerado em: ${formatDate(new Date().toISOString())}`],
           [''],
           ['Resumo'],
           ['Total Investido', displaySummary.totalInvested],

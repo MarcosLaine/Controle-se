@@ -1,3 +1,6 @@
+package server.security;
+
+import server.model.Usuario;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -12,10 +15,6 @@ import java.util.regex.Pattern;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 
-/**
- * Minimal JWT utility using HS256 for signing. Tokens are generated with a
- * configurable secret and validated ensuring expiration and signature checks.
- */
 public final class JwtUtil {
     private static final long EXPIRATION_SECONDS = 60L * 60L * 24L; // 24 hours
     private static final SecureRandom RANDOM = new SecureRandom();
@@ -166,25 +165,11 @@ public final class JwtUtil {
             return new JwtValidationResult(false, message, -1, null, null);
         }
 
-        public boolean isValid() {
-            return valid;
-        }
-
-        public String getMessage() {
-            return message;
-        }
-
-        public int getUserId() {
-            return userId;
-        }
-
-        public String getEmail() {
-            return email;
-        }
-
-        public String getName() {
-            return name;
-        }
+        public boolean isValid() { return valid; }
+        public String getMessage() { return message; }
+        public int getUserId() { return userId; }
+        public String getEmail() { return email; }
+        public String getName() { return name; }
     }
 }
 

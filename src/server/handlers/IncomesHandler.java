@@ -1,0 +1,288 @@
+package server.handlers;
+
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpHandler;
+import server.model.*;
+import server.repository.*;
+import server.utils.*;
+import server.utils.CreditCardUtil;
+import java.io.IOException;
+import java.time.LocalDate;
+import java.util.*;
+
+public class IncomesHandler implements HttpHandler {
+    private final IncomeRepository incomeRepository;
+    private final AccountRepository accountRepository;
+    private final ExpenseRepository expenseRepository;
+    private final TagRepository tagRepository;
+
+    public IncomesHandler() {
+        this.incomeRepository = new IncomeRepository();
+        this.accountRepository = new AccountRepository();
+        this.expenseRepository = new ExpenseRepository();
+        this.tagRepository = new TagRepository();
+    }
+
+    @Override
+    public void handle(HttpExchange exchange) throws IOException {
+        String method = exchange.getRequestMethod().toUpperCase();
+        
+        if ("OPTIONS".equals(method)) {
+            handleOptions(exchange);
+        } else if ("POST".equals(method)) {
+            handlePost(exchange);
+        } else if ("DELETE".equals(method)) {
+            handleDelete(exchange);
+        } else {
+            ResponseUtil.sendErrorResponse(exchange, 405, "Método não permitido: " + method);
+        }
+    }
+    
+    private void handleOptions(HttpExchange exchange) throws IOException {
+        exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
+        exchange.getResponseHeaders().set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+        exchange.getResponseHeaders().set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+        exchange.sendResponseHeaders(200, -1);
+        exchange.close();
+    }
+    
+    private void handlePost(HttpExchange exchange) throws IOException {
+        try {
+            int userId = AuthUtil.requireUserId(exchange);
+            String requestBody = RequestUtil.readRequestBody(exchange);
+            Map<String, Object> data = JsonUtil.parseJsonWithNested(requestBody);
+            data.put("userId", userId);
+            
+            String description = (String) data.getOrDefault("description", "Receita");
+            double value = ((Number) data.get("value")).doubleValue();
+            LocalDate date = LocalDate.parse((String) data.get("date"));
+            int accountId = ((Number) data.get("accountId")).intValue();
+            
+            List<Integer> tagIds = parseTagIds(data);
+            String[] observacoes = parseObservacoes(data);
+            
+            Conta conta = accountRepository.buscarConta(accountId);
+            if (conta == null) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Conta não encontrada");
+                ResponseUtil.sendJsonResponse(exchange, 400, response);
+                return;
+            }
+            
+            String tipoConta = conta.getTipo() != null ? conta.getTipo().toLowerCase().trim() : "";
+            if (tipoConta.equals("investimento") || tipoConta.equals("investimento (corretora)") || tipoConta.startsWith("investimento")) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Contas de investimento não podem ser usadas para receitas");
+                ResponseUtil.sendJsonResponse(exchange, 400, response);
+                return;
+            }
+            
+            // Validação: se a conta for cartão de crédito, deve ter flag de pagamento de fatura
+            if (conta.isCartaoCredito()) {
+                Object pagamentoFaturaObj = data.get("pagamentoFatura");
+                boolean pagamentoFatura = false;
+                if (pagamentoFaturaObj != null) {
+                    if (pagamentoFaturaObj instanceof Boolean) {
+                        pagamentoFatura = (Boolean) pagamentoFaturaObj;
+                    } else if (pagamentoFaturaObj instanceof String) {
+                        pagamentoFatura = Boolean.parseBoolean((String) pagamentoFaturaObj);
+                    } else if (pagamentoFaturaObj instanceof Number) {
+                        pagamentoFatura = ((Number) pagamentoFaturaObj).intValue() != 0;
+                    }
+                }
+                
+                if (!pagamentoFatura) {
+                    Map<String, Object> response = new HashMap<>();
+                    response.put("success", false);
+                    response.put("message", "Para cadastrar receitas em cartão de crédito, você deve marcar a opção 'Pagamento de Fatura'");
+                    ResponseUtil.sendJsonResponse(exchange, 400, response);
+                    return;
+                }
+                
+                // Validação: verifica se o valor da receita não excede o valor da fatura atual
+                if (conta.getDiaFechamento() != null && conta.getDiaPagamento() != null) {
+                    Map<String, Object> faturaInfo = CreditCardUtil.calcularInfoFatura(
+                        conta.getDiaFechamento(), 
+                        conta.getDiaPagamento()
+                    );
+                    
+                    LocalDate ultimoFechamento = LocalDate.parse((String) faturaInfo.get("ultimoFechamento"));
+                    LocalDate proximoFechamento = LocalDate.parse((String) faturaInfo.get("proximoFechamento"));
+                    
+                    double valorFaturaAtual = expenseRepository.calcularValorFaturaAtual(
+                        accountId, 
+                        ultimoFechamento, 
+                        proximoFechamento
+                    );
+                    
+                    // Calcula o total já pago nesta fatura (soma das receitas no período)
+                    double totalJaPago = incomeRepository.calcularTotalReceitasPorPeriodoEConta(
+                        userId, 
+                        accountId, 
+                        ultimoFechamento, 
+                        proximoFechamento
+                    );
+                    
+                    double valorDisponivelParaPagamento = valorFaturaAtual - totalJaPago;
+                    // Garante que o valor disponível nunca seja negativo
+                    if (valorDisponivelParaPagamento < 0) {
+                        valorDisponivelParaPagamento = 0;
+                    }
+                    
+                    if (value > valorDisponivelParaPagamento + 0.001) { // Adiciona margem de erro para floats
+                        Map<String, Object> response = new HashMap<>();
+                        response.put("success", false);
+                        if (valorFaturaAtual <= 0) {
+                            response.put("message", String.format(
+                                "Não há fatura pendente para pagar. A fatura atual está em R$ %.2f.",
+                                valorFaturaAtual
+                            ));
+                        } else if (totalJaPago >= valorFaturaAtual) {
+                            response.put("message", String.format(
+                                "A fatura já foi totalmente paga. Valor da fatura: R$ %.2f. Valor já pago: R$ %.2f.",
+                                valorFaturaAtual, totalJaPago
+                            ));
+                        } else {
+                            response.put("message", String.format(
+                                "O valor informado (R$ %.2f) excede o valor disponível para pagamento (R$ %.2f).",
+                                value, valorDisponivelParaPagamento
+                            ));
+                        }
+                        response.put("valorFatura", valorFaturaAtual);
+                        response.put("valorJaPago", totalJaPago);
+                        response.put("valorDisponivel", valorDisponivelParaPagamento);
+                        ResponseUtil.sendJsonResponse(exchange, 400, response);
+                        return;
+                    }
+                }
+            }
+            
+            int incomeId = incomeRepository.cadastrarReceita(description, value, date, userId, accountId, observacoes);
+            
+            CacheUtil.invalidateCache("overview_" + userId);
+            CacheUtil.invalidateCache("totalIncome_" + userId);
+            CacheUtil.invalidateCache("balance_" + userId);
+            
+            for (int tagId : tagIds) {
+                tagRepository.associarTagTransacao(incomeId, "RECEITA", tagId);
+            }
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("message", "Receita registrada com sucesso");
+            response.put("incomeId", incomeId);
+            
+            ResponseUtil.sendJsonResponse(exchange, 201, response);
+        } catch (AuthUtil.UnauthorizedException e) {
+            ResponseUtil.sendErrorResponse(exchange, 401, e.getMessage());
+        } catch (Exception e) {
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", false);
+            response.put("message", e.getMessage());
+            ResponseUtil.sendJsonResponse(exchange, 400, response);
+        }
+    }
+    
+    private void handleDelete(HttpExchange exchange) throws IOException {
+        try {
+            AuthUtil.requireUserId(exchange);
+            String idParam = RequestUtil.getQueryParam(exchange, "id");
+            if (idParam == null || !idParam.matches("\\d+")) {
+                ResponseUtil.sendErrorResponse(exchange, 400, "ID da receita inválido");
+                return;
+            }
+            
+            int incomeId = Integer.parseInt(idParam);
+            Receita receita = incomeRepository.buscarReceita(incomeId);
+            int userId = receita != null ? receita.getIdUsuario() : AuthUtil.requireUserId(exchange);
+            
+            incomeRepository.excluirReceita(incomeId);
+            
+            CacheUtil.invalidateCache("overview_" + userId);
+            CacheUtil.invalidateCache("totalIncome_" + userId);
+            CacheUtil.invalidateCache("balance_" + userId);
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("message", "Receita excluída com sucesso");
+            
+            ResponseUtil.sendJsonResponse(exchange, 200, response);
+        } catch (AuthUtil.UnauthorizedException e) {
+            ResponseUtil.sendErrorResponse(exchange, 401, e.getMessage());
+        } catch (Exception e) {
+            e.printStackTrace();
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", false);
+            response.put("message", "Erro: " + e.getMessage());
+            ResponseUtil.sendJsonResponse(exchange, 400, response);
+        }
+    }
+    
+    private List<Integer> parseTagIds(Map<String, Object> data) {
+        List<Integer> tagIds = new ArrayList<>();
+        Object tagIdsObj = data.get("tagIds");
+        
+        if (tagIdsObj != null) {
+            if (tagIdsObj instanceof List) {
+                @SuppressWarnings("unchecked")
+                List<Object> tagList = (List<Object>) tagIdsObj;
+                for (Object tagId : tagList) {
+                    if (tagId instanceof Number) {
+                        tagIds.add(((Number) tagId).intValue());
+                    }
+                }
+            } else if (tagIdsObj instanceof String) {
+                String tagIdsStr = (String) tagIdsObj;
+                tagIdsStr = tagIdsStr.replaceAll("[\\[\\]\\s]", "");
+                for (String idStr : tagIdsStr.split(",")) {
+                    if (!idStr.isEmpty()) {
+                        tagIds.add(Integer.parseInt(idStr));
+                    }
+                }
+            } else if (tagIdsObj instanceof Number) {
+                tagIds.add(((Number) tagIdsObj).intValue());
+            }
+        }
+        return tagIds;
+    }
+    
+    private String[] parseObservacoes(Map<String, Object> data) {
+        String[] observacoes = null;
+        Object observacoesObj = data.get("observacoes");
+        if (observacoesObj != null) {
+            if (observacoesObj instanceof String) {
+                String observacoesStr = (String) observacoesObj;
+                if (!observacoesStr.trim().isEmpty()) {
+                    observacoesStr = observacoesStr.replace("\\n", "\n");
+                    String[] obsArray = observacoesStr.split("[\\r\\n]+");
+                    List<String> obsList = new ArrayList<>();
+                    for (String obs : obsArray) {
+                        String trimmed = obs.trim();
+                        if (!trimmed.isEmpty()) {
+                            obsList.add(trimmed);
+                        }
+                    }
+                    if (!obsList.isEmpty()) {
+                        observacoes = obsList.toArray(new String[0]);
+                    }
+                }
+            } else if (observacoesObj instanceof List) {
+                @SuppressWarnings("unchecked")
+                List<Object> obsList = (List<Object>) observacoesObj;
+                List<String> obsStringList = new ArrayList<>();
+                for (Object obs : obsList) {
+                    if (obs != null) {
+                        obsStringList.add(obs.toString().trim());
+                    }
+                }
+                if (!obsStringList.isEmpty()) {
+                    observacoes = obsStringList.toArray(new String[0]);
+                }
+            }
+        }
+        return observacoes;
+    }
+}
+

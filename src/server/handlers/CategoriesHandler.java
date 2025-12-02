@@ -1,20 +1,22 @@
-// NOTA: Por enquanto sem package para compatibilidade com entidades no default package
-// TODO: Mover entidades (BancoDados, Categoria, etc) para um package próprio
+package server.handlers;
 
 import com.sun.net.httpserver.*;
 import java.io.*;
 import java.util.*;
+import server.model.Categoria;
 import server.utils.*;
+import server.validation.*;
+import server.repository.*;
 
 /**
  * Handler para operações com Categorias
  * GET, POST, PUT, DELETE /api/categories
  */
 public class CategoriesHandler implements HttpHandler {
-    private BancoDadosPostgreSQL bancoDados;
+    private final CategoryRepository categoryRepository;
     
-    public CategoriesHandler(BancoDadosPostgreSQL bancoDados) {
-        this.bancoDados = bancoDados;
+    public CategoriesHandler() {
+        this.categoryRepository = new CategoryRepository();
     }
     
     @Override
@@ -44,7 +46,7 @@ public class CategoriesHandler implements HttpHandler {
             String userIdParam = RequestUtil.getQueryParam(exchange, "userId");
             int userId = userIdParam != null ? Integer.parseInt(userIdParam) : 1;
             
-            List<Categoria> categories = bancoDados.buscarCategoriasPorUsuario(userId);
+            List<Categoria> categories = categoryRepository.buscarCategoriasPorUsuario(userId);
             List<Map<String, Object>> categoryList = new ArrayList<>();
             
             for (Categoria categoria : categories) {
@@ -68,28 +70,89 @@ public class CategoriesHandler implements HttpHandler {
     private void handlePost(HttpExchange exchange) throws IOException {
         try {
             String requestBody = RequestUtil.readRequestBody(exchange);
-            Map<String, String> data = JsonUtil.parseJson(requestBody);
+            Map<String, Object> data = JsonUtil.parseJsonWithNested(requestBody);
             
-            String name = data.get("name");
-            if (name == null) name = data.get("nome");
-            String userIdStr = data.get("userId");
-            int userId = (userIdStr != null && !userIdStr.isEmpty()) ? Integer.parseInt(userIdStr) : 1;
+            // Validações robustas
+            ValidationResult validation = new ValidationResult();
             
-            int categoryId = bancoDados.cadastrarCategoria(name, userId);
+            String name = null;
+            Object nameObj = data.get("name");
+            if (nameObj != null) name = nameObj.toString();
+            if (name == null) {
+                Object nomeObj = data.get("nome");
+                if (nomeObj != null) name = nomeObj.toString();
+            }
+            validation.addErrors(InputValidator.validateName("Nome da categoria", name, true).getErrors());
+            
+            String userIdStr = null;
+            Object userIdObj = data.get("userId");
+            if (userIdObj != null) userIdStr = userIdObj.toString();
+            int userId = 1;
+            if (userIdStr != null && !userIdStr.isEmpty()) {
+                try {
+                    userId = Integer.parseInt(userIdStr);
+                    validation.addErrors(InputValidator.validateId("ID do usuário", userId, true).getErrors());
+                } catch (NumberFormatException e) {
+                    validation.addError("ID do usuário deve ser um número válido");
+                }
+            }
+            
+            if (!validation.isValid()) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", validation.getErrorMessage());
+                ResponseUtil.sendJsonResponse(exchange, 400, response);
+                return;
+            }
+            
+            // Sanitiza nome
+            name = InputValidator.sanitizeInput(name);
             
             // Verifica se foi enviado um orçamento
-            String budgetStr = data.get("budget");
+            String budgetStr = null;
+            Object budgetObj = data.get("budget");
+            if (budgetObj != null) budgetStr = budgetObj.toString();
+            int categoryId;
+            
             if (budgetStr != null && !budgetStr.isEmpty() && !budgetStr.equals("null")) {
                 try {
-                    double budgetValue = Double.parseDouble(budgetStr);
+                    double budgetValue;
+                    if (budgetObj instanceof Number) {
+                        budgetValue = ((Number) budgetObj).doubleValue();
+                    } else {
+                        budgetValue = Double.parseDouble(budgetStr);
+                    }
                     if (budgetValue > 0) {
-                        // Por padrão, definimos como mensal se não especificado
-                        bancoDados.cadastrarOrcamento(budgetValue, "MENSAL", categoryId, userId);
+                        // Valida valor do orçamento
+                        ValidationResult budgetValidation = InputValidator.validateMoney("Valor do orçamento", budgetValue, true);
+                        if (!budgetValidation.isValid()) {
+                            Map<String, Object> response = new HashMap<>();
+                            response.put("success", false);
+                            response.put("message", budgetValidation.getErrorMessage());
+                            ResponseUtil.sendJsonResponse(exchange, 400, response);
+                            return;
+                        }
+                        
+                        // Cadastra categoria e orçamento atomicamente na mesma transação
+                        categoryId = categoryRepository.cadastrarCategoriaComOrcamento(name, userId, budgetValue, "MENSAL");
+                    } else {
+                        // Se o valor é 0 ou negativo, cadastra apenas a categoria
+                        categoryId = categoryRepository.cadastrarCategoria(name, userId);
                     }
                 } catch (NumberFormatException e) {
-                    // Ignora erro de conversão, apenas cria a categoria sem orçamento
-                    System.err.println("Erro ao converter orçamento: " + budgetStr);
+                    // Se não conseguir converter, cadastra apenas a categoria
+                    categoryId = categoryRepository.cadastrarCategoria(name, userId);
+                } catch (Exception e) {
+                    // Se houver erro ao cadastrar com orçamento, retorna erro
+                    Map<String, Object> response = new HashMap<>();
+                    response.put("success", false);
+                    response.put("message", "Erro ao cadastrar categoria com orçamento: " + e.getMessage());
+                    ResponseUtil.sendJsonResponse(exchange, 400, response);
+                    return;
                 }
+            } else {
+                // Sem orçamento, cadastra apenas a categoria
+                categoryId = categoryRepository.cadastrarCategoria(name, userId);
             }
             
             Map<String, Object> response = new HashMap<>();
@@ -110,13 +173,78 @@ public class CategoriesHandler implements HttpHandler {
     private void handlePut(HttpExchange exchange) throws IOException {
         try {
             String requestBody = RequestUtil.readRequestBody(exchange);
-            Map<String, String> data = JsonUtil.parseJson(requestBody);
+            Map<String, Object> data = JsonUtil.parseJsonWithNested(requestBody);
             
-            int categoryId = Integer.parseInt(data.get("id"));
-            String newName = data.get("name");
-            if (newName == null) newName = data.get("nome");
+            // Validações robustas
+            ValidationResult validation = new ValidationResult();
             
-            bancoDados.atualizarCategoria(categoryId, newName);
+            // Tenta obter ID do corpo da requisição (várias possibilidades)
+            String idStr = null;
+            Object idObj = data.get("id");
+            if (idObj != null) idStr = idObj.toString();
+            if (idStr == null) {
+                Object idCategoriaObj = data.get("idCategoria");
+                if (idCategoriaObj != null) idStr = idCategoriaObj.toString();
+            }
+            if (idStr == null) {
+                Object categoryIdObj = data.get("categoryId");
+                if (categoryIdObj != null) idStr = categoryIdObj.toString();
+            }
+            
+            // Se não encontrou no corpo, tenta pegar da URL (query param ou path)
+            if (idStr == null) {
+                idStr = RequestUtil.getQueryParam(exchange, "id");
+            }
+            if (idStr == null) {
+                idStr = RequestUtil.getQueryParam(exchange, "idCategoria");
+            }
+            if (idStr == null) {
+                String path = exchange.getRequestURI().getPath();
+                String[] segments = path.split("/");
+                if (segments.length > 0) {
+                    try {
+                        String lastSegment = segments[segments.length - 1];
+                        Integer.parseInt(lastSegment);
+                        idStr = lastSegment;
+                    } catch (NumberFormatException e) {
+                        // Ignora se não for número
+                    }
+                }
+            }
+            
+            Integer categoryId = null;
+            if (idStr != null) {
+                try {
+                    categoryId = Integer.parseInt(idStr);
+                    validation.addErrors(InputValidator.validateId("ID da categoria", categoryId, true).getErrors());
+                } catch (NumberFormatException e) {
+                    validation.addError("ID da categoria deve ser um número válido");
+                }
+            } else {
+                validation.addError("ID da categoria é obrigatório");
+            }
+            
+            String newName = null;
+            Object nameObj = data.get("name");
+            if (nameObj != null) newName = nameObj.toString();
+            if (newName == null) {
+                Object nomeObj = data.get("nome");
+                if (nomeObj != null) newName = nomeObj.toString();
+            }
+            validation.addErrors(InputValidator.validateName("Nome da categoria", newName, true).getErrors());
+            
+            if (!validation.isValid()) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", validation.getErrorMessage());
+                ResponseUtil.sendJsonResponse(exchange, 400, response);
+                return;
+            }
+            
+            // Sanitiza nome
+            newName = InputValidator.sanitizeInput(newName);
+            
+            categoryRepository.atualizarCategoria(categoryId, newName);
             
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);
@@ -159,7 +287,7 @@ public class CategoriesHandler implements HttpHandler {
             }
             
             int categoryId = Integer.parseInt(idParam);
-            bancoDados.excluirCategoria(categoryId);
+            categoryRepository.excluirCategoria(categoryId);
             
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);

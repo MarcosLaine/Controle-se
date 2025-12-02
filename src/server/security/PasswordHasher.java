@@ -1,3 +1,5 @@
+package server.security;
+
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.security.spec.InvalidKeySpecException;
@@ -5,11 +7,6 @@ import java.util.Base64;
 import javax.crypto.SecretKeyFactory;
 import javax.crypto.spec.PBEKeySpec;
 
-/**
- * Utility class responsible for hashing and validating passwords using PBKDF2.
- * The resulting string follows the pattern: iterations:salt:hash (base64 encoded).
- * Legacy RSA-encrypted passwords are still supported for compatibility.
- */
 public final class PasswordHasher {
     private static final String ALGORITHM = "PBKDF2WithHmacSHA256";
     private static final int ITERATIONS = 120_000;
@@ -41,7 +38,6 @@ public final class PasswordHasher {
 
         String[] parts = storedValue.split(":");
         if (parts.length != 3) {
-            // Legacy RSA encrypted password fallback
             return tryLegacyRsa(password, storedValue);
         }
 

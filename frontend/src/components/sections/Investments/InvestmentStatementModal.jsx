@@ -184,7 +184,7 @@ export default function InvestmentStatementModal({ isOpen, onClose, investments,
       doc.setTextColor(255, 255, 255);
       doc.text('Extrato de Investimentos', margin, 20);
       doc.setFontSize(10);
-      doc.text(`Gerado em: ${new Date().toLocaleDateString('pt-BR')}`, margin, 29);
+      doc.text(`Gerado em: ${formatDate(new Date().toISOString())}`, margin, 29);
 
       const filterRange = filters.startDate || filters.endDate
         ? `${filters.startDate || 'Início'} → ${filters.endDate || 'Hoje'}`
@@ -464,7 +464,7 @@ export default function InvestmentStatementModal({ isOpen, onClose, investments,
                           <span className={`text-xs px-2 py-0.5 rounded ${
                             isBuy
                               ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                              : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+                              : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
                           }`}>
                           {isBuy ? 'Compra' : 'Venda'}
                           </span>

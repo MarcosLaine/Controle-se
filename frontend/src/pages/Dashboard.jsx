@@ -1,7 +1,7 @@
-import React, { useState, lazy, Suspense, useCallback } from 'react';
+import React, { lazy, Suspense, useCallback, useState } from 'react';
+import SkeletonSection from '../components/common/SkeletonSection';
 import Header from '../components/layout/Header';
 import Sidebar from '../components/layout/Sidebar';
-import SkeletonSection from '../components/common/SkeletonSection';
 
 const lazyWithPreload = (loader) => {
   const Component = lazy(loader);
@@ -11,11 +11,9 @@ const lazyWithPreload = (loader) => {
 
 const sectionComponents = {
   overview: lazyWithPreload(() => import('../components/sections/Overview')),
-  categories: lazyWithPreload(() => import('../components/sections/Categories')),
+  categories: lazyWithPreload(() => import('../components/sections/CategoriesAndTags')),
   accounts: lazyWithPreload(() => import('../components/sections/Accounts')),
   transactions: lazyWithPreload(() => import('../components/sections/Transactions')),
-  budgets: lazyWithPreload(() => import('../components/sections/Budgets')),
-  tags: lazyWithPreload(() => import('../components/sections/Tags')),
   reports: lazyWithPreload(() => import('../components/sections/Reports')),
   investments: lazyWithPreload(() => import('../components/sections/Investments')),
 };

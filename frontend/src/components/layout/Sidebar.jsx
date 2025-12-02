@@ -5,20 +5,17 @@ import {
   LayoutDashboard,
   PieChart,
   Tag,
-  TrendingUp,
   X
 } from 'lucide-react';
 import React from 'react';
 
 const menuItems = [
   { id: 'overview', label: 'Visão Geral', icon: LayoutDashboard },
-  { id: 'categories', label: 'Categorias', icon: Tag },
-  { id: 'accounts', label: 'Contas', icon: Building2 },
   { id: 'transactions', label: 'Transações', icon: ArrowLeftRight },
-  { id: 'budgets', label: 'Orçamentos', icon: TrendingUp },
-  { id: 'tags', label: 'Tags', icon: Tag },
-  { id: 'reports', label: 'Relatórios', icon: FileText },
   { id: 'investments', label: 'Investimentos', icon: PieChart },
+  { id: 'categories', label: 'Categorias e Tags', icon: Tag },
+  { id: 'accounts', label: 'Contas', icon: Building2 },
+  { id: 'reports', label: 'Relatórios', icon: FileText },
 ];
 
 export default function Sidebar({ activeSection, onSectionChange, onSectionHover, isOpen, onClose }) {

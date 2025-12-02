@@ -224,14 +224,17 @@ if ($JAVA_FILES.Count -eq 0) {
 }
 
 # Compila todos os arquivos de uma vez
-$classpath = ".;lib/postgresql.jar;lib/hikaricp.jar"
+
+# Usa caminhos absolutos para garantir que o javac encontre os JARs
+$pwd = (Get-Location).Path
+$classpath = "$pwd;$pwd\lib\postgresql.jar;$pwd\lib\hikaricp.jar"
 if (Test-Path "lib/slf4j-api.jar") {
-    $classpath += ";lib/slf4j-api.jar"
+    $classpath += ";$pwd\lib\slf4j-api.jar"
 }
 if (Test-Path "lib/slf4j-simple.jar") {
-    $classpath += ";lib/slf4j-simple.jar"
+    $classpath += ";$pwd\lib\slf4j-simple.jar"
 }
-$classpath += ";bin"
+$classpath += ";$pwd\bin"
 & javac -cp $classpath -d bin -source 11 -target 11 -encoding UTF-8 $JAVA_FILES
 
 # Verifica se a compilação foi bem-sucedida
@@ -299,14 +302,16 @@ Write-Host "=========================================="
 Write-Host ""
 
 # Executa o servidor
-$classpath = ".;lib/postgresql.jar;lib/hikaricp.jar"
+# Usa caminhos absolutos para garantir que o java encontre os JARs
+$pwd = (Get-Location).Path
+$classpath = "$pwd;$pwd\lib\postgresql.jar;$pwd\lib\hikaricp.jar"
 if (Test-Path "lib/slf4j-api.jar") {
-    $classpath += ";lib/slf4j-api.jar"
+    $classpath += ";$pwd\lib\slf4j-api.jar"
 }
 if (Test-Path "lib/slf4j-simple.jar") {
-    $classpath += ";lib/slf4j-simple.jar"
+    $classpath += ";$pwd\lib\slf4j-simple.jar"
 }
-$classpath += ";bin"
+$classpath += ";$pwd\bin"
 $javaArgs = @(
     "-cp", $classpath,
     "-Dfile.encoding=UTF-8",

@@ -291,12 +291,19 @@ export default function Accounts() {
           <div>
             <label className="label">Saldo Inicial</label>
             <input
-              type="number"
-              step="0.01"
+              type="text"
               value={formData.saldoInicial}
-              onChange={(e) => setFormData({ ...formData, saldoInicial: e.target.value })}
+              onChange={(e) => {
+                // Permite apenas números, vírgula e ponto
+                const value = e.target.value.replace(/[^\d,.-]/g, '');
+                // Permite apenas uma vírgula ou um ponto como separador decimal
+                const parts = value.split(/[,.]/);
+                if (parts.length <= 2) {
+                  setFormData({ ...formData, saldoInicial: value });
+                }
+              }}
               className="input"
-              placeholder="0.00"
+              placeholder="0,00 ou 0.00"
             />
             {(formData.tipo && (formData.tipo.toLowerCase().includes('cartão') || formData.tipo.toLowerCase().includes('cartao'))) && (
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">

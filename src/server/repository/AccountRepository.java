@@ -1,0 +1,335 @@
+package server.repository;
+
+import server.database.DatabaseConnection;
+import server.model.Conta;
+import server.validation.InputValidator;
+import server.validation.ValidationResult;
+import java.sql.*;
+import java.util.ArrayList;
+import java.util.List;
+
+public class AccountRepository {
+
+    private Connection getConnection() throws SQLException {
+        return DatabaseConnection.getInstance().getConnection();
+    }
+
+    private void validateInput(String field, String value, int maxLength) {
+        ValidationResult res = InputValidator.validateString(field, value, maxLength, true);
+        if (!res.isValid()) throw new IllegalArgumentException(res.getErrors().get(0));
+    }
+
+    private void validateId(String field, int id) {
+        ValidationResult res = InputValidator.validateId(field, id, true);
+        if (!res.isValid()) throw new IllegalArgumentException(res.getErrors().get(0));
+    }
+
+    private void validateAmount(String field, double amount) {
+        ValidationResult res = InputValidator.validateMoney(field, amount, true);
+        if (!res.isValid()) throw new IllegalArgumentException(res.getErrors().get(0));
+    }
+
+    private void validateEnum(String field, String value, String[] allowed) {
+        ValidationResult res = InputValidator.validateEnum(field, value, allowed, true);
+        if (!res.isValid()) throw new IllegalArgumentException(res.getErrors().get(0));
+    }
+
+    private String sanitizeString(String value) {
+        return InputValidator.sanitizeInput(value);
+    }
+
+    public int cadastrarConta(String nome, String tipo, double saldoAtual, int idUsuario) {
+        return cadastrarConta(nome, tipo, saldoAtual, idUsuario, null, null);
+    }
+
+    public int cadastrarConta(String nome, String tipo, double saldoAtual, int idUsuario, Integer diaFechamento, Integer diaPagamento) {
+        validateInput("Nome da conta", nome, 100);
+        validateId("ID do usuário", idUsuario);
+        validateAmount("Saldo inicial", saldoAtual);
+        
+        String tipoUpper = tipo != null ? tipo.toUpperCase() : "";
+        String[] tiposPermitidos = {"CORRENTE", "POUPANCA", "INVESTIMENTO", "INVESTIMENTO (CORRETORA)", 
+                                   "CARTAO_CREDITO", "CARTAO DE CREDITO", "CARTAO DE CRÉDITO", 
+                                   "CARTÃO DE CRÉDITO", "CARTÃO DE CREDITO", "OUTROS"};
+        
+        String tipoNormalizado = tipoUpper.replace("É", "E").replace("À", "A").replace(" ", "_");
+        boolean tipoValido = false;
+        for (String tipoPermitido : tiposPermitidos) {
+            String permitidoNormalizado = tipoPermitido.replace("É", "E").replace("À", "A").replace(" ", "_");
+            if (tipoNormalizado.equals(permitidoNormalizado) || tipoUpper.contains("CARTAO") || tipoUpper.contains("CARTÃO")) {
+                tipoValido = true;
+                break;
+            }
+        }
+        if (!tipoValido && !tipoUpper.contains("CARTAO") && !tipoUpper.contains("CARTÃO")) {
+            validateEnum("Tipo de conta", tipo, tiposPermitidos);
+        }
+        
+        if (tipoUpper.contains("CARTAO") || tipoUpper.contains("CARTÃO")) {
+            tipo = "CARTAO_CREDITO";
+        }
+        
+        boolean isCartao = tipoUpper.contains("CARTAO") || tipoUpper.contains("CARTÃO");
+        if (isCartao) {
+            if (diaFechamento != null && (diaFechamento < 1 || diaFechamento > 31)) {
+                throw new IllegalArgumentException("Dia de fechamento deve estar entre 1 e 31");
+            }
+            if (diaPagamento != null && (diaPagamento < 1 || diaPagamento > 31)) {
+                throw new IllegalArgumentException("Dia de pagamento deve estar entre 1 e 31");
+            }
+        }
+        
+        nome = sanitizeString(nome);
+        
+        Connection conn = null;
+        try {
+            conn = getConnection();
+            conn.setAutoCommit(false);
+
+            if (hasCartaoCreditoColumns(conn) && (diaFechamento != null || diaPagamento != null)) {
+                String sql = "INSERT INTO contas (nome, tipo, saldo_atual, id_usuario, dia_fechamento, dia_pagamento) VALUES (?, ?, ?, ?, ?, ?) RETURNING id_conta";
+                try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                    pstmt.setString(1, nome);
+                    pstmt.setString(2, tipo.toUpperCase());
+                    pstmt.setDouble(3, saldoAtual);
+                    pstmt.setInt(4, idUsuario);
+                    if (diaFechamento != null) pstmt.setInt(5, diaFechamento); else pstmt.setNull(5, Types.INTEGER);
+                    if (diaPagamento != null) pstmt.setInt(6, diaPagamento); else pstmt.setNull(6, Types.INTEGER);
+                    
+                    ResultSet rs = pstmt.executeQuery();
+                    if (rs.next()) {
+                        int idConta = rs.getInt(1);
+                        conn.commit();
+                        return idConta;
+                    }
+                    throw new RuntimeException("Erro ao cadastrar conta");
+                } catch (SQLException e) {
+                    if (e.getMessage().contains("dia_fechamento") || e.getMessage().contains("dia_pagamento")) {
+                        // Fallback
+                    } else {
+                        try { conn.rollback(); } catch (SQLException ex) {}
+                        throw new RuntimeException("Erro ao cadastrar conta: " + e.getMessage(), e);
+                    }
+                }
+            }
+            
+            String sql = "INSERT INTO contas (nome, tipo, saldo_atual, id_usuario) VALUES (?, ?, ?, ?) RETURNING id_conta";
+            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                pstmt.setString(1, nome);
+                pstmt.setString(2, tipo.toUpperCase());
+                pstmt.setDouble(3, saldoAtual);
+                pstmt.setInt(4, idUsuario);
+                
+                ResultSet rs = pstmt.executeQuery();
+                if (rs.next()) {
+                    int idConta = rs.getInt(1);
+                    conn.commit();
+                    return idConta;
+                }
+                throw new RuntimeException("Erro ao cadastrar conta");
+            }
+        } catch (SQLException e) {
+            if (conn != null) try { conn.rollback(); } catch (SQLException ex) {}
+            throw new RuntimeException("Erro ao cadastrar conta: " + e.getMessage(), e);
+        } finally {
+            if (conn != null) try { conn.close(); } catch (SQLException e) {}
+        }
+    }
+    
+    public Conta buscarConta(int idConta) {
+        String sql = "SELECT id_conta, nome, tipo, saldo_atual, id_usuario, ativo FROM contas WHERE id_conta = ? AND ativo = TRUE";
+        
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, idConta);
+            ResultSet rs = pstmt.executeQuery();
+            
+            if (rs.next()) {
+                return mapConta(rs, conn);
+            }
+            return null;
+        } catch (SQLException e) {
+            throw new RuntimeException("Erro ao buscar conta: " + e.getMessage(), e);
+        }
+    }
+    
+    public List<Conta> buscarContasPorUsuario(int idUsuario) {
+        String sql = "SELECT id_conta, nome, tipo, saldo_atual, id_usuario, ativo FROM contas WHERE id_usuario = ? AND ativo = TRUE ORDER BY nome";
+        List<Conta> contas = new ArrayList<>();
+        
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, idUsuario);
+            ResultSet rs = pstmt.executeQuery();
+            
+            while (rs.next()) {
+                contas.add(mapConta(rs, conn));
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Erro ao buscar contas: " + e.getMessage(), e);
+        }
+        return contas;
+    }
+    
+    public List<Conta> buscarContasPorTipo(String tipo) {
+        String sql = "SELECT id_conta, nome, tipo, saldo_atual, id_usuario, ativo FROM contas WHERE tipo = ? AND ativo = TRUE ORDER BY nome";
+        List<Conta> contas = new ArrayList<>();
+        
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, tipo);
+            ResultSet rs = pstmt.executeQuery();
+            
+            while (rs.next()) {
+                contas.add(mapConta(rs, conn));
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Erro ao buscar contas por tipo: " + e.getMessage(), e);
+        }
+        return contas;
+    }
+    
+    public void atualizarConta(int idConta, String novoNome, String novoTipo, double novoSaldo, Integer diaFechamento, Integer diaPagamento) {
+        Connection conn = null;
+        try {
+            conn = getConnection();
+            conn.setAutoCommit(false);
+            
+            if (hasCartaoCreditoColumns(conn) && (diaFechamento != null || diaPagamento != null)) {
+                String sql = "UPDATE contas SET nome = ?, tipo = ?, saldo_atual = ?, dia_fechamento = ?, dia_pagamento = ? WHERE id_conta = ?";
+                try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                    pstmt.setString(1, novoNome);
+                    pstmt.setString(2, novoTipo);
+                    pstmt.setDouble(3, novoSaldo);
+                    if (diaFechamento != null) pstmt.setInt(4, diaFechamento); else pstmt.setNull(4, Types.INTEGER);
+                    if (diaPagamento != null) pstmt.setInt(5, diaPagamento); else pstmt.setNull(5, Types.INTEGER);
+                    pstmt.setInt(6, idConta);
+                    pstmt.executeUpdate();
+                    conn.commit();
+                    return;
+                } catch (SQLException e) {
+                    if (!e.getMessage().contains("dia_fechamento") && !e.getMessage().contains("dia_pagamento")) {
+                        try { conn.rollback(); } catch (SQLException ex) {}
+                        throw new RuntimeException("Erro ao atualizar conta: " + e.getMessage(), e);
+                    }
+                }
+            }
+            
+            String sql = "UPDATE contas SET nome = ?, tipo = ?, saldo_atual = ? WHERE id_conta = ?";
+            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                pstmt.setString(1, novoNome);
+                pstmt.setString(2, novoTipo);
+                pstmt.setDouble(3, novoSaldo);
+                pstmt.setInt(4, idConta);
+                pstmt.executeUpdate();
+                conn.commit();
+            }
+        } catch (SQLException e) {
+            if (conn != null) try { conn.rollback(); } catch (SQLException ex) {}
+            throw new RuntimeException("Erro ao atualizar conta: " + e.getMessage(), e);
+        } finally {
+            if (conn != null) try { conn.close(); } catch (SQLException e) {}
+        }
+    }
+    
+    public void excluirConta(int idConta) {
+        String sql = "DELETE FROM contas WHERE id_conta = ?";
+        try (Connection conn = getConnection()) {
+            conn.setAutoCommit(false);
+            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                pstmt.setInt(1, idConta);
+                int deleted = pstmt.executeUpdate();
+                if (deleted == 0) throw new IllegalArgumentException("Conta não encontrada");
+                conn.commit();
+            } catch (Exception e) {
+                conn.rollback();
+                throw e;
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Erro ao excluir conta: " + e.getMessage(), e);
+        }
+    }
+    
+    public double calcularSaldoContasUsuarioSemInvestimento(int idUsuario) {
+        String sql = "SELECT COALESCE(SUM(saldo_atual), 0) as total " +
+                    "FROM contas WHERE id_usuario = ? " +
+                    "AND UPPER(tipo) NOT LIKE 'INVESTIMENTO%' " +
+                    "AND UPPER(tipo) NOT LIKE 'CARTAO%' " +
+                    "AND ativo = TRUE";
+        return executeDoubleQuery(sql, idUsuario);
+    }
+    
+    public double calcularTotalCreditoDisponivelCartoes(int idUsuario) {
+        String sql = "SELECT COALESCE(SUM(saldo_atual), 0) as total " +
+                    "FROM contas WHERE id_usuario = ? " +
+                    "AND (UPPER(tipo) LIKE 'CARTAO%' OR UPPER(tipo) = 'CARTAO_CREDITO') " +
+                    "AND ativo = TRUE";
+        return executeDoubleQuery(sql, idUsuario);
+    }
+    
+    public double calcularTotalSaldoContasUsuario(int idUsuario) {
+        String sql = "SELECT COALESCE(SUM(saldo_atual), 0) as total " +
+                    "FROM contas WHERE id_usuario = ? " +
+                    "AND ativo = TRUE " +
+                    "AND (tipo IS NULL OR (UPPER(tipo) NOT LIKE 'CARTAO%' AND UPPER(tipo) != 'CARTAO_CREDITO'))";
+        return executeDoubleQuery(sql, idUsuario);
+    }
+
+    private double executeDoubleQuery(String sql, int id) {
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, id);
+            ResultSet rs = pstmt.executeQuery();
+            if (rs.next()) return rs.getDouble("total");
+            return 0.0;
+        } catch (SQLException e) {
+            throw new RuntimeException("Erro ao executar query: " + e.getMessage(), e);
+        }
+    }
+
+    private Boolean hasCartaoCreditoColumnsCache = null;
+    private boolean hasCartaoCreditoColumns(Connection conn) {
+        if (hasCartaoCreditoColumnsCache != null) return hasCartaoCreditoColumnsCache;
+        String sql = "SELECT dia_fechamento, dia_pagamento FROM contas LIMIT 1";
+        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.executeQuery();
+            hasCartaoCreditoColumnsCache = true;
+            return true;
+        } catch (SQLException e) {
+            hasCartaoCreditoColumnsCache = false;
+            return false;
+        }
+    }
+
+    private Conta mapConta(ResultSet rs, Connection conn) throws SQLException {
+        Conta conta = new Conta(
+            rs.getInt("id_conta"),
+            rs.getString("nome"),
+            rs.getString("tipo"),
+            rs.getDouble("saldo_atual"),
+            rs.getInt("id_usuario")
+        );
+        conta.setAtivo(rs.getBoolean("ativo"));
+        
+        if (hasCartaoCreditoColumns(conn)) {
+            try {
+                int idConta = conta.getIdConta();
+                String sqlExtra = "SELECT dia_fechamento, dia_pagamento FROM contas WHERE id_conta = ?";
+                try (PreparedStatement pstmtExtra = conn.prepareStatement(sqlExtra)) {
+                    pstmtExtra.setInt(1, idConta);
+                    ResultSet rsExtra = pstmtExtra.executeQuery();
+                    if (rsExtra.next()) {
+                        Object diaFechamentoObj = rsExtra.getObject("dia_fechamento");
+                        if (diaFechamentoObj != null) conta.setDiaFechamento((Integer) diaFechamentoObj);
+                        Object diaPagamentoObj = rsExtra.getObject("dia_pagamento");
+                        if (diaPagamentoObj != null) conta.setDiaPagamento((Integer) diaPagamentoObj);
+                    }
+                }
+            } catch (SQLException e) {
+                // Ignore
+            }
+        }
+        return conta;
+    }
+}
+

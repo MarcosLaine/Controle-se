@@ -29,8 +29,17 @@ export default function Transactions() {
   const loadData = async () => {
     setLoading(true);
     try {
+      // Constrói URL com parâmetros de filtro
+      let transactionsUrl = `/transactions?userId=${user.id}`;
+      if (filters.category) {
+        transactionsUrl += `&categoryId=${filters.category}`;
+      }
+      if (filters.date) {
+        transactionsUrl += `&date=${filters.date}`;
+      }
+
       const [transRes, catRes, accRes, tagRes] = await Promise.all([
-        api.get(`/transactions?userId=${user.id}`),
+        api.get(transactionsUrl),
         api.get(`/categories?userId=${user.id}`),
         api.get(`/accounts?userId=${user.id}`),
         api.get(`/tags?userId=${user.id}`),
@@ -38,16 +47,11 @@ export default function Transactions() {
 
       if (transRes.success) {
         let filtered = transRes.data || [];
-        if (filters.category) {
-          filtered = filtered.filter((t) => t.categoryId === parseInt(filters.category));
-        }
+        // Filtro de tag ainda é feito no cliente, pois o backend não suporta filtro por tag diretamente
         if (filters.tag) {
           filtered = filtered.filter((t) =>
             t.tags?.some((tag) => tag.idTag === parseInt(filters.tag))
           );
-        }
-        if (filters.date) {
-          filtered = filtered.filter((t) => t.date?.startsWith(filters.date));
         }
         setTransactions(filtered);
       }
@@ -301,10 +305,56 @@ function TransactionModal({ isOpen, onClose, type, categories, accounts, tags, o
     categoryIds: [],
     tagIds: [],
     observacoes: '',
+    pagamentoFatura: false,
   });
+  const [invoiceInfo, setInvoiceInfo] = useState(null);
+
+  const formatAccountType = (tipo) => {
+    if (!tipo) return '';
+    const tipoLower = tipo.toLowerCase();
+    if (tipoLower.includes('cartão') || tipoLower.includes('cartao') || tipoLower.includes('cartao_credito') || tipoLower.includes('credito') || tipoLower.includes('crédito')) {
+      return 'Cartão de Crédito';
+    }
+    if (tipoLower.includes('investimento')) {
+      return 'Investimento';
+    }
+    if (tipoLower.includes('corrente')) {
+      return 'Conta Corrente';
+    }
+    if (tipoLower.includes('poupança') || tipoLower.includes('poupanca')) {
+      return 'Poupança';
+    }
+    if (tipoLower.includes('dinheiro')) {
+      return 'Dinheiro';
+    }
+    // Retorna o tipo original formatado (primeira letra maiúscula, resto minúscula)
+    return tipo.split('_').map(word => 
+      word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+    ).join(' ');
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    
+    // Validação no frontend: se for receita em cartão de crédito, verifica valor
+    if (type === 'income' && formData.pagamentoFatura && invoiceInfo) {
+      const valorInformado = parseFloat(formData.value);
+      const valorDisponivel = invoiceInfo.valorDisponivel || 0;
+      
+      if (valorInformado > valorDisponivel + 0.01) {
+        let mensagem = '';
+        if (invoiceInfo.valorFatura <= 0) {
+          mensagem = `Não há fatura pendente para pagar. A fatura atual está em ${formatCurrency(invoiceInfo.valorFatura)}.`;
+        } else if (invoiceInfo.valorJaPago >= invoiceInfo.valorFatura) {
+          mensagem = `A fatura já foi totalmente paga. Valor da fatura: ${formatCurrency(invoiceInfo.valorFatura)}. Valor já pago: ${formatCurrency(invoiceInfo.valorJaPago)}.`;
+        } else {
+          mensagem = `O valor informado (${formatCurrency(valorInformado)}) excede o valor disponível para pagamento (${formatCurrency(valorDisponivel)}).`;
+        }
+        toast.error(mensagem);
+        return;
+      }
+    }
+    
     try {
       const data = {
         description: formData.description,
@@ -327,10 +377,15 @@ function TransactionModal({ isOpen, onClose, type, categories, accounts, tags, o
         data.observacoes = formData.observacoes.trim();
       }
 
+      // Se for receita, sempre envia flag de pagamento de fatura (mesmo que false)
+      if (type === 'income') {
+        data.pagamentoFatura = formData.pagamentoFatura || false;
+      }
+
       const endpoint = type === 'expense' ? '/expenses' : '/incomes';
       const response = await api.post(endpoint, data);
       if (response.success) {
-        toast.success(`${type === 'expense' ? 'Gasto' : 'Receita'} adicionada!`);
+        toast.success(`${type === 'expense' ? 'Gasto Adicionado' : 'Receita Adicionada'}!`);
         onSuccess();
         onClose();
         setFormData({
@@ -341,6 +396,7 @@ function TransactionModal({ isOpen, onClose, type, categories, accounts, tags, o
           categoryIds: [],
           tagIds: [],
           observacoes: '',
+          pagamentoFatura: false,
         });
       }
     } catch (error) {
@@ -419,7 +475,38 @@ function TransactionModal({ isOpen, onClose, type, categories, accounts, tags, o
           <label className="label">Conta</label>
           <select
             value={formData.accountId}
-            onChange={(e) => setFormData({ ...formData, accountId: e.target.value })}
+            onChange={async (e) => {
+              const selectedAccount = accounts.find(acc => acc.idConta.toString() === e.target.value);
+              const isCreditCard = selectedAccount?.tipo?.toLowerCase().includes('cartao') || 
+                                   selectedAccount?.tipo?.toLowerCase().includes('cartão') ||
+                                   selectedAccount?.tipo?.toLowerCase().includes('credito') ||
+                                   selectedAccount?.tipo?.toLowerCase().includes('crédito');
+              setFormData({ 
+                ...formData, 
+                accountId: e.target.value,
+                pagamentoFatura: false // Reseta quando muda a conta
+              });
+              setInvoiceInfo(null); // Reseta informações da fatura
+
+              // Se for receita e cartão de crédito, carrega informações da fatura
+              if (type === 'income' && isCreditCard && user) {
+                try {
+                  const response = await api.get(`/accounts/${e.target.value}/invoice-info?userId=${user.id}`);
+                  if (response.success && response.data) {
+                    setInvoiceInfo({
+                      valorFatura: response.data.valorFatura || 0,
+                      valorJaPago: response.data.valorJaPago || 0,
+                      valorDisponivel: response.data.valorDisponivelPagamento || 0
+                    });
+                  } else {
+                    setInvoiceInfo(null);
+                  }
+                } catch (error) {
+                  console.error('Erro ao carregar informações da fatura:', error);
+                  setInvoiceInfo(null);
+                }
+              }
+            }}
             className="input"
             required
           >
@@ -428,11 +515,92 @@ function TransactionModal({ isOpen, onClose, type, categories, accounts, tags, o
               .filter((acc) => acc.tipo?.toLowerCase() !== 'investimento')
               .map((acc) => (
                 <option key={acc.idConta} value={acc.idConta}>
-                  {acc.nome}
+                  {acc.nome} {acc.tipo ? `(${formatAccountType(acc.tipo)})` : ''}
                 </option>
               ))}
           </select>
         </div>
+        {type === 'income' && (() => {
+          const selectedAccount = accounts.find(acc => acc.idConta.toString() === formData.accountId);
+          const isCreditCard = selectedAccount?.tipo?.toLowerCase().includes('cartao') || 
+                               selectedAccount?.tipo?.toLowerCase().includes('cartão') ||
+                               selectedAccount?.tipo?.toLowerCase().includes('credito') ||
+                               selectedAccount?.tipo?.toLowerCase().includes('crédito');
+          
+          if (isCreditCard) {
+            return (
+              <div className="space-y-2">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.pagamentoFatura}
+                    onChange={async (e) => {
+                      const checked = e.target.checked;
+                      setFormData({ ...formData, pagamentoFatura: checked });
+                      
+                      // Se marcou o checkbox e ainda não tem invoiceInfo, carrega
+                      if (checked && !invoiceInfo && user && formData.accountId) {
+                        try {
+                          const response = await api.get(`/accounts/${formData.accountId}/invoice-info?userId=${user.id}`);
+                          if (response.success && response.data) {
+                            setInvoiceInfo({
+                              valorFatura: response.data.valorFatura || 0,
+                              valorJaPago: response.data.valorJaPago || 0,
+                              valorDisponivel: response.data.valorDisponivelPagamento || 0
+                            });
+                          }
+                        } catch (error) {
+                          console.error('Erro ao carregar informações da fatura:', error);
+                        }
+                      }
+                    }}
+                    className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
+                    required
+                  />
+                  <span className="label">Esta receita é um pagamento de fatura de cartão de crédito</span>
+                </label>
+                {!formData.pagamentoFatura && (
+                  <p className="text-sm text-red-600 dark:text-red-400 mt-1">
+                    Você deve marcar esta opção para cadastrar receitas em cartão de crédito
+                  </p>
+                )}
+                {formData.pagamentoFatura && invoiceInfo && (
+                  <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 mt-2">
+                    <p className="text-sm text-blue-800 dark:text-blue-200 font-medium mb-2">
+                      Informações da Fatura:
+                    </p>
+                    <div className="text-xs text-blue-700 dark:text-blue-300 space-y-1">
+                      <div className="flex justify-between">
+                        <span>Valor da fatura:</span>
+                        <span className="font-semibold">{formatCurrency(invoiceInfo.valorFatura || 0)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Valor já pago:</span>
+                        <span className="font-semibold">{formatCurrency(invoiceInfo.valorJaPago || 0)}</span>
+                      </div>
+                      <div className="flex justify-between pt-1 border-t border-blue-200 dark:border-blue-700">
+                        <span className="font-medium">Disponível para pagamento:</span>
+                        <span className={`font-bold ${
+                          (invoiceInfo.valorDisponivel || 0) <= 0 
+                            ? 'text-red-600 dark:text-red-400' 
+                            : 'text-blue-900 dark:text-blue-100'
+                        }`}>
+                          {formatCurrency(invoiceInfo.valorDisponivel || 0)}
+                        </span>
+                      </div>
+                    </div>
+                    {formData.value && parseFloat(formData.value) > (invoiceInfo.valorDisponivel || 0) + 0.01 && (
+                      <p className="text-xs text-red-600 dark:text-red-400 mt-2 font-medium">
+                        ⚠️ O valor informado excede o valor disponível!
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          }
+          return null;
+        })()}
         {tags.length > 0 && (
           <div>
             <label className="label">Tags (opcional)</label>

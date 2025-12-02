@@ -7,6 +7,8 @@ import SummaryCard from '../common/SummaryCard';
 import toast from 'react-hot-toast';
 import SkeletonSection from '../common/SkeletonSection';
 import { Doughnut, Bar } from 'react-chartjs-2';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import {
   Chart as ChartJS,
   ArcElement,
@@ -57,8 +59,243 @@ export default function Reports() {
     }
   };
 
+  const exportToPDF = () => {
+    if (!reportData) {
+      toast.error('Nenhum dado disponível para exportar');
+      return;
+    }
+
+    try {
+      const doc = new jsPDF();
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const margin = 14;
+      const palette = {
+        primary: [59, 130, 246],
+        emerald: [16, 185, 129],
+        amber: [245, 158, 11],
+        purple: [99, 102, 241],
+        slate: [15, 23, 42],
+        gray: [55, 65, 81],
+        red: [239, 68, 68],
+        green: [34, 197, 94]
+      };
+
+      let yPos = 48;
+
+      const ensureSpace = (space = 20) => {
+        if (yPos + space > doc.internal.pageSize.getHeight() - 20) {
+          doc.addPage();
+          yPos = 20;
+        }
+      };
+
+      const drawSectionTitle = (title, color = palette.primary) => {
+        ensureSpace(16);
+        doc.setFillColor(...color);
+        doc.setTextColor(255, 255, 255);
+        doc.roundedRect(margin, yPos, pageWidth - margin * 2, 10, 2, 2, 'F');
+        doc.setFontSize(11);
+        doc.text(title, margin + 4, yPos + 7);
+        yPos += 16;
+        doc.setTextColor(...palette.slate);
+      };
+
+      const drawSummaryCard = (label, value, subtitle, x, y, width, color) => {
+        doc.setFillColor(...color);
+        doc.roundedRect(x, y, width, 28, 3, 3, 'F');
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(9);
+        doc.text(label.toUpperCase(), x + 4, y + 8);
+        doc.setFontSize(12);
+        doc.text(value, x + 4, y + 17);
+        if (subtitle) {
+          doc.setFontSize(9);
+          doc.text(subtitle, x + 4, y + 24);
+        }
+      };
+
+      // Hero header
+      doc.setFillColor(...palette.primary);
+      doc.rect(0, 0, pageWidth, 38, 'F');
+      doc.setFontSize(20);
+      doc.setTextColor(255, 255, 255);
+      doc.text('Relatório Financeiro', margin, 20);
+      doc.setFontSize(10);
+      
+      const periodText = period === 'custom' && startDate && endDate
+        ? `${formatDate(startDate)} a ${formatDate(endDate)}`
+        : period === 'month'
+        ? 'Este Mês'
+        : period === 'year'
+        ? 'Este Ano'
+        : 'Período selecionado';
+      
+      doc.text(`Gerado em: ${formatDate(new Date().toISOString())}`, margin, 30);
+      doc.setFontSize(9);
+      doc.text(`Período: ${periodText}`, margin, 36);
+
+      // Summary cards
+      const cardWidth = (pageWidth - margin * 2 - 8) / 3;
+      drawSummaryCard(
+        'Total Receitas',
+        formatCurrency(reportData.totalIncomes || 0),
+        `${reportData.incomeCount || 0} transações`,
+        margin,
+        yPos,
+        cardWidth,
+        palette.green
+      );
+      drawSummaryCard(
+        'Total Gastos',
+        formatCurrency(reportData.totalExpenses || 0),
+        `${reportData.expenseCount || 0} transações`,
+        margin + cardWidth + 4,
+        yPos,
+        cardWidth,
+        palette.red
+      );
+      drawSummaryCard(
+        'Saldo',
+        formatCurrency(reportData.balance || 0),
+        'Receitas - Gastos',
+        margin + (cardWidth + 4) * 2,
+        yPos,
+        cardWidth,
+        palette.primary
+      );
+      yPos += 42;
+
+      // Gastos por Categoria
+      if (categoryData.length > 0) {
+        drawSectionTitle('Gastos por Categoria', palette.purple);
+        const categoryRows = categoryData
+          .sort((a, b) => b.total - a.total)
+          .slice(0, 15)
+          .map(item => [
+            item.name,
+            formatCurrency(item.total),
+            reportData.totalExpenses > 0
+              ? `${((item.total / reportData.totalExpenses) * 100).toFixed(2)}%`
+              : '0%'
+          ]);
+        
+        autoTable(doc, {
+          startY: yPos,
+          head: [['Categoria', 'Valor', 'Participação']],
+          body: categoryRows,
+          styles: { fontSize: 8 },
+          headStyles: { fillColor: palette.purple },
+          alternateRowStyles: { fillColor: [248, 250, 252] },
+        });
+        yPos = doc.lastAutoTable.finalY + 12;
+      }
+
+      // Gastos por Conta
+      if (reportData.accountAnalysis && Object.keys(reportData.accountAnalysis).length > 0) {
+        drawSectionTitle('Gastos por Conta', palette.amber);
+        const accountRows = Object.entries(reportData.accountAnalysis)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 10)
+          .map(([account, total]) => [
+            account,
+            formatCurrency(total),
+            reportData.totalExpenses > 0
+              ? `${((total / reportData.totalExpenses) * 100).toFixed(2)}%`
+              : '0%'
+          ]);
+        
+        autoTable(doc, {
+          startY: yPos,
+          head: [['Conta', 'Valor', 'Participação']],
+          body: accountRows,
+          styles: { fontSize: 8 },
+          headStyles: { fillColor: palette.amber },
+          alternateRowStyles: { fillColor: [248, 250, 252] },
+        });
+        yPos = doc.lastAutoTable.finalY + 12;
+      }
+
+      // Evolução Mensal
+      if (monthlyData.length > 0) {
+        drawSectionTitle('Evolução Mensal', palette.emerald);
+        const monthNames = [
+          'Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun',
+          'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'
+        ];
+        const monthlyRows = monthlyData
+          .slice(0, 12)
+          .map(m => [
+            `${monthNames[m.month - 1]}/${m.year}`,
+            formatCurrency(m.incomes || 0),
+            formatCurrency(m.expenses || 0),
+            formatCurrency((m.incomes || 0) - (m.expenses || 0))
+          ]);
+        
+        autoTable(doc, {
+          startY: yPos,
+          head: [['Mês', 'Receitas', 'Gastos', 'Saldo']],
+          body: monthlyRows,
+          styles: { fontSize: 8 },
+          headStyles: { fillColor: palette.emerald },
+          alternateRowStyles: { fillColor: [248, 250, 252] },
+        });
+        yPos = doc.lastAutoTable.finalY + 12;
+      }
+
+      // Top Gastos
+      if (reportData.topExpenses && reportData.topExpenses.length > 0) {
+        drawSectionTitle('Maiores Gastos', palette.red);
+        const topExpensesRows = reportData.topExpenses
+          .slice(0, 15)
+          .map(expense => [
+            formatDate(expense.date),
+            expense.description,
+            expense.category || '-',
+            formatCurrency(expense.value || 0)
+          ]);
+        
+        autoTable(doc, {
+          startY: yPos,
+          head: [['Data', 'Descrição', 'Categoria', 'Valor']],
+          body: topExpensesRows,
+          styles: { fontSize: 8 },
+          headStyles: { fillColor: palette.red },
+          alternateRowStyles: { fillColor: [248, 250, 252] },
+        });
+        yPos = doc.lastAutoTable.finalY + 12;
+      }
+
+      // Detalhes Adicionais
+      drawSectionTitle('Detalhes Adicionais', palette.gray);
+      doc.setFontSize(10);
+      doc.text(`Total de transações: ${(reportData.incomeCount || 0) + (reportData.expenseCount || 0)}`, margin, yPos);
+      yPos += 6;
+      if (reportData.startDate && reportData.endDate) {
+        doc.text(`Período: ${formatDate(reportData.startDate)} a ${formatDate(reportData.endDate)}`, margin, yPos);
+        yPos += 6;
+      }
+      doc.text('Este relatório foi gerado automaticamente pelo Controle-se.', margin, yPos);
+
+      const fileName = period === 'custom' && startDate && endDate
+        ? `relatorio_${startDate}_${endDate}.pdf`
+        : `relatorio_${period}_${new Date().toISOString().split('T')[0]}.pdf`;
+      
+      doc.save(fileName);
+      toast.success('Relatório exportado como PDF!');
+    } catch (error) {
+      console.error('Erro ao exportar PDF:', error);
+      toast.error('Erro ao exportar PDF');
+    }
+  };
+
   const handleExport = async () => {
     if (!user) return;
+    
+    if (exportFormat === 'pdf') {
+      exportToPDF();
+      return;
+    }
+
     try {
       const data = {
         userId: user.id,
@@ -155,6 +392,7 @@ export default function Reports() {
             >
               <option value="csv">CSV</option>
               <option value="xlsx">XLSX</option>
+              <option value="pdf">PDF</option>
             </select>
             <button onClick={handleExport} className="btn-primary flex-1 sm:flex-none justify-center">
               <Download className="w-4 h-4" />

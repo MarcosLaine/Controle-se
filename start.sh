@@ -191,24 +191,6 @@ echo "✓ Limpeza concluída"
 echo ""
 echo "Compilando servidor Java..."
 
-# Verifica se os imports do HikariCP estão presentes
-if ! grep -q "import com.zaxxer.hikari.HikariConfig" src/BancoDadosPostgreSQL.java; then
-    echo "⚠ AVISO: Imports do HikariCP não encontrados em BancoDadosPostgreSQL.java"
-    echo "  Restaurando imports automaticamente..."
-    # Cria um arquivo temporário com os imports adicionados
-    awk '
-        /^import java.util.Properties;$/ {
-            print $0
-            print "import com.zaxxer.hikari.HikariConfig;"
-            print "import com.zaxxer.hikari.HikariDataSource;"
-            next
-        }
-        { print }
-    ' src/BancoDadosPostgreSQL.java > src/BancoDadosPostgreSQL.java.tmp && \
-    mv src/BancoDadosPostgreSQL.java.tmp src/BancoDadosPostgreSQL.java
-    echo "✓ Imports restaurados"
-fi
-
 # Encontra todos os arquivos Java (incluindo subdiretórios)
 JAVA_FILES=$(find src -name "*.java" ! -name "BancoDados.java" ! -name "MigracaoDados.java")
 

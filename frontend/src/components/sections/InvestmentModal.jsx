@@ -130,7 +130,44 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
     e.preventDefault();
     setLoading(true);
     try {
+      // Validações de campos obrigatórios
+      if (!variableForm.name || variableForm.name.trim() === '') {
+        toast.error('Informe o nome do ativo');
+        setLoading(false);
+        return;
+      }
+      
+      if (!variableForm.category || variableForm.category.trim() === '') {
+        toast.error('Selecione uma categoria');
+        setLoading(false);
+        return;
+      }
+      
+      if (!variableForm.quantity || variableForm.quantity.trim() === '') {
+        toast.error('Informe a quantidade');
+        setLoading(false);
+        return;
+      }
+      
+      if (!variableForm.accountId || variableForm.accountId === '') {
+        toast.error('Selecione uma conta de investimento');
+        setLoading(false);
+        return;
+      }
+      
+      if (!variableForm.date || variableForm.date.trim() === '') {
+        toast.error('Informe a data do aporte');
+        setLoading(false);
+        return;
+      }
+
       let quantity = parseFloatBrazilian(variableForm.quantity);
+      
+      if (isNaN(quantity) || quantity === 0) {
+        toast.error('A quantidade deve ser diferente de zero');
+        setLoading(false);
+        return;
+      }
       
       // If selling, quantity should be negative
       if (variableForm.operationType === 'SELL') {
@@ -153,7 +190,7 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
       const data = {
         ...variableForm,
         quantity: quantity,
-        brokerage: parseFloatBrazilian(variableForm.brokerage),
+        brokerage: parseFloatBrazilian(variableForm.brokerage) || 0,
         accountId: parseIntBrazilian(variableForm.accountId),
         userId: user.id
       };
@@ -161,24 +198,29 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
       // Backend expects "nome" not "symbol"
       const payload = {
         ...(investmentToEdit ? { id: investmentToEdit.idInvestimento } : {}),
-        nome: data.name,
+        nome: data.name.trim(),
         categoria: data.category,
         quantidade: data.quantity,
         dataAporte: data.date,
         corretagem: data.brokerage,
         accountId: data.accountId,
-        moeda: data.currency,
+        moeda: data.currency || 'BRL',
         userId: data.userId
       };
 
       if (manualPrice !== null) {
         payload.precoAporte = manualPrice;
+        // Se o preço é fornecido manualmente, também envia o nome do ativo
+        // O backend pode usar isso para identificar o ativo
+        if (data.name) {
+          payload.nomeAtivo = data.name;
+        }
       }
 
       const method = investmentToEdit ? 'PUT' : 'POST';
       const response = await api[method.toLowerCase()]('/investments', payload);
       
-      if (response.success) {
+      if (response && response.success) {
         if (investmentToEdit) {
           toast.success('Investimento atualizado com sucesso!');
         } else if (variableForm.operationType === 'SELL') {
@@ -186,13 +228,36 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
         } else {
           toast.success('Investimento criado com sucesso!');
         }
-        onSuccess();
+        if (onSuccess) {
+          await onSuccess();
+        }
         onClose();
         resetForms();
+      } else {
+        // Se a resposta não tem success: true, mostra erro
+        const errorMessage = response?.message || 'Erro ao criar investimento. Verifique os dados e tente novamente.';
+        toast.error(errorMessage);
       }
     } catch (error) {
-      console.error(error);
-      toast.error('Erro ao criar investimento');
+      console.error('Erro ao criar investimento:', error);
+      // O interceptor do axios já coloca a mensagem em error.message quando há erro HTTP
+      // Mas também verifica error.success caso o backend retorne success: false
+      let errorMessage = 'Erro ao criar investimento. Verifique os dados e tente novamente.';
+      
+      if (error?.message) {
+        errorMessage = error.message;
+      } else if (error?.response?.message) {
+        errorMessage = error.response.message;
+      } else if (typeof error === 'string') {
+        errorMessage = error;
+      }
+      
+      // Se o erro tem success: false, usa a mensagem do backend
+      if (error?.success === false && error?.message) {
+        errorMessage = error.message;
+      }
+      
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -254,15 +319,36 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
       const method = investmentToEdit ? 'PUT' : 'POST';
       const response = await api[method.toLowerCase()]('/investments', payload);
       
-      if (response.success) {
+      if (response && response.success) {
         toast.success(`Investimento de Renda Fixa ${investmentToEdit ? 'atualizado' : 'criado'}!`);
         onSuccess();
         onClose();
         resetForms();
+      } else {
+        // Se a resposta não tem success: true, mostra erro
+        const errorMessage = response?.message || 'Erro ao criar investimento. Verifique os dados e tente novamente.';
+        toast.error(errorMessage);
       }
     } catch (error) {
-      console.error(error);
-      toast.error('Erro ao criar investimento');
+      console.error('Erro ao criar investimento:', error);
+      // O interceptor do axios já coloca a mensagem em error.message quando há erro HTTP
+      // Mas também verifica error.success caso o backend retorne success: false
+      let errorMessage = 'Erro ao criar investimento. Verifique os dados e tente novamente.';
+      
+      if (error?.message) {
+        errorMessage = error.message;
+      } else if (error?.response?.message) {
+        errorMessage = error.response.message;
+      } else if (typeof error === 'string') {
+        errorMessage = error;
+      }
+      
+      // Se o erro tem success: false, usa a mensagem do backend
+      if (error?.success === false && error?.message) {
+        errorMessage = error.message;
+      }
+      
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
