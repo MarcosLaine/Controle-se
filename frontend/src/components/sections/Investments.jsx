@@ -357,9 +357,13 @@ export default function Investments() {
   
   // Ref para armazenar o AbortController da requisição atual
   const abortControllerRef = useRef(null);
+  // Ref para armazenar os investimentos mais recentes para acesso no callback
+  const investmentsRef = useRef(investments);
 
   const fetchEvolutionData = useCallback(async (periodOverride = chartPeriod) => {
-    if (!user || !investments.length) {
+    // Usa investmentsRef para ter acesso aos investimentos mais recentes
+    const currentInvestments = investmentsRef.current;
+    if (!user || !currentInvestments.length) {
       setEvolutionSeries(null);
       return;
     }
@@ -423,7 +427,7 @@ export default function Investments() {
         abortControllerRef.current = null;
       }
     }
-  }, [chartPeriod, investments.length, user]);
+  }, [chartPeriod, user]);
 
   useEffect(() => {
     if (user) {
@@ -434,6 +438,9 @@ export default function Investments() {
 
   useEffect(() => {
     if (!user) return;
+    // Atualiza a ref sempre que investments mudar
+    investmentsRef.current = investments;
+    
     if (!investments.length) {
       setEvolutionSeries(null);
       return;
@@ -454,7 +461,18 @@ export default function Investments() {
     try {
       const response = await api.get(`/investments?userId=${user.id}`);
       if (response && response.success) {
-        setInvestments(response.data || []);
+        const newInvestments = response.data || [];
+        setInvestments(newInvestments);
+        // Atualiza a ref imediatamente para que fetchEvolutionData tenha acesso aos dados mais recentes
+        investmentsRef.current = newInvestments;
+        
+        // Atualiza o gráfico imediatamente após carregar os investimentos
+        // Isso garante que novos investimentos apareçam no gráfico sem esperar o reset do cache
+        if (newInvestments.length > 0 && user) {
+          fetchEvolutionData(chartPeriod);
+        } else {
+          setEvolutionSeries(null);
+        }
       }
     } catch (error) {
       console.error('Erro ao carregar investimentos:', error);
