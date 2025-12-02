@@ -184,16 +184,9 @@ public class InvestmentEvolutionHandler implements HttpHandler {
 
         int txIndex = 0;
         
-        // CRÍTICO: Processa TODAS as transações ANTES do startDate para ter o estado inicial correto
-        // Isso garante que investimentos existentes antes do período do gráfico sejam considerados
-        // e evita valores zerados no início do gráfico
-        LocalDate firstTransactionDate = transactions.isEmpty() ? startDate : transactions.get(0).getDataAporte();
-        if (firstTransactionDate.isBefore(startDate)) {
-            // Há transações antes do startDate - processa todas até o startDate para ter estado inicial
-            for (LocalDate date = firstTransactionDate; date.isBefore(startDate); date = date.plusDays(1)) {
-                txIndex = consumeTransactions(transactions, assetState, txIndex, date);
-            }
-        }
+        // IMPORTANTE: NÃO processamos transações antes do startDate aqui
+        // O estado será construído incrementalmente durante o loop principal
+        // Isso garante que cada ponto mostre apenas investimentos que existiam até aquela data
         
         // OTIMIZAÇÃO CRÍTICA: Pre-busca cotações em batch para períodos grandes
         // Processa todas as transações até a data final em um estado temporário para identificar todos os ativos
@@ -454,28 +447,57 @@ public class InvestmentEvolutionHandler implements HttpHandler {
                 categoryCurrent.computeIfAbsent(category, k -> new ArrayList<>()).add(roundMoney(categoryCurrentMap.get(category)));
             } else {
                 // Categoria não tem ativos neste ponto específico
-                // Verifica se há investimentos desta categoria no assetState (pode não ter sido processado devido a dayStep > 1)
-                boolean hasInvestmentsInState = false;
+                // Calcula valores diretamente do assetState para esta categoria
+                // Isso garante que valores sejam calculados mesmo quando dayStep > 1
+                double categoryInvestedValue = 0.0;
+                double categoryCurrentValue = 0.0;
+                boolean hasActiveInvestments = false;
+                
                 for (AssetState state : assetState.values()) {
-                    if (category.equals(state.category != null ? state.category : "OUTROS") && !state.isEmpty()) {
-                        hasInvestmentsInState = true;
-                        break;
+                    String stateCategory = state.category != null ? state.category : "OUTROS";
+                    if (category.equals(stateCategory) && !state.isEmpty() && state.getTotalQuantity() > 0.000001) {
+                        hasActiveInvestments = true;
+                        categoryInvestedValue += state.getTotalCostBasis();
+                        
+                        // Calcula preço atual para esta data
+                        LocalDate priceLookupDate = dateForPricing;
+                        if (priceLookupInterval > 1) {
+                            long daysSinceEpoch = dateForPricing.toEpochDay();
+                            long roundedDays = (daysSinceEpoch / priceLookupInterval) * priceLookupInterval;
+                            priceLookupDate = LocalDate.ofEpochDay(roundedDays);
+                            if (priceLookupDate.isAfter(dateForPricing)) {
+                                priceLookupDate = priceLookupDate.minusDays(priceLookupInterval);
+                            }
+                        }
+                        
+                        double price = resolvePriceForDate(state, priceLookupDate, 
+                            priceLookupDate.equals(dateForPricing) ? dateTimeForPricing : null, 
+                            quoteService, priceCache);
+                        
+                        if (price <= 0 && state.getTotalQuantity() > 0) {
+                            if (state.lastKnownPrice > 0) {
+                                price = state.lastKnownPrice;
+                            } else {
+                                price = state.getAverageCost();
+                            }
+                            if (price > 0) {
+                                state.lastKnownPrice = price;
+                            }
+                        }
+                        
+                        categoryCurrentValue += state.getTotalQuantity() * price;
                     }
                 }
                 
                 List<Double> investedList = categoryInvested.computeIfAbsent(category, k -> new ArrayList<>());
                 List<Double> currentList = categoryCurrent.computeIfAbsent(category, k -> new ArrayList<>());
                 
-                if (hasInvestmentsInState && !investedList.isEmpty()) {
-                    // Há investimentos no estado mas não foram processados neste ponto (dayStep > 1)
-                    // Mantém o último valor conhecido para continuidade do gráfico
-                    double lastInvested = investedList.get(investedList.size() - 1);
-                    double lastCurrent = !currentList.isEmpty() ? currentList.get(currentList.size() - 1) : 0.0;
-                    investedList.add(roundMoney(lastInvested));
-                    currentList.add(roundMoney(lastCurrent));
+                if (hasActiveInvestments) {
+                    // Há investimentos ativos - usa valores calculados do estado
+                    investedList.add(roundMoney(categoryInvestedValue));
+                    currentList.add(roundMoney(categoryCurrentValue));
                 } else {
-                    // Não há investimentos no estado OU nunca teve valor antes
-                    // Adiciona zero (categoria foi vendida completamente ou ainda não apareceu)
+                    // Não há investimentos ativos - adiciona zero
                     investedList.add(0.0);
                     currentList.add(0.0);
                 }
