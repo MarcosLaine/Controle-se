@@ -330,12 +330,8 @@ public class InvestmentEvolutionHandler implements HttpHandler {
             AssetState state = entry.getValue();
             
             String category = state.category != null ? state.category : "OUTROS";
-            // IMPORTANTE: Marca a categoria como vista ANTES de calcular valores
-            allCategoriesSeen.add(category);
             
             // Verifica se o estado está vazio ANTES de processar
-            // IMPORTANTE: Verifica isEmpty DEPOIS de marcar a categoria como vista
-            // para garantir que a categoria seja rastreada mesmo se estiver vazia temporariamente
             boolean isEmpty = state.isEmpty();
             
             // Se o estado está vazio, verifica se há quantidade total (pode ter sido vendida parcialmente)
@@ -346,10 +342,16 @@ public class InvestmentEvolutionHandler implements HttpHandler {
                 isEmpty = false;
             }
             
-            // Se o estado está vazio, pula o cálculo mas mantém a categoria rastreada
+            // Se o estado está vazio, pula o cálculo
+            // IMPORTANTE: NÃO marca a categoria como vista se está vazia
+            // A categoria só será adicionada ao allCategoriesSeen quando tiver valores reais
             if (isEmpty) {
                 continue;
             }
+            
+            // IMPORTANTE: Marca a categoria como vista APENAS quando tem valores
+            // Isso garante que categorias só apareçam no gráfico quando realmente têm investimentos
+            allCategoriesSeen.add(category);
             
             double invested = state.getTotalCostBasis();
             totalInvested += invested;
@@ -422,42 +424,16 @@ public class InvestmentEvolutionHandler implements HttpHandler {
         investedPoints.add(roundMoney(totalInvested));
         currentPoints.add(roundMoney(totalCurrent));
         
-        // Adiciona valores por categoria
-        for (String category : allCategoriesSeen) {
-            if (categoryInvestedMap.containsKey(category)) {
-                // Categoria tem ativos neste ponto
-                categoryInvested.computeIfAbsent(category, k -> new ArrayList<>()).add(roundMoney(categoryInvestedMap.get(category)));
-                categoryCurrent.computeIfAbsent(category, k -> new ArrayList<>()).add(roundMoney(categoryCurrentMap.get(category)));
-            } else {
-                // Categoria não tem ativos neste ponto específico
-                // IMPORTANTE: Mantém o último valor conhecido em vez de zerar
-                // Isso evita que o gráfico mostre valores zerados quando há dayStep > 1
-                List<Double> investedList = categoryInvested.get(category);
-                List<Double> currentList = categoryCurrent.get(category);
-                
-                if (investedList != null && !investedList.isEmpty()) {
-                    // Usa o último valor conhecido
-                    double lastInvested = investedList.get(investedList.size() - 1);
-                    double lastCurrent = currentList != null && !currentList.isEmpty() 
-                        ? currentList.get(currentList.size() - 1) : 0.0;
-                    categoryInvested.computeIfAbsent(category, k -> new ArrayList<>()).add(roundMoney(lastInvested));
-                    categoryCurrent.computeIfAbsent(category, k -> new ArrayList<>()).add(roundMoney(lastCurrent));
-                } else {
-                    // Se nunca teve valor, adiciona zero
-                    categoryInvested.computeIfAbsent(category, k -> new ArrayList<>()).add(0.0);
-                    categoryCurrent.computeIfAbsent(category, k -> new ArrayList<>()).add(0.0);
-                }
-            }
-        }
-        
-        // IMPORTANTE: Processa categorias que apareceram pela primeira vez neste ponto
+        // PRIMEIRO: Processa categorias que apareceram pela primeira vez NESTE ponto com valores
+        // Isso garante que categorias novas sejam tratadas antes das categorias conhecidas
         for (String category : categoryInvestedMap.keySet()) {
             if (!allCategoriesSeen.contains(category)) {
-                // Nova categoria que apareceu pela primeira vez
+                // Nova categoria que apareceu pela primeira vez COM VALORES
                 allCategoriesSeen.add(category);
-                // Preenche com zeros para pontos anteriores
+                // Preenche com zeros para todos os pontos anteriores
                 List<Double> investedList = categoryInvested.computeIfAbsent(category, k -> new ArrayList<>());
                 List<Double> currentList = categoryCurrent.computeIfAbsent(category, k -> new ArrayList<>());
+                // Preenche com zeros até o tamanho atual (antes de adicionar este ponto)
                 while (investedList.size() < labels.size() - 1) {
                     investedList.add(0.0);
                 }
@@ -467,6 +443,42 @@ public class InvestmentEvolutionHandler implements HttpHandler {
                 // Adiciona o valor atual
                 investedList.add(roundMoney(categoryInvestedMap.get(category)));
                 currentList.add(roundMoney(categoryCurrentMap.get(category)));
+            }
+        }
+        
+        // SEGUNDO: Processa todas as categorias conhecidas (incluindo as que acabaram de ser adicionadas)
+        for (String category : allCategoriesSeen) {
+            if (categoryInvestedMap.containsKey(category)) {
+                // Categoria tem ativos neste ponto - adiciona o valor
+                categoryInvested.computeIfAbsent(category, k -> new ArrayList<>()).add(roundMoney(categoryInvestedMap.get(category)));
+                categoryCurrent.computeIfAbsent(category, k -> new ArrayList<>()).add(roundMoney(categoryCurrentMap.get(category)));
+            } else {
+                // Categoria não tem ativos neste ponto específico
+                // Verifica se há investimentos desta categoria no assetState (pode não ter sido processado devido a dayStep > 1)
+                boolean hasInvestmentsInState = false;
+                for (AssetState state : assetState.values()) {
+                    if (category.equals(state.category != null ? state.category : "OUTROS") && !state.isEmpty()) {
+                        hasInvestmentsInState = true;
+                        break;
+                    }
+                }
+                
+                List<Double> investedList = categoryInvested.computeIfAbsent(category, k -> new ArrayList<>());
+                List<Double> currentList = categoryCurrent.computeIfAbsent(category, k -> new ArrayList<>());
+                
+                if (hasInvestmentsInState && !investedList.isEmpty()) {
+                    // Há investimentos no estado mas não foram processados neste ponto (dayStep > 1)
+                    // Mantém o último valor conhecido para continuidade do gráfico
+                    double lastInvested = investedList.get(investedList.size() - 1);
+                    double lastCurrent = !currentList.isEmpty() ? currentList.get(currentList.size() - 1) : 0.0;
+                    investedList.add(roundMoney(lastInvested));
+                    currentList.add(roundMoney(lastCurrent));
+                } else {
+                    // Não há investimentos no estado OU nunca teve valor antes
+                    // Adiciona zero (categoria foi vendida completamente ou ainda não apareceu)
+                    investedList.add(0.0);
+                    currentList.add(0.0);
+                }
             }
         }
     }
