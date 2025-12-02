@@ -2,18 +2,17 @@ package server.handlers;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
-import server.model.Investimento;
-import server.repository.InvestmentRepository;
-import server.utils.RequestUtil;
-import server.utils.ResponseUtil;
-import server.services.QuoteService;
-
 import java.io.IOException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
+import server.model.Investimento;
+import server.repository.InvestmentRepository;
+import server.services.QuoteService;
+import server.utils.RequestUtil;
+import server.utils.ResponseUtil;
 
 public class InvestmentEvolutionHandler implements HttpHandler {
     private static final DateTimeFormatter LABEL_FORMATTER = DateTimeFormatter.ofPattern("dd/MM");
@@ -152,6 +151,8 @@ public class InvestmentEvolutionHandler implements HttpHandler {
         Map<String, List<Double>> categoryCurrent = new HashMap<>();
         // Set para rastrear todas as categorias que já apareceram (para garantir continuidade)
         Set<String> allCategoriesSeen = new HashSet<>();
+        // Mapa para rastrear o índice da primeira transação de cada categoria
+        Map<String, Integer> categoryFirstTransactionIndex = new HashMap<>();
 
         data.put("labels", labels);
         data.put("invested", investedPoints);
@@ -215,7 +216,7 @@ public class InvestmentEvolutionHandler implements HttpHandler {
                 LocalDate currentDate = cursor.toLocalDate();
                 txIndex = consumeTransactions(transactions, assetState, txIndex, currentDate);
                 accumulatePoint(assetState, quoteService, priceCache, labels, investedPoints, currentPoints,
-                    categoryInvested, categoryCurrent, allCategoriesSeen, cursor.format(HOURLY_LABEL_FORMATTER), currentDate, cursor, 1);
+                    categoryInvested, categoryCurrent, allCategoriesSeen, categoryFirstTransactionIndex, cursor.format(HOURLY_LABEL_FORMATTER), currentDate, cursor, 1);
                 cursor = cursor.plusHours(2);
             }
         } else {
@@ -237,7 +238,7 @@ public class InvestmentEvolutionHandler implements HttpHandler {
                 // O txIndex é mantido entre iterações para evitar reprocessar transações
                 txIndex = consumeTransactions(transactions, assetState, txIndex, date);
                 accumulatePoint(assetState, quoteService, priceCache, labels, investedPoints, currentPoints,
-                    categoryInvested, categoryCurrent, allCategoriesSeen, date.format(labelFormatter), date, date.atStartOfDay(), priceLookupInterval);
+                    categoryInvested, categoryCurrent, allCategoriesSeen, categoryFirstTransactionIndex, date.format(labelFormatter), date, date.atStartOfDay(), priceLookupInterval);
             }
             
             // GARANTIA CRÍTICA: Processa todas as transações restantes até a data final
@@ -255,12 +256,24 @@ public class InvestmentEvolutionHandler implements HttpHandler {
             List<Double> investedList = categoryInvested.getOrDefault(category, new ArrayList<>());
             List<Double> currentList = categoryCurrent.getOrDefault(category, new ArrayList<>());
             
-            // Preenche com zeros se a lista estiver menor que o esperado
+            // Garante que as listas tenham o tamanho correto
+            // Se a categoria apareceu depois do início, já deve ter zeros preenchidos
+            // Se não, preenche com zeros até o tamanho esperado
             while (investedList.size() < expectedSize) {
                 investedList.add(0.0);
             }
             while (currentList.size() < expectedSize) {
                 currentList.add(0.0);
+            }
+            
+            // CRÍTICO: Garante que valores antes da primeira transação sejam zero
+            // Isso é uma verificação de segurança caso algo tenha sido adicionado incorretamente
+            Integer firstTransactionIndex = categoryFirstTransactionIndex.get(category);
+            if (firstTransactionIndex != null && firstTransactionIndex > 0 && firstTransactionIndex < expectedSize) {
+                for (int i = 0; i < firstTransactionIndex; i++) {
+                    investedList.set(i, 0.0);
+                    currentList.set(i, 0.0);
+                }
             }
             
             Map<String, List<Double>> catData = new HashMap<>();
@@ -305,6 +318,7 @@ public class InvestmentEvolutionHandler implements HttpHandler {
         Map<String, List<Double>> categoryInvested,
         Map<String, List<Double>> categoryCurrent,
         Set<String> allCategoriesSeen,
+        Map<String, Integer> categoryFirstTransactionIndex,
         String label,
         LocalDate dateForPricing,
         LocalDateTime dateTimeForPricing,
@@ -313,50 +327,36 @@ public class InvestmentEvolutionHandler implements HttpHandler {
         double totalInvested = 0;
         double totalCurrent = 0;
         
-        // Mapas para rastrear valores por categoria
+        // Mapas para rastrear valores por categoria APENAS para estados cuja primeira transação já ocorreu
         Map<String, Double> categoryInvestedMap = new HashMap<>();
         Map<String, Double> categoryCurrentMap = new HashMap<>();
 
-        Iterator<Map.Entry<String, AssetState>> iterator = assetState.entrySet().iterator();
-        while (iterator.hasNext()) {
-            Map.Entry<String, AssetState> entry = iterator.next();
-            AssetState state = entry.getValue();
-            
-            String category = state.category != null ? state.category : "OUTROS";
-            
-            // Verifica se o estado está vazio ANTES de processar
-            boolean isEmpty = state.isEmpty();
-            
-            // Se o estado está vazio, verifica se há quantidade total (pode ter sido vendida parcialmente)
-            // Se há quantidade, não está vazio mesmo que as camadas estejam vazias (não deveria acontecer, mas protege)
-            if (isEmpty && state.getTotalQuantity() > 0.000001) {
-                // Estado inconsistente: isEmpty retorna true mas há quantidade
-                // Isso não deveria acontecer, mas se acontecer, processa normalmente
-                isEmpty = false;
-            }
-            
-            // Se o estado está vazio, pula o cálculo
-            // IMPORTANTE: NÃO marca a categoria como vista se está vazia
-            // A categoria só será adicionada ao allCategoriesSeen quando tiver valores reais
-            if (isEmpty) {
+        // Processa apenas estados cuja primeira transação já ocorreu
+        for (AssetState state : assetState.values()) {
+            // Pula estados vazios
+            if (state.isEmpty() || state.getTotalQuantity() <= 0.000001) {
                 continue;
             }
             
-            // IMPORTANTE: Marca a categoria como vista APENAS quando tem valores
-            // Isso garante que categorias só apareçam no gráfico quando realmente têm investimentos
-            allCategoriesSeen.add(category);
+            // CRÍTICO: Verifica se a primeira transação deste ativo já ocorreu na data atual
+            LocalDate firstTransactionDate = state.getFirstTransactionDate();
+            if (firstTransactionDate == null || firstTransactionDate.isAfter(dateForPricing)) {
+                // A primeira transação ainda não ocorreu nesta data, pula este estado
+                continue;
+            }
             
+            String category = state.category != null ? state.category : "OUTROS";
+            
+            // Calcula valores do investimento
             double invested = state.getTotalCostBasis();
             totalInvested += invested;
             
-            // Otimização: para períodos longos, reutiliza preço de dias próximos
+            // Calcula preço atual
             LocalDate priceLookupDate = dateForPricing;
             if (priceLookupInterval > 1) {
-                // Arredonda para o dia mais próximo que é múltiplo do intervalo
                 long daysSinceEpoch = dateForPricing.toEpochDay();
                 long roundedDays = (daysSinceEpoch / priceLookupInterval) * priceLookupInterval;
                 priceLookupDate = LocalDate.ofEpochDay(roundedDays);
-                // Se arredondou para frente, volta um intervalo
                 if (priceLookupDate.isAfter(dateForPricing)) {
                     priceLookupDate = priceLookupDate.minusDays(priceLookupInterval);
                 }
@@ -366,23 +366,19 @@ public class InvestmentEvolutionHandler implements HttpHandler {
                 priceLookupDate.equals(dateForPricing) ? dateTimeForPricing : null, 
                 quoteService, priceCache);
             
-            // Garante que o preço nunca seja 0 se há investimentos válidos
-            // Se o preço for 0 mas há quantidade, usa o último preço conhecido ou preço médio
             if (price <= 0 && state.getTotalQuantity() > 0) {
                 if (state.lastKnownPrice > 0) {
                     price = state.lastKnownPrice;
                 } else {
                     price = state.getAverageCost();
                 }
-                // Atualiza lastKnownPrice para que próximas datas usem esse valor
                 if (price > 0) {
                     state.lastKnownPrice = price;
                 }
             }
             
-            // Para períodos muito longos, usa interpolação linear entre pontos conhecidos
+            // Interpolação linear para períodos longos
             if (priceLookupInterval > 1 && !priceLookupDate.equals(dateForPricing)) {
-                // Tenta encontrar preços próximos para interpolar
                 LocalDate prevDate = priceLookupDate;
                 LocalDate nextDate = priceLookupDate.plusDays(priceLookupInterval);
                 
@@ -393,7 +389,6 @@ public class InvestmentEvolutionHandler implements HttpHandler {
                 Double nextPrice = priceCache.get(nextKey);
                 
                 if (prevPrice != null && nextPrice != null) {
-                    // Interpolação linear
                     long daysBetween = ChronoUnit.DAYS.between(prevDate, nextDate);
                     long daysFromPrev = ChronoUnit.DAYS.between(prevDate, dateForPricing);
                     if (daysBetween > 0) {
@@ -401,7 +396,7 @@ public class InvestmentEvolutionHandler implements HttpHandler {
                         price = prevPrice + (nextPrice - prevPrice) * ratio;
                     }
                 } else if (prevPrice != null) {
-                    price = prevPrice; // Usa o preço anterior se não tiver próximo
+                    price = prevPrice;
                 }
             }
             
@@ -413,93 +408,73 @@ public class InvestmentEvolutionHandler implements HttpHandler {
             categoryCurrentMap.put(category, categoryCurrentMap.getOrDefault(category, 0.0) + current);
         }
 
+        // Adiciona label e valores totais
         labels.add(label);
         investedPoints.add(roundMoney(totalInvested));
         currentPoints.add(roundMoney(totalCurrent));
         
-        // PRIMEIRO: Processa categorias que apareceram pela primeira vez NESTE ponto com valores
-        // Isso garante que categorias novas sejam tratadas antes das categorias conhecidas
+        int currentIndex = labels.size() - 1; // Índice do ponto atual (já adicionado)
+        
+        // Processa todas as categorias que têm valores neste ponto
         for (String category : categoryInvestedMap.keySet()) {
+            List<Double> investedList = categoryInvested.computeIfAbsent(category, k -> new ArrayList<>());
+            List<Double> currentList = categoryCurrent.computeIfAbsent(category, k -> new ArrayList<>());
+            
+            // Se é a primeira vez que esta categoria aparece, registra o índice e preenche zeros anteriores
             if (!allCategoriesSeen.contains(category)) {
-                // Nova categoria que apareceu pela primeira vez COM VALORES
                 allCategoriesSeen.add(category);
-                // Preenche com zeros para todos os pontos anteriores
-                List<Double> investedList = categoryInvested.computeIfAbsent(category, k -> new ArrayList<>());
-                List<Double> currentList = categoryCurrent.computeIfAbsent(category, k -> new ArrayList<>());
-                // Preenche com zeros até o tamanho atual (antes de adicionar este ponto)
-                while (investedList.size() < labels.size() - 1) {
+                categoryFirstTransactionIndex.put(category, currentIndex);
+                
+                // Preenche zeros desde o início até antes deste ponto
+                while (investedList.size() < currentIndex) {
                     investedList.add(0.0);
                 }
-                while (currentList.size() < labels.size() - 1) {
+                while (currentList.size() < currentIndex) {
                     currentList.add(0.0);
                 }
-                // Adiciona o valor atual
-                investedList.add(roundMoney(categoryInvestedMap.get(category)));
-                currentList.add(roundMoney(categoryCurrentMap.get(category)));
             }
+            
+            // Adiciona valores deste ponto
+            investedList.add(roundMoney(categoryInvestedMap.get(category)));
+            currentList.add(roundMoney(categoryCurrentMap.get(category)));
         }
         
-        // SEGUNDO: Processa todas as categorias conhecidas (incluindo as que acabaram de ser adicionadas)
+        // Para categorias conhecidas que não têm valores neste ponto (dayStep > 1 ou vendidas)
         for (String category : allCategoriesSeen) {
-            if (categoryInvestedMap.containsKey(category)) {
-                // Categoria tem ativos neste ponto - adiciona o valor
-                categoryInvested.computeIfAbsent(category, k -> new ArrayList<>()).add(roundMoney(categoryInvestedMap.get(category)));
-                categoryCurrent.computeIfAbsent(category, k -> new ArrayList<>()).add(roundMoney(categoryCurrentMap.get(category)));
-            } else {
-                // Categoria não tem ativos neste ponto específico
-                // Calcula valores diretamente do assetState para esta categoria
-                // Isso garante que valores sejam calculados mesmo quando dayStep > 1
-                double categoryInvestedValue = 0.0;
-                double categoryCurrentValue = 0.0;
-                boolean hasActiveInvestments = false;
+            if (!categoryInvestedMap.containsKey(category)) {
+                List<Double> investedList = categoryInvested.computeIfAbsent(category, k -> new ArrayList<>());
+                List<Double> currentList = categoryCurrent.computeIfAbsent(category, k -> new ArrayList<>());
                 
+                // Verifica se há estados desta categoria com transações futuras
+                boolean hasFutureTransactions = false;
                 for (AssetState state : assetState.values()) {
                     String stateCategory = state.category != null ? state.category : "OUTROS";
-                    if (category.equals(stateCategory) && !state.isEmpty() && state.getTotalQuantity() > 0.000001) {
-                        hasActiveInvestments = true;
-                        categoryInvestedValue += state.getTotalCostBasis();
-                        
-                        // Calcula preço atual para esta data
-                        LocalDate priceLookupDate = dateForPricing;
-                        if (priceLookupInterval > 1) {
-                            long daysSinceEpoch = dateForPricing.toEpochDay();
-                            long roundedDays = (daysSinceEpoch / priceLookupInterval) * priceLookupInterval;
-                            priceLookupDate = LocalDate.ofEpochDay(roundedDays);
-                            if (priceLookupDate.isAfter(dateForPricing)) {
-                                priceLookupDate = priceLookupDate.minusDays(priceLookupInterval);
-                            }
+                    if (category.equals(stateCategory) && !state.isEmpty()) {
+                        LocalDate firstTxDate = state.getFirstTransactionDate();
+                        if (firstTxDate != null && firstTxDate.isAfter(dateForPricing)) {
+                            hasFutureTransactions = true;
+                            break;
                         }
-                        
-                        double price = resolvePriceForDate(state, priceLookupDate, 
-                            priceLookupDate.equals(dateForPricing) ? dateTimeForPricing : null, 
-                            quoteService, priceCache);
-                        
-                        if (price <= 0 && state.getTotalQuantity() > 0) {
-                            if (state.lastKnownPrice > 0) {
-                                price = state.lastKnownPrice;
-                            } else {
-                                price = state.getAverageCost();
-                            }
-                            if (price > 0) {
-                                state.lastKnownPrice = price;
-                            }
-                        }
-                        
-                        categoryCurrentValue += state.getTotalQuantity() * price;
                     }
                 }
                 
-                List<Double> investedList = categoryInvested.computeIfAbsent(category, k -> new ArrayList<>());
-                List<Double> currentList = categoryCurrent.computeIfAbsent(category, k -> new ArrayList<>());
-                
-                if (hasActiveInvestments) {
-                    // Há investimentos ativos - usa valores calculados do estado
-                    investedList.add(roundMoney(categoryInvestedValue));
-                    currentList.add(roundMoney(categoryCurrentValue));
-                } else {
-                    // Não há investimentos ativos - adiciona zero
+                // Se há transações futuras, a categoria ainda não apareceu - adiciona zero
+                if (hasFutureTransactions) {
                     investedList.add(0.0);
                     currentList.add(0.0);
+                } else {
+                    // Categoria já apareceu mas não tem valores neste ponto
+                    // Mantém último valor se existir (continuidade para dayStep > 1)
+                    if (!investedList.isEmpty() && investedList.get(investedList.size() - 1) > 0.0) {
+                        double lastInvested = investedList.get(investedList.size() - 1);
+                        double lastCurrent = !currentList.isEmpty() ? currentList.get(currentList.size() - 1) : 0.0;
+                        investedList.add(roundMoney(lastInvested));
+                        currentList.add(roundMoney(lastCurrent));
+                    } else {
+                        // Nunca teve valores ou foi vendida - adiciona zero
+                        investedList.add(0.0);
+                        currentList.add(0.0);
+                    }
                 }
             }
         }
@@ -789,6 +764,20 @@ public class InvestmentEvolutionHandler implements HttpHandler {
                 return 0.0;
             }
             return getTotalCostBasis() / qty;
+        }
+        
+        /**
+         * Retorna a data da primeira transação (compra) deste ativo.
+         * Retorna null se não houver camadas.
+         */
+        LocalDate getFirstTransactionDate() {
+            if (layers.isEmpty()) {
+                return null;
+            }
+            return layers.stream()
+                .map(layer -> layer.aporteDate)
+                .min(LocalDate::compareTo)
+                .orElse(null);
         }
     }
 
