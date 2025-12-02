@@ -150,25 +150,48 @@ public class LoginHandler implements HttpHandler {
     }
     
     private String getClientIp(HttpExchange exchange) {
+        // Tenta obter do header X-Forwarded-For (útil para proxies/load balancers)
         String forwardedFor = exchange.getRequestHeaders().getFirst("X-Forwarded-For");
         if (forwardedFor != null && !forwardedFor.isEmpty()) {
             String[] ips = forwardedFor.split(",");
             if (ips.length > 0) {
-                return ips[0].trim();
+                String ip = ips[0].trim();
+                if (!ip.isEmpty() && !ip.equals("unknown")) {
+                    // Normaliza localhost para IPv4
+                    if (ip.equals("::1") || ip.equals("0:0:0:0:0:0:0:1")) {
+                        return "127.0.0.1";
+                    }
+                    return ip;
+                }
             }
         }
         
+        // Tenta obter do header X-Real-IP
         String realIp = exchange.getRequestHeaders().getFirst("X-Real-IP");
         if (realIp != null && !realIp.isEmpty()) {
-            return realIp.trim();
+            String ip = realIp.trim();
+            if (!ip.isEmpty() && !ip.equals("unknown")) {
+                // Normaliza localhost para IPv4
+                if (ip.equals("::1") || ip.equals("0:0:0:0:0:0:0:1")) {
+                    return "127.0.0.1";
+                }
+                return ip;
+            }
         }
         
+        // Fallback para o IP remoto da conexão
         InetSocketAddress remoteAddress = exchange.getRemoteAddress();
         if (remoteAddress != null) {
-            return remoteAddress.getAddress().getHostAddress();
+            String ip = remoteAddress.getAddress().getHostAddress();
+            // Normaliza localhost para IPv4
+            if (ip.equals("::1") || ip.equals("0:0:0:0:0:0:0:1")) {
+                return "127.0.0.1";
+            }
+            return ip;
         }
         
-        return "unknown";
+        // Último recurso: retorna localhost em vez de "unknown"
+        return "127.0.0.1";
     }
 }
 

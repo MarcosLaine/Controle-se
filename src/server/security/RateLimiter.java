@@ -17,10 +17,11 @@ public class RateLimiter {
     private static final int DEFAULT_MAX_REQUESTS_AUTH = 5; // Login/Register: 5 por minuto
     private static final long DEFAULT_WINDOW_MS_AUTH = 60 * 1000; // 1 minuto
     
-    // Limites mais restritivos para endpoints de autenticação
-    // Aumentado para permitir que o CAPTCHA apareça (após 3 tentativas) antes de bloquear
-    private static final int MAX_REQUESTS_LOGIN = 10; // 10 tentativas por minuto (permite CAPTCHA aparecer)
-    private static final int MAX_REQUESTS_REGISTER = 5; // 5 registros por minuto
+    // Limites para endpoints de autenticação
+    // Aumentado significativamente para produção onde múltiplos usuários podem compartilhar o mesmo IP (proxy/load balancer)
+    // O LoginAttemptTracker ainda protege contra brute force por email/IP individual
+    private static final int MAX_REQUESTS_LOGIN = 100; // 100 tentativas por minuto (permite múltiplos usuários legítimos)
+    private static final int MAX_REQUESTS_REGISTER = 20; // 20 registros por minuto
     
     // Armazena requisições por IP
     private final ConcurrentHashMap<String, RequestWindow> requestWindows = new ConcurrentHashMap<>();
@@ -44,7 +45,12 @@ public class RateLimiter {
      */
     public boolean allowRequest(String ipAddress, String endpoint) {
         if (ipAddress == null || ipAddress.isEmpty()) {
-            ipAddress = "unknown";
+            ipAddress = "127.0.0.1"; // Usa localhost em vez de "unknown" para evitar compartilhamento
+        }
+        
+        // Normaliza localhost IPv6 para IPv4
+        if (ipAddress.equals("::1") || ipAddress.equals("0:0:0:0:0:0:0:1")) {
+            ipAddress = "127.0.0.1";
         }
         
         // Determina limites baseado no endpoint
