@@ -17,7 +17,7 @@ RUN npm ci
 # Copy source code
 COPY frontend/ ./
 
-# Build frontend (creates /app/dist because of vite config)
+# Build frontend (vite config builds to ../dist relative to frontend dir)
 RUN npm run build
 
 # ==========================================
@@ -40,7 +40,8 @@ COPY src/ src/
 RUN mkdir -p bin
 
 # Compile Java Code
-RUN javac -cp "src:lib/postgresql.jar:lib/hikaricp.jar:lib/slf4j-api.jar" -d bin $(find src -name "*.java")
+# Compile all Java files, javac will resolve dependencies automatically
+RUN javac -cp "lib/postgresql.jar:lib/hikaricp.jar:lib/slf4j-api.jar" -d bin -sourcepath src $(find src -name "*.java")
 
 # ==========================================
 # Stage 3: Runtime Environment
@@ -59,7 +60,7 @@ COPY --from=backend-build /app/bin ./bin
 COPY --from=backend-build /app/lib ./lib
 
 # Copy built frontend static files to dist/
-# NOTE: vite config builds to ../dist relative to frontend dir, so it is at /app/dist
+# NOTE: vite config builds to ../dist relative to /app/frontend (WORKDIR), so output is at /app/dist
 COPY --from=frontend-build /app/dist ./dist
 
 # Expose the port
