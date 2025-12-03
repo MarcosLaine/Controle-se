@@ -484,7 +484,7 @@ public class ExpenseRepository {
             conn.setAutoCommit(false);
             
             String sqlBuscar = "SELECT id_gasto, descricao, valor, data, frequencia, id_usuario, id_conta, " +
-                              "proxima_recorrencia, id_gasto_original, ativo " +
+                              "proxima_recorrencia, id_gasto_original, ativo, id_grupo_parcela, numero_parcela, total_parcelas " +
                               "FROM gastos WHERE id_gasto = ?";
             Gasto gasto = null;
             try (PreparedStatement pstmt = conn.prepareStatement(sqlBuscar)) {
@@ -494,41 +494,66 @@ public class ExpenseRepository {
             }
             
             if (gasto == null) throw new IllegalArgumentException("Gasto não encontrado");
-            if (!gasto.isAtivo()) throw new IllegalArgumentException("Gasto já foi excluído");
             
-            String sql = "UPDATE gastos SET ativo = FALSE WHERE id_gasto = ?";
-            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
-                pstmt.setInt(1, idGasto);
-                pstmt.executeUpdate();
+            // Permite excluir parcelas mesmo que estejam pagas (inativas)
+            // Mas não permite excluir gastos já excluídos que não são parcelas
+            boolean isParcela = gasto.isParcela();
+            if (!gasto.isAtivo() && !isParcela) {
+                throw new IllegalArgumentException("Gasto já foi excluído");
+            }
+            
+            // Se for uma parcela paga, precisa reverter o estorno que foi feito ao cartão
+            boolean parcelaPaga = isParcela && !gasto.isAtivo();
+            
+            // Se já está inativa (parcela paga), deleta fisicamente
+            // Se está ativa, marca como inativa (exclusão lógica)
+            if (parcelaPaga) {
+                // Para parcelas pagas, deleta fisicamente do banco
+                String sqlDelete = "DELETE FROM gastos WHERE id_gasto = ?";
+                try (PreparedStatement pstmt = conn.prepareStatement(sqlDelete)) {
+                    pstmt.setInt(1, idGasto);
+                    pstmt.executeUpdate();
+                }
+            } else {
+                // Para gastos ativos, marca como inativo (exclusão lógica)
+                String sql = "UPDATE gastos SET ativo = FALSE WHERE id_gasto = ?";
+                try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                    pstmt.setInt(1, idGasto);
+                    pstmt.executeUpdate();
+                }
             }
             
             // Verifica se a conta é cartão de crédito
-            AccountRepository accountRepo = new AccountRepository();
-            Conta conta = accountRepo.buscarConta(gasto.getIdConta());
-            if (conta != null) {
-                String tipoConta = conta.getTipo() != null ? conta.getTipo().toLowerCase().trim() : "";
-                boolean isCartao = tipoConta.contains("cartão") || tipoConta.contains("cartao") || 
-                                  tipoConta.contains("credito") || tipoConta.contains("crédito");
-                
-                // Se não for cartão de crédito, estorna o saldo
-                // Se for cartão, apenas retorna o saldo (aumenta o limite disponível)
-                if (!isCartao) {
-                    String sqlConta = "UPDATE contas SET saldo_atual = saldo_atual + ? WHERE id_conta = ?";
-                    try (PreparedStatement pstmt = conn.prepareStatement(sqlConta)) {
-                        pstmt.setDouble(1, gasto.getValor());
-                        pstmt.setInt(2, gasto.getIdConta());
-                        pstmt.executeUpdate();
-                    }
-                } else {
-                    // Para cartão de crédito, apenas retorna o saldo (aumenta o limite disponível)
-                    String sqlConta = "UPDATE contas SET saldo_atual = saldo_atual + ? WHERE id_conta = ?";
-                    try (PreparedStatement pstmt = conn.prepareStatement(sqlConta)) {
-                        pstmt.setDouble(1, gasto.getValor());
-                        pstmt.setInt(2, gasto.getIdConta());
-                        pstmt.executeUpdate();
+            // Para parcelas pagas, não reverte o estorno - apenas remove o registro
+            // Para gastos normais ativos, estorna o saldo normalmente
+            if (!parcelaPaga) {
+                AccountRepository accountRepo = new AccountRepository();
+                Conta conta = accountRepo.buscarConta(gasto.getIdConta());
+                if (conta != null) {
+                    String tipoConta = conta.getTipo() != null ? conta.getTipo().toLowerCase().trim() : "";
+                    boolean isCartao = tipoConta.contains("cartão") || tipoConta.contains("cartao") || 
+                                      tipoConta.contains("credito") || tipoConta.contains("crédito");
+                    
+                    // Para gastos normais (não parcelas pagas), estorna o saldo normalmente
+                    if (!isCartao) {
+                        String sqlConta = "UPDATE contas SET saldo_atual = saldo_atual + ? WHERE id_conta = ?";
+                        try (PreparedStatement pstmt = conn.prepareStatement(sqlConta)) {
+                            pstmt.setDouble(1, gasto.getValor());
+                            pstmt.setInt(2, gasto.getIdConta());
+                            pstmt.executeUpdate();
+                        }
+                    } else {
+                        // Para cartão de crédito, apenas retorna o saldo (aumenta o limite disponível)
+                        String sqlConta = "UPDATE contas SET saldo_atual = saldo_atual + ? WHERE id_conta = ?";
+                        try (PreparedStatement pstmt = conn.prepareStatement(sqlConta)) {
+                            pstmt.setDouble(1, gasto.getValor());
+                            pstmt.setInt(2, gasto.getIdConta());
+                            pstmt.executeUpdate();
+                        }
                     }
                 }
             }
+            // Se for parcela paga, não faz nada com o saldo - apenas remove o registro
             
             conn.commit();
         } catch (SQLException e) {
