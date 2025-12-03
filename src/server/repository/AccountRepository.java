@@ -258,15 +258,17 @@ public class AccountRepository {
                 throw new IllegalArgumentException("Conta não encontrada");
             }
             
-            // Exclui logicamente todas as receitas ativas que referenciam esta conta
-            String sqlReceitas = "UPDATE receitas SET ativo = FALSE WHERE id_conta = ? AND ativo = TRUE";
+            // Deleta fisicamente todas as receitas que referenciam esta conta
+            // (tanto ativas quanto inativas, pois a constraint RESTRICT impede a exclusão da conta)
+            String sqlReceitas = "DELETE FROM receitas WHERE id_conta = ?";
             try (PreparedStatement pstmt = conn.prepareStatement(sqlReceitas)) {
                 pstmt.setInt(1, idConta);
                 pstmt.executeUpdate();
             }
             
-            // Exclui logicamente todos os gastos ativos que referenciam esta conta
-            String sqlGastos = "UPDATE gastos SET ativo = FALSE WHERE id_conta = ? AND ativo = TRUE";
+            // Deleta fisicamente todos os gastos que referenciam esta conta
+            // (tanto ativos quanto inativos, pois a constraint RESTRICT impede a exclusão da conta)
+            String sqlGastos = "DELETE FROM gastos WHERE id_conta = ?";
             try (PreparedStatement pstmt = conn.prepareStatement(sqlGastos)) {
                 pstmt.setInt(1, idConta);
                 pstmt.executeUpdate();
@@ -279,10 +281,11 @@ public class AccountRepository {
                 pstmt.executeUpdate();
             }
             
-            // Exclui logicamente todos os grupos de parcelas ativos que referenciam esta conta
+            // Deleta fisicamente todos os grupos de parcelas que referenciam esta conta
+            // (tanto ativos quanto inativos, pois a constraint RESTRICT impede a exclusão da conta)
             // (ignora se a tabela não existir, pois pode ser uma instalação antiga)
             try {
-                String sqlInstallmentGroups = "UPDATE installment_groups SET ativo = FALSE WHERE id_conta = ? AND ativo = TRUE";
+                String sqlInstallmentGroups = "DELETE FROM installment_groups WHERE id_conta = ?";
                 try (PreparedStatement pstmt = conn.prepareStatement(sqlInstallmentGroups)) {
                     pstmt.setInt(1, idConta);
                     pstmt.executeUpdate();
