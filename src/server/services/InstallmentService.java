@@ -115,11 +115,14 @@ public class InstallmentService {
                 Conta conta = accountRepository.buscarConta(idConta);
                 if (conta != null && conta.isCartaoCredito()) {
                     try {
+                        // Marca a parcela como paga e estorna o saldo ao cartão de crédito
                         expenseRepository.marcarParcelaComoPaga(idGasto);
-                        LOGGER.info("Parcela " + i + "/" + numeroParcelas + " marcada automaticamente como paga (data passada: " + dataParcela + ")");
+                        LOGGER.info("Parcela " + i + "/" + numeroParcelas + " marcada automaticamente como paga (data passada: " + dataParcela + ") - Valor estornado: R$ " + valorParcela);
                     } catch (Exception e) {
-                        LOGGER.warning("Erro ao marcar parcela " + i + " como paga automaticamente: " + e.getMessage());
-                        // Não interrompe o processo, apenas loga o erro
+                        LOGGER.severe("ERRO CRÍTICO ao marcar parcela " + i + " como paga automaticamente: " + e.getMessage());
+                        e.printStackTrace();
+                        // Re-lança a exceção para garantir que o problema seja visível
+                        throw new RuntimeException("Erro ao processar parcela passada automaticamente: " + e.getMessage(), e);
                     }
                 }
             }

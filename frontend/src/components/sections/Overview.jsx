@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ArrowUp, ArrowDown, Scale, Landmark, TrendingUp, Info, CreditCard } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useData } from '../../contexts/DataContext';
 import api from '../../services/api';
+import axios from 'axios';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import SummaryCard from '../common/SummaryCard';
 import Modal from '../common/Modal';
@@ -37,6 +38,9 @@ export default function Overview() {
   const [recentTransactions, setRecentTransactions] = useState([]);
   const [showSaldoInfo, setShowSaldoInfo] = useState(false);
   const [showPatrimonioInfo, setShowPatrimonioInfo] = useState(false);
+  
+  // Ref para armazenar o AbortController da requisição atual
+  const abortControllerRef = useRef(null);
 
   useEffect(() => {
     if (!user) return;
@@ -56,36 +60,109 @@ export default function Overview() {
         return;
       }
 
+      // Cancela a requisição anterior se ainda estiver em andamento
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+
+      // Cria um novo AbortController para esta requisição
+      const abortController = new AbortController();
+      abortControllerRef.current = abortController;
+
       setLoading(true);
       try {
         const [overviewRes, transactionsRes] = await Promise.all([
           fetchData(
             cacheKey,
             async () => {
-              const res = await api.get(`/dashboard/overview?userId=${user.id}`);
+              const res = await api.get(`/dashboard/overview?userId=${user.id}`, {
+                signal: abortController.signal
+              });
               return res.success ? res.data : null;
             }
           ),
           fetchData(
             transactionsKey,
             async () => {
-              const res = await api.get(`/transactions/recent?userId=${user.id}`);
+              const res = await api.get(`/transactions/recent?userId=${user.id}`, {
+                signal: abortController.signal
+              });
               return res.success ? (res.data || []) : [];
             }
           ),
         ]);
 
-        if (overviewRes) setOverviewData(overviewRes);
-        if (transactionsRes) setRecentTransactions(transactionsRes);
+        // Verifica se a requisição foi cancelada antes de processar a resposta
+        if (abortController.signal.aborted) {
+          return;
+        }
+
+        if (overviewRes) {
+          setOverviewData(overviewRes);
+        } else {
+          // Se não há dados, define um objeto vazio para evitar tela em branco
+          setOverviewData({
+            totalIncome: 0,
+            totalExpense: 0,
+            balance: 0,
+            netWorth: 0,
+            categoryBreakdown: []
+          });
+        }
+        if (transactionsRes) {
+          setRecentTransactions(transactionsRes);
+        } else {
+          setRecentTransactions([]);
+        }
       } catch (error) {
+        // Ignora erros de cancelamento
+        if (axios.isCancel && axios.isCancel(error)) {
+          return;
+        }
+        if (error.name === 'CanceledError' || error.name === 'AbortError') {
+          return;
+        }
+        
+        // Verifica se a requisição foi cancelada antes de processar o erro
+        if (abortController.signal.aborted) {
+          return;
+        }
+        
         console.error('Erro ao carregar dados:', error);
-      } finally {
+        // Define valores padrão em caso de erro para evitar tela em branco
+        setOverviewData({
+          totalIncome: 0,
+          totalExpense: 0,
+          balance: 0,
+          netWorth: 0,
+          categoryBreakdown: []
+        });
+        setRecentTransactions([]);
+        // Garante que o loading seja atualizado mesmo em caso de erro
         setLoading(false);
+      } finally {
+        // Só atualiza o loading se a requisição não foi cancelada
+        if (!abortController.signal.aborted) {
+          setLoading(false);
+        }
+        // Limpa a referência se esta ainda é a requisição atual
+        if (abortControllerRef.current === abortController) {
+          abortControllerRef.current = null;
+        }
       }
     };
 
     loadData();
-  }, [user, fetchData, getCachedData]);
+    
+    // Cleanup: cancela requisições quando o componente é desmontado
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
 
   const categoryChartData = overviewData?.categoryBreakdown
     ? {
@@ -176,6 +253,30 @@ export default function Overview() {
           type="default"
         />
       </div>
+
+      {/* Card da Próxima Fatura */}
+      {overviewData?.valorFaturaAPagar !== undefined && overviewData?.valorFaturaAPagar !== null && overviewData.valorFaturaAPagar > 0 && (
+        <div className="card border-l-4 border-orange-500 bg-orange-50 dark:bg-orange-900/10">
+          <div className="flex items-center justify-between">
+            <div className="flex-1">
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">
+                Próxima Fatura em Aberto
+              </p>
+              <p className="text-2xl font-bold text-orange-600 dark:text-orange-400">
+                {formatCurrency(overviewData.valorFaturaAPagar)}
+              </p>
+              {overviewData.cartoesInfo && (
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Vencimento: {formatDate(overviewData.cartoesInfo.proximoPagamento)}
+                </p>
+              )}
+            </div>
+            <div className="w-12 h-12 bg-orange-100 dark:bg-orange-900/30 rounded-full flex items-center justify-center ml-4">
+              <CreditCard className="w-6 h-6 text-orange-600 dark:text-orange-400" />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Cartão de Crédito Agregado */}
       {(overviewData?.valorFaturaAPagar !== undefined && overviewData?.valorFaturaAPagar !== null) && (

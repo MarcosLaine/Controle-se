@@ -63,7 +63,7 @@ public class DatabaseConnection {
 
         // Configurações adicionais na URL para melhorar estabilidade da conexão
         String jdbcUrl = String.format(
-            "jdbc:postgresql://%s:%s/%s?sslmode=%s&socketTimeout=30&tcpKeepAlive=true&connectTimeout=10",
+            "jdbc:postgresql://%s:%s/%s?sslmode=%s&socketTimeout=60&tcpKeepAlive=true&connectTimeout=10",
             host, port, database, sslMode
         );
 
@@ -76,11 +76,13 @@ public class DatabaseConnection {
         config.setMaximumPoolSize(5);
         config.setMinimumIdle(2);
         
-        // Timeouts mais robustos para evitar conexões quebradas
-        config.setConnectionTimeout(30000); // 30 seconds (aumentado de 20s)
+        // Timeouts ajustados para evitar conexões quebradas
+        // maxLifetime deve ser menor que qualquer timeout do servidor PostgreSQL
+        // Recomendação: 25 minutos (muitos servidores cloud têm timeout de 30min)
+        config.setConnectionTimeout(30000); // 30 seconds
         config.setValidationTimeout(5000); // 5 seconds para validar conexão
-        config.setIdleTimeout(600000); // 10 minutes (aumentado de 5min)
-        config.setMaxLifetime(2700000); // 45 minutes (aumentado de 30min, menor que timeout do banco)
+        config.setIdleTimeout(600000); // 10 minutes
+        config.setMaxLifetime(1500000); // 25 minutes (reduzido de 45min para evitar timeouts do servidor)
         
         // Validação de conexão antes de usar
         config.setConnectionTestQuery("SELECT 1");
@@ -96,20 +98,44 @@ public class DatabaseConnection {
     }
 
     public Connection getConnection() throws SQLException {
-        try {
-            return dataSource.getConnection();
-        } catch (SQLException e) {
-            // Se o pool estiver fechado ou houver erro crítico, tenta reinicializar
-            if (dataSource == null || dataSource.isClosed()) {
-                synchronized (this) {
-                    if (dataSource == null || dataSource.isClosed()) {
-                        initializeDataSource();
-                        return dataSource.getConnection();
+        int maxRetries = 2;
+        for (int attempt = 0; attempt < maxRetries; attempt++) {
+            try {
+                Connection conn = dataSource.getConnection();
+                // Valida a conexão antes de retornar
+                if (conn.isValid(2)) {
+                    return conn;
+                } else {
+                    // Conexão inválida, tenta fechar e pegar outra
+                    try { conn.close(); } catch (SQLException ignored) {}
+                }
+            } catch (SQLException e) {
+                // Se o pool estiver fechado ou houver erro crítico, tenta reinicializar
+                if (dataSource == null || dataSource.isClosed()) {
+                    synchronized (this) {
+                        if (dataSource == null || dataSource.isClosed()) {
+                            initializeDataSource();
+                            continue; // Tenta novamente com o pool reinicializado
+                        }
                     }
                 }
+                
+                // Se for erro de conexão quebrada e ainda tiver tentativas, tenta novamente
+                if (attempt < maxRetries - 1 && 
+                    (e.getMessage() != null && 
+                     (e.getMessage().contains("broken") || 
+                      e.getMessage().contains("Connection reset") ||
+                      e.getMessage().contains("closed")))) {
+                    // Pequeno delay antes de tentar novamente
+                    try { Thread.sleep(100); } catch (InterruptedException ignored) {}
+                    continue;
+                }
+                
+                throw e;
             }
-            throw e;
         }
+        // Se chegou aqui, todas as tentativas falharam
+        throw new SQLException("Não foi possível obter uma conexão válida após " + maxRetries + " tentativas");
     }
     
     /**

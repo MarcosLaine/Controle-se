@@ -56,7 +56,10 @@ public class OverviewHandler implements HttpHandler {
                 CacheUtil.setCached(cacheKeyExpense, totalExpense);
             }
             if (balance == null) {
-                balance = accountRepository.calcularSaldoContasUsuarioSemInvestimento(userId);
+                // Saldo = (Conta Corrente + Dinheiro + Poupança) - Gastos
+                // Garante que totalExpense não seja null
+                double gastos = totalExpense != null ? totalExpense : expenseRepository.calcularTotalGastosUsuario(userId);
+                balance = accountRepository.calcularSaldoDisponivel(userId, gastos);
                 CacheUtil.setCached(cacheKeyBalance, balance);
             }
             if (totalCreditoDisponivel == null) {

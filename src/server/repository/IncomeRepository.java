@@ -360,7 +360,17 @@ public class IncomeRepository {
     }
 
     public double calcularTotalReceitasUsuario(int idUsuario) {
-        String sql = "SELECT COALESCE(SUM(valor), 0) as total FROM receitas WHERE id_usuario = ? AND ativo = TRUE";
+        // Exclui pagamentos de faturas (receitas em cartão de crédito que não são parcelas)
+        // e receitas do sistema (com prefixo [SISTEMA])
+        String sql = "SELECT COALESCE(SUM(r.valor), 0) as total " +
+                    "FROM receitas r " +
+                    "INNER JOIN contas c ON r.id_conta = c.id_conta " +
+                    "WHERE r.id_usuario = ? " +
+                    "AND r.ativo = TRUE " +
+                    "AND r.descricao NOT LIKE '[SISTEMA]%' " +
+                    "AND (c.tipo IS NULL OR " +
+                    "     (UPPER(c.tipo) NOT LIKE 'CARTAO%' AND UPPER(c.tipo) != 'CARTAO_CREDITO') OR " +
+                    "     r.id_grupo_parcela IS NOT NULL)";
         try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setInt(1, idUsuario);

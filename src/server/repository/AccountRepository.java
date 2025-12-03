@@ -262,6 +262,24 @@ public class AccountRepository {
         return executeDoubleQuery(sql, idUsuario);
     }
     
+    /**
+     * Calcula o saldo disponível: (Conta Corrente + Dinheiro + Poupança) - Gastos
+     * @param idUsuario ID do usuário
+     * @param totalGastos Total de gastos do usuário (para subtrair)
+     * @return Saldo disponível após subtrair os gastos
+     */
+    public double calcularSaldoDisponivel(int idUsuario, double totalGastos) {
+        String sql = "SELECT COALESCE(SUM(saldo_atual), 0) as total " +
+                    "FROM contas WHERE id_usuario = ? " +
+                    "AND ativo = TRUE " +
+                    "AND (UPPER(tipo) LIKE '%CORRENTE%' " +
+                    "     OR UPPER(tipo) LIKE '%DINHEIRO%' " +
+                    "     OR UPPER(tipo) LIKE '%POUPANÇA%' " +
+                    "     OR UPPER(tipo) LIKE '%POUPANCA%')";
+        double saldoContas = executeDoubleQuery(sql, idUsuario);
+        return saldoContas - totalGastos;
+    }
+    
     public double calcularTotalCreditoDisponivelCartoes(int idUsuario) {
         String sql = "SELECT COALESCE(SUM(saldo_atual), 0) as total " +
                     "FROM contas WHERE id_usuario = ? " +
@@ -431,6 +449,12 @@ public class AccountRepository {
         
         if (hasCartaoCreditoColumns(conn)) {
             try {
+                // Valida se a conexão ainda está válida antes de usar
+                if (conn.isClosed() || !conn.isValid(2)) {
+                    // Se a conexão estiver inválida, retorna a conta sem os dados extras
+                    return conta;
+                }
+                
                 int idConta = conta.getIdConta();
                 String sqlExtra = "SELECT dia_fechamento, dia_pagamento FROM contas WHERE id_conta = ?";
                 try (PreparedStatement pstmtExtra = conn.prepareStatement(sqlExtra)) {
@@ -444,7 +468,16 @@ public class AccountRepository {
                     }
                 }
             } catch (SQLException e) {
-                // Ignore
+                // Se a conexão foi resetada ou está quebrada, ignora e retorna conta básica
+                // O HikariCP vai detectar e substituir a conexão na próxima requisição
+                if (e.getMessage() != null && 
+                    (e.getMessage().contains("Connection reset") || 
+                     e.getMessage().contains("broken") ||
+                     e.getMessage().contains("closed"))) {
+                    // Conexão quebrada - retorna conta sem dados extras
+                    return conta;
+                }
+                // Para outros erros SQL, também ignora (comportamento original)
             }
         }
         return conta;

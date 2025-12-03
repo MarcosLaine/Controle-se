@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Plus, Minus, Trash2, ArrowUp, ArrowDown, Filter, CreditCard, Search } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useData } from '../../contexts/DataContext';
 import api from '../../services/api';
+import axios from 'axios';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import Modal from '../common/Modal';
 import toast from 'react-hot-toast';
@@ -22,6 +23,9 @@ export default function Transactions() {
   const [filters, setFilters] = useState({ category: '', tag: '', date: '', type: '', search: '' });
   const [showPayInstallmentModal, setShowPayInstallmentModal] = useState(false);
   const [selectedInstallment, setSelectedInstallment] = useState(null);
+  
+  // Ref para armazenar o AbortController da requisição atual
+  const abortControllerRef = useRef(null);
 
   // Função para normalizar string (remover acentos e converter para minúsculas)
   const normalizeString = (str) => {
@@ -32,11 +36,116 @@ export default function Transactions() {
       .replace(/[\u0300-\u036f]/g, '');
   };
 
+  const loadData = useCallback(async () => {
+    if (!user) return;
+    
+    // Cancela a requisição anterior se ainda estiver em andamento
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    // Cria um novo AbortController para esta requisição
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+
+    setLoading(true);
+    try {
+      // Constrói URL com parâmetros de filtro
+      let transactionsUrl = `/transactions?userId=${user.id}`;
+      if (filters.category) {
+        transactionsUrl += `&categoryId=${filters.category}`;
+      }
+      if (filters.date) {
+        transactionsUrl += `&date=${filters.date}`;
+      }
+      // Se o filtro for "parceladas" ou "unicas", envia para o backend
+      // Se for "expense" ou "income", filtra no frontend
+      if (filters.type && (filters.type === 'parceladas' || filters.type === 'unicas')) {
+        transactionsUrl += `&type=${filters.type}`;
+      }
+
+      const [transRes, catRes, accRes, tagRes] = await Promise.all([
+        api.get(transactionsUrl, { signal: abortController.signal }),
+        api.get(`/categories?userId=${user.id}`, { signal: abortController.signal }),
+        api.get(`/accounts?userId=${user.id}`, { signal: abortController.signal }),
+        api.get(`/tags?userId=${user.id}`, { signal: abortController.signal }),
+      ]);
+
+      // Verifica se a requisição foi cancelada antes de processar a resposta
+      if (abortController.signal.aborted) {
+        return;
+      }
+
+      if (transRes.success) {
+        let filtered = transRes.data || [];
+        // Filtro de tag ainda é feito no cliente, pois o backend não suporta filtro por tag diretamente
+        if (filters.tag) {
+          filtered = filtered.filter((t) =>
+            t.tags?.some((tag) => tag.idTag === parseInt(filters.tag))
+          );
+        }
+        // Filtro por tipo de transação (gasto/receita) feito no cliente
+        if (filters.type === 'expense') {
+          // Mostra apenas gastos (incluindo parcelados e únicos)
+          filtered = filtered.filter((t) => t.type === 'expense');
+        } else if (filters.type === 'income') {
+          // Mostra apenas receitas (incluindo parceladas e únicas)
+          filtered = filtered.filter((t) => t.type === 'income');
+        }
+        // Filtro de busca por palavra na descrição (case-insensitive e sem acentos)
+        if (filters.search) {
+          const searchNormalized = normalizeString(filters.search);
+          filtered = filtered.filter((t) => {
+            const descriptionNormalized = normalizeString(t.description || '');
+            return descriptionNormalized.includes(searchNormalized);
+          });
+        }
+        // O filtro por tipo (parceladas/únicas) já é feito no backend quando aplicável
+        setTransactions(filtered);
+      }
+      if (catRes.success) setCategories(catRes.data || []);
+      if (accRes.success) setAccounts(accRes.data || []);
+      if (tagRes.success) setTags(tagRes.data || []);
+    } catch (error) {
+      // Ignora erros de cancelamento - não atualiza o estado se foi cancelado
+      if (axios.isCancel && axios.isCancel(error)) {
+        return;
+      }
+      if (error.name === 'CanceledError' || error.name === 'AbortError') {
+        return;
+      }
+      
+      // Verifica se a requisição foi cancelada antes de processar o erro
+      if (abortController.signal.aborted) {
+        return;
+      }
+      
+      toast.error('Erro ao carregar transações');
+    } finally {
+      // Só atualiza o loading se a requisição não foi cancelada
+      if (!abortController.signal.aborted) {
+        setLoading(false);
+      }
+      // Limpa a referência se esta ainda é a requisição atual
+      if (abortControllerRef.current === abortController) {
+        abortControllerRef.current = null;
+      }
+    }
+  }, [user, filters]);
+
   useEffect(() => {
     if (user) {
       loadData();
     }
-  }, [user, filters]);
+    
+    // Cleanup: cancela requisições quando o componente é desmontado ou quando os filtros mudam
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+    };
+  }, [loadData]);
 
   // Verifica se uma parcela está paga
   const isParcelaPaga = (transaction) => {
@@ -101,67 +210,6 @@ export default function Transactions() {
     return false;
   };
 
-  const loadData = async () => {
-    setLoading(true);
-    try {
-      // Constrói URL com parâmetros de filtro
-      let transactionsUrl = `/transactions?userId=${user.id}`;
-      if (filters.category) {
-        transactionsUrl += `&categoryId=${filters.category}`;
-      }
-      if (filters.date) {
-        transactionsUrl += `&date=${filters.date}`;
-      }
-      // Se o filtro for "parceladas" ou "unicas", envia para o backend
-      // Se for "expense" ou "income", filtra no frontend
-      if (filters.type && (filters.type === 'parceladas' || filters.type === 'unicas')) {
-        transactionsUrl += `&type=${filters.type}`;
-      }
-
-      const [transRes, catRes, accRes, tagRes] = await Promise.all([
-        api.get(transactionsUrl),
-        api.get(`/categories?userId=${user.id}`),
-        api.get(`/accounts?userId=${user.id}`),
-        api.get(`/tags?userId=${user.id}`),
-      ]);
-
-      if (transRes.success) {
-        let filtered = transRes.data || [];
-        // Filtro de tag ainda é feito no cliente, pois o backend não suporta filtro por tag diretamente
-        if (filters.tag) {
-          filtered = filtered.filter((t) =>
-            t.tags?.some((tag) => tag.idTag === parseInt(filters.tag))
-          );
-        }
-        // Filtro por tipo de transação (gasto/receita) feito no cliente
-        if (filters.type === 'expense') {
-          // Mostra apenas gastos (incluindo parcelados e únicos)
-          filtered = filtered.filter((t) => t.type === 'expense');
-        } else if (filters.type === 'income') {
-          // Mostra apenas receitas (incluindo parceladas e únicas)
-          filtered = filtered.filter((t) => t.type === 'income');
-        }
-        // Filtro de busca por palavra na descrição (case-insensitive e sem acentos)
-        if (filters.search) {
-          const searchNormalized = normalizeString(filters.search);
-          filtered = filtered.filter((t) => {
-            const descriptionNormalized = normalizeString(t.description || '');
-            return descriptionNormalized.includes(searchNormalized);
-          });
-        }
-        // O filtro por tipo (parceladas/únicas) já é feito no backend quando aplicável
-        setTransactions(filtered);
-      }
-      if (catRes.success) setCategories(catRes.data || []);
-      if (accRes.success) setAccounts(accRes.data || []);
-      if (tagRes.success) setTags(tagRes.data || []);
-    } catch (error) {
-      toast.error('Erro ao carregar transações');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const [deletingIds, setDeletingIds] = useState(new Set());
 
   const handleDelete = async (id, type) => {
@@ -220,32 +268,27 @@ export default function Transactions() {
         </div>
       </div>
 
-      {/* Search */}
-      <div className="card">
-        <div className="flex items-center gap-2 mb-4">
-          <Search className="w-5 h-5 text-gray-500" />
-          <h3 className="font-semibold text-gray-900 dark:text-white">Buscar Transações</h3>
-        </div>
-        <div>
-          <label className="label">Buscar por palavra na descrição</label>
-          <input
-            type="text"
-            value={filters.search}
-            onChange={(e) => setFilters({ ...filters, search: e.target.value })}
-            className="input"
-            placeholder="Ex: Farm, farma, Farmácia..."
-          />
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-            A busca não diferencia maiúsculas/minúsculas e ignora acentos
-          </p>
-        </div>
-      </div>
-
       {/* Filters */}
       <div className="card">
         <div className="flex items-center gap-2 mb-4">
           <Filter className="w-5 h-5 text-gray-500" />
           <h3 className="font-semibold text-gray-900 dark:text-white">Filtros</h3>
+        </div>
+        <div className="mb-4">
+          <label className="label">Buscar por palavra na descrição</label>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              type="text"
+              value={filters.search}
+              onChange={(e) => setFilters({ ...filters, search: e.target.value })}
+              className="input pl-10"
+              // placeholder="Ex: Farm, farma, Farmácia..."
+            />
+          </div>
+          {/* <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            A busca não diferencia maiúsculas/minúsculas e ignora acentos
+          </p> */}
         </div>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
@@ -541,6 +584,23 @@ function TransactionModal({ isOpen, onClose, type, categories, accounts, tags, o
   const [invoiceInfo, setInvoiceInfo] = useState(null);
   const [loading, setLoading] = useState(false);
 
+  // Verifica se há contas do tipo cartão de crédito
+  const hasCreditCardAccounts = accounts.some(acc => {
+    const tipo = acc.tipo?.toLowerCase() || '';
+    return tipo.includes('cartao') || tipo.includes('cartão') || 
+           tipo.includes('credito') || tipo.includes('crédito') ||
+           tipo === 'cartao_credito';
+  });
+
+  // Verifica se uma conta é cartão de crédito
+  const isCreditCardAccount = (account) => {
+    if (!account || !account.tipo) return false;
+    const tipo = account.tipo.toLowerCase();
+    return tipo.includes('cartao') || tipo.includes('cartão') || 
+           tipo.includes('credito') || tipo.includes('crédito') ||
+           tipo === 'cartao_credito';
+  };
+
   const formatAccountType = (tipo) => {
     if (!tipo) return '';
     const tipoLower = tipo.toLowerCase();
@@ -715,13 +775,26 @@ function TransactionModal({ isOpen, onClose, type, categories, accounts, tags, o
             required
           />
         </div>
-        {type === 'expense' && (
+        {type === 'expense' && hasCreditCardAccounts && (
           <div>
             <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
                 checked={formData.isParcelado}
-                onChange={(e) => setFormData({ ...formData, isParcelado: e.target.checked })}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  // Se marcar compra parcelada e a conta selecionada não for cartão de crédito, limpa a conta
+                  if (checked && formData.accountId) {
+                    const selectedAccount = accounts.find(acc => acc.idConta.toString() === formData.accountId);
+                    if (selectedAccount && !isCreditCardAccount(selectedAccount)) {
+                      setFormData({ ...formData, isParcelado: checked, accountId: '' });
+                    } else {
+                      setFormData({ ...formData, isParcelado: checked });
+                    }
+                  } else {
+                    setFormData({ ...formData, isParcelado: checked });
+                  }
+                }}
                 className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
               />
               <span className="label">Compra parcelada</span>
@@ -882,7 +955,14 @@ function TransactionModal({ isOpen, onClose, type, categories, accounts, tags, o
           >
             <option value="">Selecione a conta</option>
             {accounts
-              .filter((acc) => acc.tipo?.toLowerCase() !== 'investimento')
+              .filter((acc) => {
+                // Se for gasto parcelado, mostra apenas contas de cartão de crédito
+                if (type === 'expense' && formData.isParcelado) {
+                  return isCreditCardAccount(acc);
+                }
+                // Caso contrário, filtra apenas investimentos
+                return acc.tipo?.toLowerCase() !== 'investimento';
+              })
               .map((acc) => (
                 <option key={acc.idConta} value={acc.idConta}>
                   {acc.nome} {acc.tipo ? `(${formatAccountType(acc.tipo)})` : ''}
