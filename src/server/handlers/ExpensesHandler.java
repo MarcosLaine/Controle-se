@@ -265,7 +265,7 @@ public class ExpensesHandler implements HttpHandler {
     
     private void handleDelete(HttpExchange exchange) throws IOException {
         try {
-            AuthUtil.requireUserId(exchange);
+            int userId = AuthUtil.requireUserId(exchange);
             String idParam = RequestUtil.getQueryParam(exchange, "id");
             
             if (idParam == null) {
@@ -276,7 +276,18 @@ public class ExpensesHandler implements HttpHandler {
                 return;
             }
             
-            int expenseId = Integer.parseInt(idParam);
+            int expenseId;
+            try {
+                expenseId = Integer.parseInt(idParam);
+            } catch (NumberFormatException e) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "ID do gasto inválido");
+                ResponseUtil.sendJsonResponse(exchange, 400, response);
+                return;
+            }
+            
+            // Busca o gasto (incluindo parcelas pagas/inativas)
             Gasto gasto = expenseRepository.buscarGasto(expenseId);
             if (gasto == null) {
                 Map<String, Object> response = new HashMap<>();
@@ -286,7 +297,15 @@ public class ExpensesHandler implements HttpHandler {
                 return;
             }
             
-            int userId = gasto.getIdUsuario();
+            // Verifica se o usuário tem permissão para excluir este gasto
+            if (gasto.getIdUsuario() != userId) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Você não tem permissão para excluir este gasto");
+                ResponseUtil.sendJsonResponse(exchange, 403, response);
+                return;
+            }
+            
             boolean isParcela = gasto.isParcela();
             boolean parcelaPaga = isParcela && !gasto.isAtivo();
             

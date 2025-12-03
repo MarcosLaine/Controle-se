@@ -168,9 +168,11 @@ public class ExpenseRepository {
     }
 
     public Gasto buscarGasto(int idGasto) {
+        // Busca gasto independente de estar ativo ou não
+        // Isso permite buscar parcelas pagas (inativas) para exclusão
         String sql = "SELECT id_gasto, descricao, valor, data, frequencia, id_usuario, id_conta, " +
                     "proxima_recorrencia, id_gasto_original, ativo, id_grupo_parcela, numero_parcela, total_parcelas " +
-                    "FROM gastos WHERE id_gasto = ? AND ativo = TRUE";
+                    "FROM gastos WHERE id_gasto = ?";
         
         try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
