@@ -2,8 +2,9 @@ import React from 'react';
 import { X, Edit2, Trash2, Calendar, DollarSign, TrendingUp } from 'lucide-react';
 import Modal from '../../common/Modal';
 import { formatCurrency, formatDate } from '../../../utils/formatters';
+import Spinner from '../../common/Spinner';
 
-export default function AssetDetailsModal({ isOpen, onClose, assetGroup, onEdit, onDelete }) {
+export default function AssetDetailsModal({ isOpen, onClose, assetGroup, onEdit, onDelete, deletingIds = new Set() }) {
   if (!assetGroup) return null;
 
   const isPositive = (assetGroup.retornoTotal || 0) >= 0;
@@ -117,10 +118,15 @@ export default function AssetDetailsModal({ isOpen, onClose, assetGroup, onEdit,
                             onDelete(aporte.idInvestimento);
                             onClose();
                         }}
-                        className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
+                        className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         title="Excluir"
+                        disabled={deletingIds.has(aporte.idInvestimento)}
                       >
-                        <Trash2 size={14} />
+                        {deletingIds.has(aporte.idInvestimento) ? (
+                          <Spinner size={14} className="text-red-600 dark:text-red-400" />
+                        ) : (
+                          <Trash2 size={14} />
+                        )}
                       </button>
                     </div>
                   </div>

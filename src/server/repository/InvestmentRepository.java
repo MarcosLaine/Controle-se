@@ -69,15 +69,7 @@ public class InvestmentRepository {
                 idInvestimento = rs.getInt(1);
             }
             
-            // Debita da conta
-            String sqlConta = "UPDATE contas SET saldo_atual = saldo_atual - ? WHERE id_conta = ?";
-            try (PreparedStatement pstmt = conn.prepareStatement(sqlConta)) {
-                double total = (quantidade * precoAporte) + corretagem;
-                pstmt.setDouble(1, total);
-                pstmt.setInt(2, idConta);
-                pstmt.executeUpdate();
-            }
-            
+            // Não debita mais da conta - o saldo será calculado dinamicamente baseado no valor atual dos investimentos
             conn.commit();
             return idInvestimento;
             
@@ -141,15 +133,7 @@ public class InvestmentRepository {
                 idInvestimento = rs.getInt(1);
             }
             
-            // Debita da conta
-            String sqlConta = "UPDATE contas SET saldo_atual = saldo_atual - ? WHERE id_conta = ?";
-            try (PreparedStatement pstmt = conn.prepareStatement(sqlConta)) {
-                double total = (quantidade * precoAporte) + corretagem;
-                pstmt.setDouble(1, total);
-                pstmt.setInt(2, idConta);
-                pstmt.executeUpdate();
-            }
-            
+            // Não debita mais da conta - o saldo será calculado dinamicamente baseado no valor atual dos investimentos
             conn.commit();
             return idInvestimento;
             
@@ -195,23 +179,46 @@ public class InvestmentRepository {
         return investimentos;
     }
 
+    public List<Investimento> buscarInvestimentosPorConta(int idConta) {
+        String sql = "SELECT * FROM investimentos WHERE id_conta = ? AND ativo = TRUE ORDER BY data_aporte DESC";
+        List<Investimento> investimentos = new ArrayList<>();
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, idConta);
+            ResultSet rs = pstmt.executeQuery();
+            while (rs.next()) investimentos.add(mapInvestimento(rs));
+        } catch (SQLException e) {
+            throw new RuntimeException("Erro ao buscar investimentos por conta: " + e.getMessage(), e);
+        }
+        return investimentos;
+    }
+
     public void atualizarInvestimento(int idInvestimento, String nome, String nomeAtivo, String categoria, 
                                       double quantidade, double precoAporte, double corretagem, 
-                                      String corretora, LocalDate dataAporte, String moeda) {
-        String sql = "UPDATE investimentos SET nome = ?, nome_ativo = ?, categoria = ?, quantidade = ?, preco_aporte = ?, corretagem = ?, corretora = ?, data_aporte = ?, moeda = ? WHERE id_investimento = ?";
+                                      String corretora, LocalDate dataAporte, String moeda, Integer accountId) {
+        String sql = "UPDATE investimentos SET nome = ?, nome_ativo = ?, categoria = ?, quantidade = ?, preco_aporte = ?, corretagem = ?, corretora = ?, data_aporte = ?, moeda = ?";
+        if (accountId != null && accountId > 0) {
+            sql += ", id_conta = ?";
+        }
+        sql += " WHERE id_investimento = ?";
+        
         try (Connection conn = getConnection()) {
             conn.setAutoCommit(false);
             try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
-                pstmt.setString(1, nome);
-                pstmt.setString(2, nomeAtivo);
-                pstmt.setString(3, categoria);
-                pstmt.setDouble(4, quantidade);
-                pstmt.setDouble(5, precoAporte);
-                pstmt.setDouble(6, corretagem);
-                pstmt.setString(7, corretora);
-                pstmt.setDate(8, java.sql.Date.valueOf(dataAporte));
-                pstmt.setString(9, moeda);
-                pstmt.setInt(10, idInvestimento);
+                int paramIndex = 1;
+                pstmt.setString(paramIndex++, nome);
+                pstmt.setString(paramIndex++, nomeAtivo);
+                pstmt.setString(paramIndex++, categoria);
+                pstmt.setDouble(paramIndex++, quantidade);
+                pstmt.setDouble(paramIndex++, precoAporte);
+                pstmt.setDouble(paramIndex++, corretagem);
+                pstmt.setString(paramIndex++, corretora);
+                pstmt.setDate(paramIndex++, java.sql.Date.valueOf(dataAporte));
+                pstmt.setString(paramIndex++, moeda);
+                if (accountId != null && accountId > 0) {
+                    pstmt.setInt(paramIndex++, accountId);
+                }
+                pstmt.setInt(paramIndex++, idInvestimento);
                 pstmt.executeUpdate();
                 conn.commit();
             } catch (Exception e) {
@@ -323,12 +330,6 @@ public class InvestmentRepository {
             conn = getConnection();
             conn.setAutoCommit(false);
             
-            // Busca todas as transações do usuário para calcular o valor correto a estornar
-            List<Investimento> todasTransacoes = buscarInvestimentosPorUsuario(inv.getIdUsuario());
-            
-            // Calcula quanto ainda está na carteira (ou valor a reverter para vendas)
-            double valorAEstornar = calcularValorRemanescenteNaCarteira(inv, todasTransacoes);
-            
             // Remove o investimento
             String sqlDelete = "DELETE FROM investimentos WHERE id_investimento = ?";
             try (PreparedStatement pstmt = conn.prepareStatement(sqlDelete)) {
@@ -336,16 +337,7 @@ public class InvestmentRepository {
                 pstmt.executeUpdate();
             }
             
-            // Estorna valor na conta (pode ser positivo para compras ou negativo para vendas)
-            if (Math.abs(valorAEstornar) > 0.01) { // Evita estornos muito pequenos por arredondamento
-                String sqlConta = "UPDATE contas SET saldo_atual = saldo_atual + ? WHERE id_conta = ?";
-                try (PreparedStatement pstmt = conn.prepareStatement(sqlConta)) {
-                    pstmt.setDouble(1, valorAEstornar);
-                    pstmt.setInt(2, inv.getIdConta());
-                    pstmt.executeUpdate();
-                }
-            }
-            
+            // Não estorna mais valor na conta - o saldo será calculado dinamicamente baseado no valor atual dos investimentos
             conn.commit();
         } catch (SQLException e) {
             if (conn != null) try { conn.rollback(); } catch (SQLException ex) {}

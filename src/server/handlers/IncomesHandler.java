@@ -80,9 +80,9 @@ public class IncomesHandler implements HttpHandler {
             }
             
             // Validação: se a conta for cartão de crédito, deve ter flag de pagamento de fatura
+            boolean pagamentoFatura = false;
             if (conta.isCartaoCredito()) {
                 Object pagamentoFaturaObj = data.get("pagamentoFatura");
-                boolean pagamentoFatura = false;
                 if (pagamentoFaturaObj != null) {
                     if (pagamentoFaturaObj instanceof Boolean) {
                         pagamentoFatura = (Boolean) pagamentoFaturaObj;
@@ -159,7 +159,54 @@ public class IncomesHandler implements HttpHandler {
                 }
             }
             
+            // Verifica se há conta origem para pagamento de fatura
+            Object contaOrigemIdObj = data.get("contaOrigemId");
+            Integer contaOrigemId = null;
+            if (contaOrigemIdObj != null) {
+                if (contaOrigemIdObj instanceof Number) {
+                    contaOrigemId = ((Number) contaOrigemIdObj).intValue();
+                } else if (contaOrigemIdObj instanceof String && !((String) contaOrigemIdObj).isEmpty()) {
+                    contaOrigemId = Integer.parseInt((String) contaOrigemIdObj);
+                }
+            }
+            
+            // Se for pagamento de fatura com conta origem, valida a conta origem
+            if (conta.isCartaoCredito() && pagamentoFatura && contaOrigemId != null && contaOrigemId > 0) {
+                Conta contaOrigem = accountRepository.buscarConta(contaOrigemId);
+                if (contaOrigem == null) {
+                    Map<String, Object> response = new HashMap<>();
+                    response.put("success", false);
+                    response.put("message", "Conta de origem não encontrada");
+                    ResponseUtil.sendJsonResponse(exchange, 400, response);
+                    return;
+                }
+                
+                // Valida que a conta origem não é investimento
+                String tipoContaOrigem = contaOrigem.getTipo() != null ? contaOrigem.getTipo().toLowerCase().trim() : "";
+                if (tipoContaOrigem.equals("investimento") || tipoContaOrigem.equals("investimento (corretora)") || tipoContaOrigem.startsWith("investimento")) {
+                    Map<String, Object> response = new HashMap<>();
+                    response.put("success", false);
+                    response.put("message", "Contas de investimento não podem ser usadas como conta de origem");
+                    ResponseUtil.sendJsonResponse(exchange, 400, response);
+                    return;
+                }
+                
+                // Valida que não é a mesma conta
+                if (contaOrigemId == accountId) {
+                    Map<String, Object> response = new HashMap<>();
+                    response.put("success", false);
+                    response.put("message", "A conta de origem não pode ser a mesma do cartão de crédito");
+                    ResponseUtil.sendJsonResponse(exchange, 400, response);
+                    return;
+                }
+            }
+            
             int incomeId = incomeRepository.cadastrarReceita(description, value, date, userId, accountId, observacoes);
+            
+            // Se houver conta origem, faz a transferência (decrementa da conta origem)
+            if (contaOrigemId != null && contaOrigemId > 0) {
+                accountRepository.decrementarSaldo(contaOrigemId, value);
+            }
             
             CacheUtil.invalidateCache("overview_" + userId);
             CacheUtil.invalidateCache("totalIncome_" + userId);
@@ -173,6 +220,9 @@ public class IncomesHandler implements HttpHandler {
             response.put("success", true);
             response.put("message", "Receita registrada com sucesso");
             response.put("incomeId", incomeId);
+            if (contaOrigemId != null && contaOrigemId > 0) {
+                response.put("message", "Pagamento de fatura registrado e transferência realizada com sucesso");
+            }
             
             ResponseUtil.sendJsonResponse(exchange, 201, response);
         } catch (AuthUtil.UnauthorizedException e) {

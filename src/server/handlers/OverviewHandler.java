@@ -139,7 +139,24 @@ public class OverviewHandler implements HttpHandler {
                 CacheUtil.setCached(cacheKeyTotalAccounts, totalAccounts);
             }
             
-            double netWorth = totalAccounts + totalInvestmentsValue;
+            // Calcula o saldo das contas de investimento (que já inclui o valor atual dos investimentos)
+            String cacheKeyInvestmentAccounts = "investmentAccounts_" + userId;
+            Double investmentAccountsBalance = CacheUtil.getCached(cacheKeyInvestmentAccounts);
+            if (investmentAccountsBalance == null) {
+                investmentAccountsBalance = 0.0;
+                // Reutiliza a lista de contas já carregada anteriormente
+                for (Conta conta : allAccounts) {
+                    String tipoConta = conta.getTipo() != null ? conta.getTipo().toLowerCase().trim() : "";
+                    if (tipoConta.equals("investimento") || tipoConta.equals("investimento (corretora)") || tipoConta.startsWith("investimento")) {
+                        investmentAccountsBalance += accountRepository.calcularValorAtualInvestimentos(conta.getIdConta());
+                    }
+                }
+                CacheUtil.setCached(cacheKeyInvestmentAccounts, investmentAccountsBalance);
+            }
+            
+            // O netWorth agora inclui: contas normais + saldo das contas de investimento (que já inclui os investimentos)
+            // Não somamos totalInvestmentsValue novamente para evitar duplicação
+            double netWorth = totalAccounts + investmentAccountsBalance;
             
             // Get category breakdown
             String cacheKey = "categories_" + userId;

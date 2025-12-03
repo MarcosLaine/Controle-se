@@ -114,6 +114,7 @@ public class InvestmentsHandler implements HttpHandler {
                 invData.put("valorAtual", currentValue);
                 invData.put("retorno", returnValue);
                 invData.put("retornoPercent", returnPercent);
+                invData.put("accountId", inv.getIdConta());
                 
                 // Campos específicos de renda fixa
                 if ("RENDA_FIXA".equals(inv.getCategoria())) {
@@ -371,8 +372,21 @@ public class InvestmentsHandler implements HttpHandler {
                 }
             }
             
+            // Obtém o accountId se fornecido (para atualizar a conta do investimento)
+            Integer accountId = null;
+            if (data.containsKey("accountId")) {
+                accountId = ((Number) data.get("accountId")).intValue();
+                // Se accountId foi fornecido, busca a conta para obter o nome da corretora
+                if (accountId != null && accountId > 0) {
+                    Conta conta = accountRepository.buscarConta(accountId);
+                    if (conta != null) {
+                        corretora = conta.getNome();
+                    }
+                }
+            }
+            
             investmentRepository.atualizarInvestimento(idInvestimento, nome, nomeAtivo, categoria, quantidade,
-                                                precoAporte, corretagem, corretora, dataAporte, moeda);
+                                                precoAporte, corretagem, corretora, dataAporte, moeda, accountId);
             
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);

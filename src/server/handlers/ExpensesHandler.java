@@ -4,6 +4,7 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import server.model.*;
 import server.repository.*;
+import server.services.InstallmentService;
 import server.utils.*;
 import java.io.IOException;
 import java.time.LocalDate;
@@ -27,10 +28,17 @@ public class ExpensesHandler implements HttpHandler {
             if (method != null) {
                 method = method.toUpperCase().trim();
             }
+            String path = exchange.getRequestURI().getPath();
+            
             if ("OPTIONS".equals(method)) {
                 handleOptions(exchange);
             } else if ("POST".equals(method)) {
-                handlePost(exchange);
+                // Verifica se é pagamento antecipado de parcela
+                if (path != null && path.contains("/pay-installment")) {
+                    handlePayInstallment(exchange);
+                } else {
+                    handlePost(exchange);
+                }
             } else if ("DELETE".equals(method)) {
                 handleDelete(exchange);
             } else {
@@ -84,6 +92,35 @@ public class ExpensesHandler implements HttpHandler {
                 return;
             }
             
+            // Verifica se é uma compra parcelada
+            Object numeroParcelasObj = data.get("numeroParcelas");
+            if (numeroParcelasObj != null) {
+                int numeroParcelas = ((Number) numeroParcelasObj).intValue();
+                if (numeroParcelas > 1) {
+                    // É uma compra parcelada
+                    Object intervaloDiasObj = data.get("intervaloDias");
+                    int intervaloDias = intervaloDiasObj != null ? ((Number) intervaloDiasObj).intValue() : 30;
+                    
+                    InstallmentService installmentService = new InstallmentService();
+                    int idGrupo = installmentService.criarCompraParcelada(
+                        description, value, numeroParcelas, date, intervaloDias,
+                        userId, accountId, categoryIds, tagIds, observacoes
+                    );
+                    
+                    CacheUtil.invalidateCache("overview_" + userId);
+                    CacheUtil.invalidateCache("categories_" + userId);
+                    
+                    Map<String, Object> response = new HashMap<>();
+                    response.put("success", true);
+                    response.put("message", "Compra parcelada registrada com sucesso");
+                    response.put("idGrupo", idGrupo);
+                    response.put("numeroParcelas", numeroParcelas);
+                    ResponseUtil.sendJsonResponse(exchange, 201, response);
+                    return;
+                }
+            }
+            
+            // Gasto único ou recorrência periódica
             int expenseId = expenseRepository.cadastrarGasto(description, value, date, frequency, userId, categoryIds, accountId, observacoes);
             
             for (int tagId : tagIds) {
@@ -106,6 +143,120 @@ public class ExpensesHandler implements HttpHandler {
             Map<String, Object> response = new HashMap<>();
             response.put("success", false);
             response.put("message", "Erro: " + e.getMessage());
+            ResponseUtil.sendJsonResponse(exchange, 400, response);
+        }
+    }
+    
+    private void handlePayInstallment(HttpExchange exchange) throws IOException {
+        try {
+            int userId = AuthUtil.requireUserId(exchange);
+            String requestBody = RequestUtil.readRequestBody(exchange);
+            Map<String, Object> data = JsonUtil.parseJsonWithNested(requestBody);
+            
+            Object expenseIdObj = data.get("expenseId");
+            Object contaOrigemIdObj = data.get("contaOrigemId");
+            
+            if (expenseIdObj == null) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "ID da parcela não fornecido");
+                ResponseUtil.sendJsonResponse(exchange, 400, response);
+                return;
+            }
+            
+            if (contaOrigemIdObj == null) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Conta de origem não fornecida");
+                ResponseUtil.sendJsonResponse(exchange, 400, response);
+                return;
+            }
+            
+            int expenseId = ((Number) expenseIdObj).intValue();
+            int contaOrigemId = ((Number) contaOrigemIdObj).intValue();
+            
+            // Busca o gasto (parcela)
+            Gasto gasto = expenseRepository.buscarGasto(expenseId);
+            if (gasto == null) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Parcela não encontrada");
+                ResponseUtil.sendJsonResponse(exchange, 404, response);
+                return;
+            }
+            
+            // Verifica se é uma parcela
+            if (gasto.getIdGrupoParcela() == null || gasto.getNumeroParcela() == null) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Esta transação não é uma parcela");
+                ResponseUtil.sendJsonResponse(exchange, 400, response);
+                return;
+            }
+            
+            // Verifica se já foi paga (não está ativa)
+            if (!gasto.isAtivo()) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Esta parcela já foi paga ou cancelada");
+                ResponseUtil.sendJsonResponse(exchange, 400, response);
+                return;
+            }
+            
+            // Valida a conta de origem
+            Conta contaOrigem = accountRepository.buscarConta(contaOrigemId);
+            if (contaOrigem == null) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Conta de origem não encontrada");
+                ResponseUtil.sendJsonResponse(exchange, 404, response);
+                return;
+            }
+            
+            // Valida que não é investimento
+            String tipoContaOrigem = contaOrigem.getTipo() != null ? contaOrigem.getTipo().toLowerCase().trim() : "";
+            if (tipoContaOrigem.equals("investimento") || tipoContaOrigem.equals("investimento (corretora)") || tipoContaOrigem.startsWith("investimento")) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Contas de investimento não podem ser usadas como conta de origem");
+                ResponseUtil.sendJsonResponse(exchange, 400, response);
+                return;
+            }
+            
+            // Valida que não é a mesma conta do gasto
+            if (contaOrigemId == gasto.getIdConta()) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "A conta de origem não pode ser a mesma da parcela");
+                ResponseUtil.sendJsonResponse(exchange, 400, response);
+                return;
+            }
+            
+            // Processa o pagamento antecipado
+            // 1. Decrementa o saldo da conta origem (dinheiro sai da conta origem)
+            accountRepository.decrementarSaldo(contaOrigemId, gasto.getValor());
+            
+            // 2. Marca a parcela como paga e estorna o saldo ao cartão (aumenta limite disponível)
+            expenseRepository.marcarParcelaComoPaga(expenseId);
+            
+            // Invalida cache
+            CacheUtil.invalidateCache("overview_" + userId);
+            CacheUtil.invalidateCache("categories_" + userId);
+            CacheUtil.invalidateCache("totalExpense_" + userId);
+            CacheUtil.invalidateCache("balance_" + userId);
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("message", "Parcela paga antecipadamente com sucesso");
+            
+            ResponseUtil.sendJsonResponse(exchange, 200, response);
+        } catch (AuthUtil.UnauthorizedException e) {
+            ResponseUtil.sendErrorResponse(exchange, 401, e.getMessage());
+        } catch (Exception e) {
+            e.printStackTrace();
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", false);
+            response.put("message", "Erro ao pagar parcela: " + e.getMessage());
             ResponseUtil.sendJsonResponse(exchange, 400, response);
         }
     }

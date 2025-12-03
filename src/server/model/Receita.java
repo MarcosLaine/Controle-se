@@ -17,6 +17,9 @@ public class Receita implements Serializable {
     private LocalDate proximaRecorrencia;
     private int idReceitaOriginal;
     private String[] observacoes;
+    private Integer idGrupoParcela;
+    private Integer numeroParcela;
+    private Integer totalParcelas;
     
     public Receita(int idReceita, String descricao, double valor, LocalDate data, int idUsuario, int idConta) {
         this(idReceita, descricao, valor, data, "Único", idUsuario, idConta);
@@ -68,6 +71,19 @@ public class Receita implements Serializable {
     
     public String[] getObservacoes() { return observacoes; }
     public void setObservacoes(String[] observacoes) { this.observacoes = observacoes != null ? observacoes : new String[0]; }
+    
+    public Integer getIdGrupoParcela() { return idGrupoParcela; }
+    public void setIdGrupoParcela(Integer idGrupoParcela) { this.idGrupoParcela = idGrupoParcela; }
+    
+    public Integer getNumeroParcela() { return numeroParcela; }
+    public void setNumeroParcela(Integer numeroParcela) { this.numeroParcela = numeroParcela; }
+    
+    public Integer getTotalParcelas() { return totalParcelas; }
+    public void setTotalParcelas(Integer totalParcelas) { this.totalParcelas = totalParcelas; }
+    
+    public boolean isParcela() {
+        return idGrupoParcela != null && numeroParcela != null && totalParcelas != null;
+    }
     
     public void adicionarObservacao(String observacao) {
         if (observacao == null || observacao.trim().isEmpty()) return;

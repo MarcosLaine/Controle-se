@@ -1,10 +1,11 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Calculator, Download, TrendingUp, DollarSign, Percent, Calendar, LogIn, Save } from 'lucide-react';
+import { Calculator, Download, TrendingUp, DollarSign, Percent, Calendar, LogIn, Save, History, Trash2, Loader2, Home } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
-import { formatCurrency } from '../utils/formatters';
+import { formatCurrency, formatDate } from '../utils/formatters';
 import toast from 'react-hot-toast';
+import Modal from '../components/common/Modal';
 import { Line } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -48,6 +49,9 @@ export default function CompoundInterestCalculatorPage() {
 
   const [results, setResults] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [history, setHistory] = useState([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
 
   // Cálculo dos juros compostos
   const calculateResults = () => {
@@ -193,6 +197,75 @@ export default function CompoundInterestCalculatorPage() {
     toast.success('Cálculo realizado com sucesso!');
   };
 
+  const loadHistory = async () => {
+    if (!user) return;
+    
+    try {
+      setLoadingHistory(true);
+      const response = await api.get(`/tools/compound-interest?userId=${user.id}`);
+      if (response.success) {
+        setHistory(response.data || []);
+      } else {
+        toast.error('Erro ao carregar histórico');
+      }
+    } catch (error) {
+      console.error('Erro ao carregar histórico:', error);
+      toast.error('Erro ao carregar histórico');
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  const handleDeleteFromHistory = async (idCalculo) => {
+    if (!confirm('Tem certeza que deseja excluir este cálculo do histórico?')) {
+      return;
+    }
+
+    try {
+      const response = await api.delete(`/tools/compound-interest?id=${idCalculo}`);
+      if (response.success) {
+        toast.success('Cálculo excluído do histórico');
+        loadHistory();
+      } else {
+        toast.error('Erro ao excluir cálculo');
+      }
+    } catch (error) {
+      console.error('Erro ao excluir:', error);
+      toast.error('Erro ao excluir cálculo do histórico');
+    }
+  };
+
+  const handleLoadFromHistory = (calculo) => {
+    setFormData({
+      aporteInicial: calculo.aporteInicial?.toString() || '',
+      aporteMensal: calculo.aporteMensal?.toString() || '',
+      frequenciaAporte: calculo.frequenciaAporte || 'mensal',
+      taxaJuros: calculo.taxaJuros?.toString() || '',
+      tipoTaxa: calculo.tipoTaxa || 'mensal',
+      prazo: calculo.prazo?.toString() || '',
+      tipoPrazo: calculo.tipoPrazo || 'meses',
+    });
+    
+    // Se houver monthlyData, recalcula os resultados
+    if (calculo.monthlyData && calculo.monthlyData.length > 0) {
+      setResults({
+        totalInvestido: calculo.totalInvestido,
+        saldoFinal: calculo.saldoFinal,
+        totalJuros: calculo.totalJuros,
+        monthlyData: calculo.monthlyData,
+      });
+    }
+    
+    setShowHistoryModal(false);
+    toast.success('Cálculo carregado!');
+  };
+
+  useEffect(() => {
+    if (showHistoryModal && user) {
+      loadHistory();
+    }
+  }, [showHistoryModal, user]);
+
   const handleSaveToHistory = async () => {
     if (!user) {
       toast.error('Você precisa estar logado para salvar cálculos');
@@ -225,6 +298,10 @@ export default function CompoundInterestCalculatorPage() {
       const response = await api.post('/tools/compound-interest', payload);
       if (response.success) {
         toast.success('Cálculo salvo no histórico!');
+        // Recarrega o histórico se o modal estiver aberto
+        if (showHistoryModal) {
+          loadHistory();
+        }
       } else {
         toast.error('Erro ao salvar cálculo');
       }
@@ -668,15 +745,34 @@ export default function CompoundInterestCalculatorPage() {
                 Calcule o crescimento do seu investimento com juros compostos
               </p>
             </div>
-            {!user && (
+            <div className="flex gap-2">
               <button
-                onClick={() => navigate('/login?redirect=/calculadora-juros-compostos')}
-                className="btn-primary"
+                onClick={() => navigate('/dashboard')}
+                className="btn-secondary flex items-center gap-2 px-4 py-2"
+                title="Voltar para o dashboard"
               >
-                <LogIn className="w-4 h-4" />
-                Entrar para Salvar
+                <Home className="w-4 h-4" />
+                <span>Dashboard</span>
               </button>
-            )}
+              {user ? (
+                <button
+                  onClick={() => setShowHistoryModal(true)}
+                  className="btn-secondary flex items-center gap-2 px-4 py-2"
+                  title="Ver histórico de cálculos salvos"
+                >
+                  <History className="w-4 h-4" />
+                  <span>Histórico</span>
+                </button>
+              ) : (
+                <button
+                  onClick={() => navigate('/login?redirect=/calculadora-juros-compostos')}
+                  className="btn-primary flex items-center gap-2 px-4 py-2"
+                >
+                  <LogIn className="w-4 h-4" />
+                  <span>Entrar para Salvar</span>
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
@@ -790,7 +886,7 @@ export default function CompoundInterestCalculatorPage() {
         </div>
 
         {/* Resultados */}
-        {results && (
+        {results ? (
           <>
             {/* Resumo */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
@@ -969,6 +1065,114 @@ export default function CompoundInterestCalculatorPage() {
               </div>
             </div>
           </>
+        ) : (
+          /* Placeholder quando não há simulação */
+          <div className="card">
+            <div className="text-center py-12">
+              <Calculator className="w-16 h-16 mx-auto text-gray-400 mb-4" />
+              <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
+                Nenhuma simulação realizada
+              </h3>
+              <p className="text-gray-600 dark:text-gray-400 mb-6">
+                Preencha os campos acima e clique em "Calcular" para ver os resultados da simulação
+              </p>
+              {user && (
+                <button
+                  onClick={() => setShowHistoryModal(true)}
+                  className="btn-primary"
+                >
+                  <History className="w-4 h-4" />
+                  Ver Histórico de Simulações
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Modal de Histórico */}
+        {user && (
+          <Modal
+            isOpen={showHistoryModal}
+            onClose={() => setShowHistoryModal(false)}
+            title="Histórico de Cálculos"
+          >
+            <div className="space-y-4">
+              {loadingHistory ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-6 h-6 animate-spin text-primary-600" />
+                  <span className="ml-2 text-gray-600 dark:text-gray-400">Carregando histórico...</span>
+                </div>
+              ) : history.length === 0 ? (
+                <div className="text-center py-8">
+                  <History className="w-12 h-12 mx-auto text-gray-400 mb-4" />
+                  <p className="text-gray-600 dark:text-gray-400">
+                    Nenhum cálculo salvo no histórico ainda.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3 max-h-96 overflow-y-auto">
+                  {history.map((calculo) => (
+                    <div
+                      key={calculo.idCalculo}
+                      className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-2">
+                            <div className="text-sm font-semibold text-gray-900 dark:text-white">
+                              {formatCurrency(calculo.aporteInicial || 0)} inicial
+                              {calculo.aporteMensal > 0 && (
+                                <> + {formatCurrency(calculo.aporteMensal)} {calculo.frequenciaAporte === 'mensal' ? 'mensal' : calculo.frequenciaAporte === 'quinzenal' ? 'quinzenal' : 'anual'}</>
+                              )}
+                            </div>
+                          </div>
+                          <div className="text-xs text-gray-600 dark:text-gray-400 space-y-1">
+                            <div>
+                              Taxa: {calculo.taxaJuros}% {calculo.tipoTaxa === 'mensal' ? 'Mensal' : 'Anual'}
+                            </div>
+                            <div>
+                              Prazo: {calculo.prazo} {calculo.tipoPrazo === 'meses' ? 'meses' : 'anos'}
+                            </div>
+                            <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700">
+                              <div className="flex items-center gap-4">
+                                <span className="text-green-600 dark:text-green-400 font-semibold">
+                                  Saldo Final: {formatCurrency(calculo.saldoFinal || 0)}
+                                </span>
+                                <span className="text-blue-600 dark:text-blue-400">
+                                  Juros: {formatCurrency(calculo.totalJuros || 0)}
+                                </span>
+                              </div>
+                            </div>
+                            {calculo.dataCalculo && (
+                              <div className="text-xs text-gray-500 dark:text-gray-500 mt-1">
+                                {formatDate(calculo.dataCalculo)}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex gap-2 ml-4">
+                          <button
+                            onClick={() => handleLoadFromHistory(calculo)}
+                            className="btn-primary text-sm px-3 py-1.5"
+                            title="Carregar este cálculo"
+                          >
+                            Carregar
+                          </button>
+                          <button
+                            onClick={() => handleDeleteFromHistory(calculo.idCalculo)}
+                            className="btn-secondary text-sm px-3 py-1.5 text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                            title="Excluir do histórico"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </Modal>
         )}
       </div>
     </div>

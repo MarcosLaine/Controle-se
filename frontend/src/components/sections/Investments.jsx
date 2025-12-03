@@ -28,6 +28,7 @@ import { ChevronDown, ChevronUp, Download, File, FileSpreadsheet, FileText, Info
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Doughnut, Line } from 'react-chartjs-2';
 import toast from 'react-hot-toast';
+import Spinner from '../common/Spinner';
 import * as XLSX from 'xlsx';
 import { useAuth } from '../../contexts/AuthContext';
 import api from '../../services/api';
@@ -494,9 +495,12 @@ export default function Investments() {
     }
   };
 
+  const [deletingIds, setDeletingIds] = useState(new Set());
+
   const handleDelete = async (id) => {
     if (!confirm('Tem certeza que deseja excluir este investimento?')) return;
     
+    setDeletingIds(prev => new Set(prev).add(id));
     try {
       const response = await api.delete(`/investments?id=${id}`);
       if (response.success) {
@@ -505,6 +509,12 @@ export default function Investments() {
       }
     } catch (error) {
       toast.error('Erro ao excluir investimento');
+    } finally {
+      setDeletingIds(prev => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
     }
   };
 
@@ -1564,6 +1574,7 @@ const {
         assetGroup={selectedAssetGroup}
         onEdit={handleEditInvestment}
         onDelete={handleDelete}
+        deletingIds={deletingIds}
       />
 
       <InvestmentStatementModal

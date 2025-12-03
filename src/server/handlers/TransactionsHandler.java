@@ -32,16 +32,18 @@ public class TransactionsHandler implements HttpHandler {
             String userIdParam = RequestUtil.getQueryParam(exchange, "userId");
             String categoryIdParam = RequestUtil.getQueryParam(exchange, "categoryId");
             String dateParam = RequestUtil.getQueryParam(exchange, "date");
+            String typeParam = RequestUtil.getQueryParam(exchange, "type");
             
             int userId = userIdParam != null ? Integer.parseInt(userIdParam) : 1;
             Integer categoryId = (categoryIdParam != null && !categoryIdParam.isEmpty()) 
                 ? Integer.parseInt(categoryIdParam) : null;
             LocalDate date = (dateParam != null && !dateParam.isEmpty()) 
                 ? LocalDate.parse(dateParam) : null;
+            String type = (typeParam != null && !typeParam.isEmpty()) ? typeParam : null;
             
-            List<Gasto> expenses = expenseRepository.buscarGastosComFiltros(userId, categoryId, date);
+            List<Gasto> expenses = expenseRepository.buscarGastosComFiltros(userId, categoryId, date, type);
             List<Receita> incomes = (categoryId == null) 
-                ? incomeRepository.buscarReceitasComFiltros(userId, date) 
+                ? incomeRepository.buscarReceitasComFiltros(userId, date, type) 
                 : new ArrayList<>();
             
             List<Integer> idsGastos = new ArrayList<>();
@@ -101,7 +103,25 @@ public class TransactionsHandler implements HttpHandler {
                 transaction.put("categoryIds", idsCategorias);
                 transaction.put("categories", nomesCategorias);
                 transaction.put("tags", tagsList);
-                transaction.put("observacoes", observacoesList);
+                transaction.put("ativo", gasto.isAtivo());
+                // Campos de parcelas
+                if (gasto.getIdGrupoParcela() != null) {
+                    transaction.put("idGrupoParcela", gasto.getIdGrupoParcela());
+                    transaction.put("numeroParcela", gasto.getNumeroParcela());
+                    transaction.put("totalParcelas", gasto.getTotalParcelas());
+                    
+                    // Determina se foi paga ou excluída
+                    // Se está ativa, não foi paga nem excluída
+                    // Se está inativa e a data passou, foi paga (fechamento de fatura ou antecipada)
+                    // Se está inativa e a data não passou, foi excluída (mas não deve aparecer na lista)
+                    boolean foiPaga = false;
+                    if (!gasto.isAtivo()) {
+                        LocalDate hoje = LocalDate.now();
+                        // Se chegou aqui e está inativa, significa que a data passou (senão não apareceria na query)
+                        foiPaga = gasto.getData().isBefore(hoje) || gasto.getData().isEqual(hoje);
+                    }
+                    transaction.put("parcelaPaga", foiPaga);
+                }
                 transactions.add(transaction);
             }
             
@@ -132,6 +152,12 @@ public class TransactionsHandler implements HttpHandler {
                 transaction.put("categoryId", null);
                 transaction.put("tags", tagsList);
                 transaction.put("observacoes", observacoesList);
+                // Campos de parcelas
+                if (receita.getIdGrupoParcela() != null) {
+                    transaction.put("idGrupoParcela", receita.getIdGrupoParcela());
+                    transaction.put("numeroParcela", receita.getNumeroParcela());
+                    transaction.put("totalParcelas", receita.getTotalParcelas());
+                }
                 transactions.add(transaction);
             }
             

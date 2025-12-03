@@ -1,0 +1,112 @@
+package server.model;
+
+import java.io.Serializable;
+import java.time.LocalDate;
+
+public class InstallmentGroup implements Serializable {
+    private static final long serialVersionUID = 1L;
+    
+    private int idGrupo;
+    private String descricao;
+    private double valorTotal;
+    private int numeroParcelas;
+    private double valorParcela;
+    private LocalDate dataPrimeiraParcela;
+    private int intervaloDias;
+    private int idUsuario;
+    private int idConta;
+    private String tipoTransacao; // "GASTO" ou "RECEITA"
+    private boolean ativo;
+    
+    public InstallmentGroup() {
+        this.ativo = true;
+        this.intervaloDias = 30; // Default mensal
+    }
+    
+    public InstallmentGroup(String descricao, double valorTotal, int numeroParcelas, 
+                           LocalDate dataPrimeiraParcela, int intervaloDias, 
+                           int idUsuario, int idConta, String tipoTransacao) {
+        this();
+        this.descricao = descricao;
+        this.valorTotal = valorTotal;
+        this.numeroParcelas = numeroParcelas;
+        // Arredonda para 2 casas decimais
+        this.valorParcela = Math.round((valorTotal / numeroParcelas) * 100.0) / 100.0;
+        this.dataPrimeiraParcela = dataPrimeiraParcela;
+        this.intervaloDias = intervaloDias;
+        this.idUsuario = idUsuario;
+        this.idConta = idConta;
+        this.tipoTransacao = tipoTransacao;
+    }
+    
+    // Getters e Setters
+    public int getIdGrupo() { return idGrupo; }
+    public void setIdGrupo(int idGrupo) { this.idGrupo = idGrupo; }
+    
+    public String getDescricao() { return descricao; }
+    public void setDescricao(String descricao) { this.descricao = descricao; }
+    
+    public double getValorTotal() { return valorTotal; }
+    public void setValorTotal(double valorTotal) { 
+        this.valorTotal = valorTotal;
+        if (numeroParcelas > 0) {
+            // Arredonda para 2 casas decimais
+            this.valorParcela = Math.round((valorTotal / numeroParcelas) * 100.0) / 100.0;
+        }
+    }
+    
+    public int getNumeroParcelas() { return numeroParcelas; }
+    public void setNumeroParcelas(int numeroParcelas) { 
+        this.numeroParcelas = numeroParcelas;
+        if (numeroParcelas > 0 && valorTotal > 0) {
+            // Arredonda para 2 casas decimais
+            this.valorParcela = Math.round((valorTotal / numeroParcelas) * 100.0) / 100.0;
+        }
+    }
+    
+    public double getValorParcela() { return valorParcela; }
+    public void setValorParcela(double valorParcela) { this.valorParcela = valorParcela; }
+    
+    public LocalDate getDataPrimeiraParcela() { return dataPrimeiraParcela; }
+    public void setDataPrimeiraParcela(LocalDate dataPrimeiraParcela) { 
+        this.dataPrimeiraParcela = dataPrimeiraParcela; 
+    }
+    
+    public int getIntervaloDias() { return intervaloDias; }
+    public void setIntervaloDias(int intervaloDias) { this.intervaloDias = intervaloDias; }
+    
+    public int getIdUsuario() { return idUsuario; }
+    public void setIdUsuario(int idUsuario) { this.idUsuario = idUsuario; }
+    
+    public int getIdConta() { return idConta; }
+    public void setIdConta(int idConta) { this.idConta = idConta; }
+    
+    public String getTipoTransacao() { return tipoTransacao; }
+    public void setTipoTransacao(String tipoTransacao) { this.tipoTransacao = tipoTransacao; }
+    
+    public boolean isAtivo() { return ativo; }
+    public void setAtivo(boolean ativo) { this.ativo = ativo; }
+    
+    /**
+     * Calcula a data de uma parcela específica
+     * @param numeroParcela Número da parcela (1, 2, 3, ...)
+     * @return Data da parcela
+     */
+    public LocalDate calcularDataParcela(int numeroParcela) {
+        if (numeroParcela < 1 || numeroParcela > numeroParcelas) {
+            throw new IllegalArgumentException("Número de parcela inválido: " + numeroParcela);
+        }
+        // Parcela 1 = dataPrimeiraParcela
+        // Parcela 2 = dataPrimeiraParcela + intervaloDias
+        // Parcela 3 = dataPrimeiraParcela + (2 * intervaloDias)
+        return dataPrimeiraParcela.plusDays((numeroParcela - 1) * intervaloDias);
+    }
+    
+    @Override
+    public String toString() {
+        return "InstallmentGroup{id=" + idGrupo + ", descricao='" + descricao + 
+               "', valorTotal=" + valorTotal + ", parcelas=" + numeroParcelas + 
+               ", valorParcela=" + valorParcela + ", tipo=" + tipoTransacao + "}";
+    }
+}
+

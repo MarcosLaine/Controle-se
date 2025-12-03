@@ -1,11 +1,12 @@
 import { Building2, Edit, Plus, Trash2 } from 'lucide-react';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../contexts/AuthContext';
 import api from '../../services/api';
 import { formatCurrency, parseFloatBrazilian, formatDate } from '../../utils/formatters';
 import Modal from '../common/Modal';
 import SkeletonSection from '../common/SkeletonSection';
+import Spinner from '../common/Spinner';
 
 export default function Accounts() {
   const { user } = useAuth();
@@ -13,6 +14,8 @@ export default function Accounts() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingAccount, setEditingAccount] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [deletingIds, setDeletingIds] = useState(new Set());
   const [formData, setFormData] = useState({
     nome: '',
     tipo: 'Corrente',
@@ -45,6 +48,17 @@ export default function Accounts() {
 
   useEffect(() => {
     loadAccounts();
+    
+    // Listener para recarregar contas quando um investimento é atualizado
+    const handleInvestmentUpdate = () => {
+      loadAccounts();
+    };
+    
+    window.addEventListener('investmentUpdated', handleInvestmentUpdate);
+    
+    return () => {
+      window.removeEventListener('investmentUpdated', handleInvestmentUpdate);
+    };
   }, [user]);
 
   const loadAccounts = async () => {
@@ -62,6 +76,8 @@ export default function Accounts() {
     }
   };
 
+
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.nome.trim()) {
@@ -69,6 +85,7 @@ export default function Accounts() {
       return;
     }
 
+    setSubmitting(true);
     try {
       // Normaliza o tipo: se for "Investimento (Corretora)" ou qualquer variação, salva como "Investimento"
       let tipo = formData.tipo;
@@ -93,6 +110,7 @@ export default function Accounts() {
         }
       }
 
+      setSubmitting(true);
       if (editingAccount) {
         const response = await api.put(`/accounts/${editingAccount.idConta}`, data);
         if (response.success) {
@@ -110,6 +128,8 @@ export default function Accounts() {
       }
     } catch (error) {
       toast.error(error.message || 'Erro ao salvar conta');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -133,14 +153,22 @@ export default function Accounts() {
   const handleDelete = async (id) => {
     if (!confirm('Tem certeza que deseja excluir esta conta?')) return;
 
+    setDeletingIds(prev => new Set(prev).add(id));
     try {
       const response = await api.delete(`/accounts/${id}?userId=${user.id}`);
       if (response.success) {
         toast.success('Conta excluída!');
         loadAccounts();
+        loadInvestments();
       }
     } catch (error) {
       toast.error(error.message || 'Erro ao excluir conta');
+    } finally {
+      setDeletingIds(prev => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
     }
   };
 
@@ -184,58 +212,65 @@ export default function Accounts() {
             const isCartao = account.tipo && (account.tipo.toLowerCase().includes('cartão') || account.tipo.toLowerCase().includes('cartao'));
             
             return (
-              <div key={account.idConta} className="card">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-                  {account.nome}
-                </h3>
-                {isCartao && (
-                  <p className="text-xs text-gray-500 dark:text-gray-500 mb-1">
-                    Crédito Disponível
-                  </p>
-                )}
-                <p className={`text-2xl font-bold mb-4 ${isCartao ? 'text-orange-600 dark:text-orange-400' : 'text-primary-600 dark:text-primary-400'}`}>
-                  {formatCurrency(account.saldoAtual || 0)}
-                </p>
-                {isCartao && (
-                  <div className="text-sm text-gray-600 dark:text-gray-400 mb-2 space-y-2">
-                    {account.diaFechamento && account.diaPagamento && (
-                      <div className="flex items-center gap-2 text-xs">
-                        <span className="text-gray-500 dark:text-gray-500">Fechamento: dia {account.diaFechamento}</span>
-                        <span className="text-gray-400">•</span>
-                        <span className="text-gray-500 dark:text-gray-500">Pagamento: dia {account.diaPagamento}</span>
-                      </div>
-                    )}
-                    {account.faturaInfo && (
-                      <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700 space-y-2">
-                        <div className="text-xs">
-                          <span className="text-gray-500 dark:text-gray-500">Próximo Fechamento:</span>{' '}
-                          <span className="text-gray-700 dark:text-gray-300 font-medium">
-                            {formatDate(account.faturaInfo.proximoFechamento)}
-                          </span>
-                        </div>
-                        <div className={`text-xs ${
-                          account.faturaInfo.diasAtePagamento <= 7 
-                            ? 'text-red-600 dark:text-red-400' 
-                            : account.faturaInfo.diasAtePagamento <= 15
-                            ? 'text-yellow-600 dark:text-yellow-400'
-                            : 'text-gray-700 dark:text-gray-300'
-                        }`}>
-                          <span className="text-gray-500 dark:text-gray-500">Próximo Pagamento:</span>{' '}
-                          <span className="font-medium">
-                            {formatDate(account.faturaInfo.proximoPagamento)}
-                          </span>
-                        </div>
-                        {account.faturaInfo.faturaAberta && (
-                          <div className="flex items-center gap-1 text-green-600 dark:text-green-400 font-medium text-xs">
-                            <span>✓</span>
-                            <span>Fatura Aberta</span>
-                          </div>
-                        )}
-                      </div>
-                    )}
+              <div key={account.idConta} className="card flex flex-col h-full">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-2">
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                      {account.nome}
+                    </h3>
+                    <span className="text-xs text-gray-500 dark:text-gray-500 font-normal">
+                      {formatAccountType(account.tipo)}
+                    </span>
                   </div>
-                )}
-                <div className="flex gap-2">
+                  {isCartao && (
+                    <p className="text-xs text-gray-500 dark:text-gray-500 mb-1">
+                      Crédito Disponível
+                    </p>
+                  )}
+                  <p className={`text-2xl font-bold mb-2 ${isCartao ? 'text-orange-600 dark:text-orange-400' : 'text-primary-600 dark:text-primary-400'}`}>
+                    {formatCurrency(account.saldoAtual || 0)}
+                  </p>
+                  {isCartao && (
+                    <div className="text-sm text-gray-600 dark:text-gray-400 mb-2 space-y-2">
+                      {account.diaFechamento && account.diaPagamento && (
+                        <div className="flex items-center gap-2 text-xs">
+                          <span className="text-gray-500 dark:text-gray-500">Fechamento: dia {account.diaFechamento}</span>
+                          <span className="text-gray-400">•</span>
+                          <span className="text-gray-500 dark:text-gray-500">Pagamento: dia {account.diaPagamento}</span>
+                        </div>
+                      )}
+                      {account.faturaInfo && (
+                        <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700 space-y-2">
+                          <div className="text-xs">
+                            <span className="text-gray-500 dark:text-gray-500">Próximo Fechamento:</span>{' '}
+                            <span className="text-gray-700 dark:text-gray-300 font-medium">
+                              {formatDate(account.faturaInfo.proximoFechamento)}
+                            </span>
+                          </div>
+                          <div className={`text-xs ${
+                            account.faturaInfo.diasAtePagamento <= 7 
+                              ? 'text-red-600 dark:text-red-400' 
+                              : account.faturaInfo.diasAtePagamento <= 15
+                              ? 'text-yellow-600 dark:text-yellow-400'
+                              : 'text-gray-700 dark:text-gray-300'
+                          }`}>
+                            <span className="text-gray-500 dark:text-gray-500">Próximo Pagamento:</span>{' '}
+                            <span className="font-medium">
+                              {formatDate(account.faturaInfo.proximoPagamento)}
+                            </span>
+                          </div>
+                          {account.faturaInfo.faturaAberta && (
+                            <div className="flex items-center gap-1 text-green-600 dark:text-green-400 font-medium text-xs">
+                              <span>✓</span>
+                              <span>Fatura Aberta</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+                <div className="flex gap-2 mt-auto pt-4">
                   <button
                     onClick={() => handleEdit(account)}
                     className="btn-secondary flex-1"
@@ -243,13 +278,20 @@ export default function Accounts() {
                     <Edit className="w-4 h-4" />
                     Editar
                   </button>
-                  <button
-                    onClick={() => handleDelete(account.idConta)}
-                    className="btn-danger flex-1"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                    Excluir
-                  </button>
+                <button
+                  onClick={() => handleDelete(account.idConta)}
+                  className="btn-danger flex-1"
+                  disabled={deletingIds.has(account.idConta)}
+                >
+                  {deletingIds.has(account.idConta) ? (
+                    <Spinner size={16} className="text-white" />
+                  ) : (
+                    <>
+                      <Trash2 className="w-4 h-4" />
+                      Excluir
+                    </>
+                  )}
+                </button>
                 </div>
               </div>
             );
@@ -303,7 +345,7 @@ export default function Accounts() {
                 }
               }}
               className="input"
-              placeholder="0,00 ou 0.00"
+              placeholder="0,00"
             />
             {(formData.tipo && (formData.tipo.toLowerCase().includes('cartão') || formData.tipo.toLowerCase().includes('cartao'))) && (
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
@@ -347,8 +389,15 @@ export default function Accounts() {
             >
               Cancelar
             </button>
-            <button type="submit" className="btn-primary">
-              {editingAccount ? 'Atualizar' : 'Criar'}
+            <button type="submit" className="btn-primary" disabled={submitting}>
+              {submitting ? (
+                <>
+                  <Spinner size={16} className="text-white mr-2" />
+                  {editingAccount ? 'Atualizando...' : 'Criando...'}
+                </>
+              ) : (
+                editingAccount ? 'Atualizar' : 'Criar'
+              )}
             </button>
           </div>
         </form>

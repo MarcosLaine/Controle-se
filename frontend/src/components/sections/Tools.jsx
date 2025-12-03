@@ -5,6 +5,7 @@ import api from '../../services/api';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import toast from 'react-hot-toast';
 import Modal from '../common/Modal';
+import Spinner from '../common/Spinner';
 import { Line } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -119,6 +120,7 @@ function JurosCompostosCalculator({ chartRef }) {
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [history, setHistory] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [deletingHistoryIds, setDeletingHistoryIds] = useState(new Set());
 
   // Cálculo dos juros compostos
   const calculateResults = () => {
@@ -321,10 +323,12 @@ function JurosCompostosCalculator({ chartRef }) {
         setHistory(response.data || []);
       } else {
         toast.error('Erro ao carregar histórico');
+        setHistory([]);
       }
     } catch (error) {
       console.error('Erro ao carregar histórico:', error);
       toast.error('Erro ao carregar histórico');
+      setHistory([]);
     } finally {
       setLoadingHistory(false);
     }
@@ -334,6 +338,13 @@ function JurosCompostosCalculator({ chartRef }) {
     if (!confirm('Tem certeza que deseja excluir este cálculo do histórico?')) {
       return;
     }
+
+    // Adiciona o ID ao set para mostrar loading
+    setDeletingHistoryIds(prev => {
+      const next = new Set(prev);
+      next.add(idCalculo);
+      return next;
+    });
 
     try {
       const response = await api.delete(`/tools/compound-interest?id=${idCalculo}`);
@@ -346,6 +357,12 @@ function JurosCompostosCalculator({ chartRef }) {
     } catch (error) {
       console.error('Erro ao excluir:', error);
       toast.error('Erro ao excluir cálculo do histórico');
+    } finally {
+      setDeletingHistoryIds(prev => {
+        const next = new Set(prev);
+        next.delete(idCalculo);
+        return next;
+      });
     }
   };
 
@@ -898,14 +915,26 @@ function JurosCompostosCalculator({ chartRef }) {
           </div>
         </div>
 
-        <button onClick={handleCalculate} className="btn-primary mt-4 w-full md:w-auto">
-          <Calculator className="w-4 h-4" />
-          Calcular
-        </button>
+        <div className="flex items-center justify-between mt-4">
+          <button onClick={handleCalculate} className="btn-primary w-full md:w-auto">
+            <Calculator className="w-4 h-4" />
+            Calcular
+          </button>
+          {user && (
+            <button
+              onClick={() => setShowHistoryModal(true)}
+              className="btn-secondary flex items-center gap-2 px-4 py-2"
+              title="Ver histórico de cálculos salvos"
+            >
+              <History className="w-4 h-4" />
+              <span>Histórico</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Resultados */}
-      {results && (
+      {results ? (
         <>
           {/* Resumo */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -952,29 +981,29 @@ function JurosCompostosCalculator({ chartRef }) {
 
           {/* Gráfico */}
           <div className="card">
-            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                 Evolução do Investimento
               </h3>
               <div className="flex gap-2">
                 {user && (
-                  <>
-                    <button
-                      onClick={() => setShowHistoryModal(true)}
-                      className="btn-secondary"
-                    >
-                      <History className="w-4 h-4" />
-                      Histórico
-                    </button>
-                    <button
-                      onClick={handleSaveToHistory}
-                      disabled={loading}
-                      className="btn-secondary"
-                    >
-                      <Save className="w-4 h-4" />
-                      {loading ? 'Salvando...' : 'Salvar no Histórico'}
-                    </button>
-                  </>
+                  <button
+                    onClick={handleSaveToHistory}
+                    disabled={loading}
+                    className="btn-secondary"
+                  >
+                    {loading ? (
+                      <>
+                        <Spinner size={16} className="mr-2" />
+                        Salvando...
+                      </>
+                    ) : (
+                      <>
+                        <Save className="w-4 h-4" />
+                        Salvar no Histórico
+                      </>
+                    )}
+                  </button>
                 )}
                 <button onClick={handleExportPDF} className="btn-secondary">
                   <Download className="w-4 h-4" />
@@ -1084,6 +1113,19 @@ function JurosCompostosCalculator({ chartRef }) {
             </div>
           </div>
         </>
+      ) : (
+        /* Placeholder quando não há simulação */
+        <div className="card">
+          <div className="text-center py-12">
+            <Calculator className="w-16 h-16 mx-auto text-gray-400 mb-4" />
+            <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
+              Nenhuma simulação realizada
+            </h3>
+            <p className="text-gray-600 dark:text-gray-400">
+              Preencha os campos acima e clique em "Calcular" para ver os resultados da simulação
+            </p>
+          </div>
+        </div>
       )}
 
       {/* Modal de Histórico */}
@@ -1156,10 +1198,15 @@ function JurosCompostosCalculator({ chartRef }) {
                       </button>
                       <button
                         onClick={() => handleDeleteFromHistory(calculo.idCalculo)}
-                        className="btn-secondary text-sm px-3 py-1.5 text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                        className="btn-secondary text-sm px-3 py-1.5 text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 disabled:opacity-50 disabled:cursor-not-allowed"
                         title="Excluir do histórico"
+                        disabled={deletingHistoryIds.has(calculo.idCalculo)}
                       >
-                        <Trash2 className="w-4 h-4" />
+                        {deletingHistoryIds.has(calculo.idCalculo) ? (
+                          <Spinner size={14} className="text-red-600 dark:text-red-400" />
+                        ) : (
+                          <Trash2 className="w-4 h-4" />
+                        )}
                       </button>
                     </div>
                   </div>

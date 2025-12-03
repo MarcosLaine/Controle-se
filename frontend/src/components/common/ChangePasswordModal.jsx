@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import Modal from './Modal';
 import { useAuth } from '../../contexts/AuthContext';
 import toast from 'react-hot-toast';
+import Spinner from './Spinner';
 
 export default function ChangePasswordModal({ isOpen, onClose }) {
   const { changePassword } = useAuth();
@@ -92,7 +93,14 @@ export default function ChangePasswordModal({ isOpen, onClose }) {
             Cancelar
           </button>
           <button type="submit" className="btn-primary" disabled={isSubmitting}>
-            {isSubmitting ? 'Salvando...' : 'Atualizar senha'}
+            {isSubmitting ? (
+              <>
+                <Spinner size={16} className="text-white mr-2" />
+                Salvando...
+              </>
+            ) : (
+              'Atualizar senha'
+            )}
           </button>
         </div>
       </form>

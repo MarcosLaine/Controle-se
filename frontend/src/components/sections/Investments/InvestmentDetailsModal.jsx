@@ -2,8 +2,9 @@ import React from 'react';
 import { X, Edit2, Trash2, Calendar, DollarSign, TrendingUp, Percent } from 'lucide-react';
 import Modal from '../../common/Modal';
 import { formatCurrency, formatDate } from '../../../utils/formatters';
+import Spinner from '../../common/Spinner';
 
-export default function InvestmentDetailsModal({ isOpen, onClose, investment, onEdit, onDelete }) {
+export default function InvestmentDetailsModal({ isOpen, onClose, investment, onEdit, onDelete, deletingIds = new Set() }) {
   if (!investment) return null;
 
   const isPositive = (investment.retorno || 0) >= 0;
@@ -140,9 +141,16 @@ export default function InvestmentDetailsModal({ isOpen, onClose, investment, on
                 onClose();
             }}
             className="flex-1 btn-danger flex justify-center items-center gap-2"
+            disabled={deletingIds.has(investment.idInvestimento)}
           >
-            <Trash2 size={16} />
-            Excluir
+            {deletingIds.has(investment.idInvestimento) ? (
+              <Spinner size={16} className="text-white" />
+            ) : (
+              <>
+                <Trash2 size={16} />
+                Excluir
+              </>
+            )}
           </button>
         </div>
       </div>

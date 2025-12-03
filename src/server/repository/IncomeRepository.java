@@ -179,17 +179,53 @@ public class IncomeRepository {
         if (idOriginal > 0) receita.setIdReceitaOriginal(idOriginal);
         
         receita.setAtivo(rs.getBoolean("ativo"));
+        
+        // Campos de parcelas (podem ser NULL)
+        try {
+            int idGrupoParcela = rs.getInt("id_grupo_parcela");
+            if (!rs.wasNull()) {
+                receita.setIdGrupoParcela(idGrupoParcela);
+            }
+        } catch (SQLException e) {
+            // Coluna não existe na query, ignora
+        }
+        
+        try {
+            int numeroParcela = rs.getInt("numero_parcela");
+            if (!rs.wasNull()) {
+                receita.setNumeroParcela(numeroParcela);
+            }
+        } catch (SQLException e) {
+            // Coluna não existe na query, ignora
+        }
+        
+        try {
+            int totalParcelas = rs.getInt("total_parcelas");
+            if (!rs.wasNull()) {
+                receita.setTotalParcelas(totalParcelas);
+            }
+        } catch (SQLException e) {
+            // Coluna não existe na query, ignora
+        }
+        
         return receita;
     }
 
-    public List<Receita> buscarReceitasComFiltros(int idUsuario, LocalDate data) {
+    public List<Receita> buscarReceitasComFiltros(int idUsuario, LocalDate data, String type) {
         StringBuilder sql = new StringBuilder(
             "SELECT id_receita, descricao, valor, data, frequencia, id_usuario, id_conta, " +
-            "proxima_recorrencia, id_receita_original, ativo " +
+            "proxima_recorrencia, id_receita_original, ativo, id_grupo_parcela, numero_parcela, total_parcelas " +
             "FROM receitas " +
             "WHERE id_usuario = ? AND ativo = TRUE"
         );
         if (data != null) sql.append(" AND data = ?");
+        if (type != null && !type.isEmpty()) {
+            if ("parceladas".equals(type)) {
+                sql.append(" AND id_grupo_parcela IS NOT NULL");
+            } else if ("unicas".equals(type)) {
+                sql.append(" AND id_grupo_parcela IS NULL");
+            }
+        }
         sql.append(" ORDER BY data DESC");
         
         List<Receita> receitas = new ArrayList<>();
@@ -423,6 +459,76 @@ public class IncomeRepository {
             case "MENSAL": return dataBase.plusMonths(1);
             case "ANUAL": return dataBase.plusYears(1);
             default: return null;
+        }
+    }
+    
+    /**
+     * Atualiza informações de parcela em uma receita
+     */
+    public void atualizarInformacoesParcela(int idReceita, int idGrupoParcela, int numeroParcela, int totalParcelas) {
+        String sql = "UPDATE receitas SET id_grupo_parcela = ?, numero_parcela = ?, total_parcelas = ? WHERE id_receita = ?";
+        try (Connection conn = getConnection()) {
+            conn.setAutoCommit(false);
+            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                pstmt.setInt(1, idGrupoParcela);
+                pstmt.setInt(2, numeroParcela);
+                pstmt.setInt(3, totalParcelas);
+                pstmt.setInt(4, idReceita);
+                pstmt.executeUpdate();
+                conn.commit();
+            } catch (Exception e) {
+                conn.rollback();
+                throw e;
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Erro ao atualizar informações de parcela: " + e.getMessage(), e);
+        }
+    }
+    
+    /**
+     * Busca receitas de um grupo de parcelas
+     */
+    public List<Receita> buscarReceitasPorGrupoParcela(int idGrupoParcela) {
+        String sql = "SELECT id_receita, descricao, valor, data, frequencia, id_usuario, id_conta, " +
+                    "proxima_recorrencia, id_receita_original, ativo, id_grupo_parcela, numero_parcela, total_parcelas " +
+                    "FROM receitas " +
+                    "WHERE id_grupo_parcela = ? AND ativo = TRUE " +
+                    "ORDER BY numero_parcela ASC";
+        List<Receita> receitas = new ArrayList<>();
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, idGrupoParcela);
+            ResultSet rs = pstmt.executeQuery();
+            while (rs.next()) {
+                Receita receita = mapReceita(rs);
+                receita.setObservacoes(buscarObservacoesReceita(receita.getIdReceita()));
+                receitas.add(receita);
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Erro ao buscar receitas do grupo de parcelas: " + e.getMessage(), e);
+        }
+        return receitas;
+    }
+    
+    /**
+     * Cancela parcelas futuras de um grupo (soft delete)
+     */
+    public int cancelarParcelasFuturas(int idGrupoParcela, LocalDate dataLimite) {
+        String sql = "UPDATE receitas SET ativo = FALSE WHERE id_grupo_parcela = ? AND data > ? AND ativo = TRUE";
+        try (Connection conn = getConnection()) {
+            conn.setAutoCommit(false);
+            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                pstmt.setInt(1, idGrupoParcela);
+                pstmt.setDate(2, java.sql.Date.valueOf(dataLimite));
+                int canceladas = pstmt.executeUpdate();
+                conn.commit();
+                return canceladas;
+            } catch (Exception e) {
+                conn.rollback();
+                throw e;
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Erro ao cancelar parcelas futuras: " + e.getMessage(), e);
         }
     }
 }

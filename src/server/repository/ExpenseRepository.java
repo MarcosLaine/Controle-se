@@ -169,7 +169,7 @@ public class ExpenseRepository {
 
     public Gasto buscarGasto(int idGasto) {
         String sql = "SELECT id_gasto, descricao, valor, data, frequencia, id_usuario, id_conta, " +
-                    "proxima_recorrencia, id_gasto_original, ativo " +
+                    "proxima_recorrencia, id_gasto_original, ativo, id_grupo_parcela, numero_parcela, total_parcelas " +
                     "FROM gastos WHERE id_gasto = ? AND ativo = TRUE";
         
         try (Connection conn = getConnection();
@@ -209,6 +209,7 @@ public class ExpenseRepository {
     }
 
     public List<Gasto> buscarGastosPorPeriodo(int idUsuario, LocalDate dataInicio, LocalDate dataFim) {
+        // Query sem colunas de parcelas para compatibilidade (colunas podem não existir ainda)
         String sql = "SELECT id_gasto, descricao, valor, data, frequencia, id_usuario, id_conta, " +
                     "proxima_recorrencia, id_gasto_original, ativo " +
                     "FROM gastos " +
@@ -274,6 +275,35 @@ public class ExpenseRepository {
         if (idOriginal > 0) gasto.setIdGastoOriginal(idOriginal);
         
         gasto.setAtivo(rs.getBoolean("ativo"));
+        
+        // Campos de parcelas (podem ser NULL)
+        try {
+            int idGrupoParcela = rs.getInt("id_grupo_parcela");
+            if (!rs.wasNull()) {
+                gasto.setIdGrupoParcela(idGrupoParcela);
+            }
+        } catch (SQLException e) {
+            // Coluna não existe na query, ignora
+        }
+        
+        try {
+            int numeroParcela = rs.getInt("numero_parcela");
+            if (!rs.wasNull()) {
+                gasto.setNumeroParcela(numeroParcela);
+            }
+        } catch (SQLException e) {
+            // Coluna não existe na query, ignora
+        }
+        
+        try {
+            int totalParcelas = rs.getInt("total_parcelas");
+            if (!rs.wasNull()) {
+                gasto.setTotalParcelas(totalParcelas);
+            }
+        } catch (SQLException e) {
+            // Coluna não existe na query, ignora
+        }
+        
         return gasto;
     }
     
@@ -376,17 +406,43 @@ public class ExpenseRepository {
         return resultado;
     }
 
-    public List<Gasto> buscarGastosComFiltros(int idUsuario, Integer idCategoria, LocalDate data) {
+    public List<Gasto> buscarGastosComFiltros(int idUsuario, Integer idCategoria, LocalDate data, String type) {
         StringBuilder sql = new StringBuilder(
             "SELECT DISTINCT g.id_gasto, g.descricao, g.valor, g.data, g.frequencia, " +
-            "g.id_usuario, g.id_conta, g.proxima_recorrencia, g.id_gasto_original, g.ativo " +
+            "g.id_usuario, g.id_conta, g.proxima_recorrencia, g.id_gasto_original, g.ativo, " +
+            "g.id_grupo_parcela, g.numero_parcela, g.total_parcelas " +
             "FROM gastos g " +
             "LEFT JOIN categoria_gasto cg ON g.id_gasto = cg.id_gasto AND cg.ativo = TRUE " +
-            "WHERE g.id_usuario = ? AND g.ativo = TRUE"
+            "WHERE g.id_usuario = ?"
         );
         
         List<Object> params = new ArrayList<>();
         params.add(idUsuario);
+        
+        // Lógica de filtro de ativo:
+        // - Gastos excluídos (não parcelas) NUNCA aparecem
+        // - Parcelas excluídas (inativas com data futura) NUNCA aparecem
+        // - Parcelas pagas (inativas com data passada) aparecem
+        // - Se for filtro "parceladas": mostra parcelas ativas OU parcelas pagas (data passou)
+        // - Se for filtro "unicas": mostra apenas transações únicas ativas
+        // - Se não houver filtro de tipo: mostra ativas OU parcelas (ativas e pagas)
+        if (type != null && !type.isEmpty()) {
+            if ("parceladas".equals(type)) {
+                // Mostra parcelas ativas OU parcelas pagas (inativas mas com data passada)
+                sql.append(" AND g.id_grupo_parcela IS NOT NULL AND (g.ativo = TRUE OR g.data <= CURRENT_DATE)");
+            } else if ("unicas".equals(type)) {
+                // Mostra apenas transações únicas ativas (excluídas não aparecem)
+                sql.append(" AND g.id_grupo_parcela IS NULL AND g.ativo = TRUE");
+            } else {
+                // Outros filtros: apenas ativas (excluídas não aparecem)
+                sql.append(" AND g.ativo = TRUE");
+            }
+        } else {
+            // Sem filtro de tipo: mostra ativas OU parcelas (ativas e pagas)
+            // Gastos excluídos (não parcelas) não aparecem
+            // Parcelas excluídas (inativas com data futura) não aparecem
+            sql.append(" AND (g.ativo = TRUE OR (g.id_grupo_parcela IS NOT NULL AND g.data <= CURRENT_DATE))");
+        }
         
         if (idCategoria != null) {
             sql.append(" AND cg.id_categoria = ?");
@@ -446,17 +502,92 @@ public class ExpenseRepository {
                 pstmt.executeUpdate();
             }
             
-            String sqlConta = "UPDATE contas SET saldo_atual = saldo_atual + ? WHERE id_conta = ?";
-            try (PreparedStatement pstmt = conn.prepareStatement(sqlConta)) {
-                pstmt.setDouble(1, gasto.getValor());
-                pstmt.setInt(2, gasto.getIdConta());
-                pstmt.executeUpdate();
+            // Verifica se a conta é cartão de crédito
+            AccountRepository accountRepo = new AccountRepository();
+            Conta conta = accountRepo.buscarConta(gasto.getIdConta());
+            if (conta != null) {
+                String tipoConta = conta.getTipo() != null ? conta.getTipo().toLowerCase().trim() : "";
+                boolean isCartao = tipoConta.contains("cartão") || tipoConta.contains("cartao") || 
+                                  tipoConta.contains("credito") || tipoConta.contains("crédito");
+                
+                // Se não for cartão de crédito, estorna o saldo
+                // Se for cartão, apenas retorna o saldo (aumenta o limite disponível)
+                if (!isCartao) {
+                    String sqlConta = "UPDATE contas SET saldo_atual = saldo_atual + ? WHERE id_conta = ?";
+                    try (PreparedStatement pstmt = conn.prepareStatement(sqlConta)) {
+                        pstmt.setDouble(1, gasto.getValor());
+                        pstmt.setInt(2, gasto.getIdConta());
+                        pstmt.executeUpdate();
+                    }
+                } else {
+                    // Para cartão de crédito, apenas retorna o saldo (aumenta o limite disponível)
+                    String sqlConta = "UPDATE contas SET saldo_atual = saldo_atual + ? WHERE id_conta = ?";
+                    try (PreparedStatement pstmt = conn.prepareStatement(sqlConta)) {
+                        pstmt.setDouble(1, gasto.getValor());
+                        pstmt.setInt(2, gasto.getIdConta());
+                        pstmt.executeUpdate();
+                    }
+                }
             }
             
             conn.commit();
         } catch (SQLException e) {
             if (conn != null) try { conn.rollback(); } catch (SQLException ex) {}
             throw new RuntimeException("Erro ao excluir gasto: " + e.getMessage(), e);
+        } finally {
+            if (conn != null) try { conn.close(); } catch (SQLException e) {}
+        }
+    }
+    
+    /**
+     * Marca uma parcela como paga (pagamento antecipado)
+     * Estorna o saldo ao cartão de crédito (aumenta o limite disponível)
+     * O dinheiro já foi debitado da conta origem no handler
+     */
+    public void marcarParcelaComoPaga(int idGasto) {
+        Connection conn = null;
+        try {
+            conn = getConnection();
+            conn.setAutoCommit(false);
+            
+            String sqlBuscar = "SELECT id_gasto, valor, id_conta, ativo FROM gastos WHERE id_gasto = ?";
+            boolean existe = false;
+            boolean ativo = false;
+            double valor = 0;
+            int idConta = 0;
+            try (PreparedStatement pstmt = conn.prepareStatement(sqlBuscar)) {
+                pstmt.setInt(1, idGasto);
+                ResultSet rs = pstmt.executeQuery();
+                if (rs.next()) {
+                    existe = true;
+                    ativo = rs.getBoolean("ativo");
+                    valor = rs.getDouble("valor");
+                    idConta = rs.getInt("id_conta");
+                }
+            }
+            
+            if (!existe) throw new IllegalArgumentException("Parcela não encontrada");
+            if (!ativo) throw new IllegalArgumentException("Parcela já foi paga ou excluída");
+            
+            // Marca como inativa
+            String sql = "UPDATE gastos SET ativo = FALSE WHERE id_gasto = ?";
+            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                pstmt.setInt(1, idGasto);
+                pstmt.executeUpdate();
+            }
+            
+            // Estorna o saldo ao cartão de crédito (aumenta o limite disponível)
+            String sqlConta = "UPDATE contas SET saldo_atual = saldo_atual + ? WHERE id_conta = ?";
+            try (PreparedStatement pstmt = conn.prepareStatement(sqlConta)) {
+                pstmt.setDouble(1, valor);
+                pstmt.setInt(2, idConta);
+                pstmt.executeUpdate();
+            }
+            
+            conn.commit();
+        } catch (SQLException e) {
+            if (conn != null) try { conn.rollback(); } catch (SQLException ex) {}
+            throw new RuntimeException("Erro ao marcar parcela como paga: " + e.getMessage(), e);
         } finally {
             if (conn != null) try { conn.close(); } catch (SQLException e) {}
         }
@@ -563,6 +694,76 @@ public class ExpenseRepository {
             case "MENSAL": return dataBase.plusMonths(1);
             case "ANUAL": return dataBase.plusYears(1);
             default: return null;
+        }
+    }
+    
+    /**
+     * Atualiza informações de parcela em um gasto
+     */
+    public void atualizarInformacoesParcela(int idGasto, int idGrupoParcela, int numeroParcela, int totalParcelas) {
+        String sql = "UPDATE gastos SET id_grupo_parcela = ?, numero_parcela = ?, total_parcelas = ? WHERE id_gasto = ?";
+        try (Connection conn = getConnection()) {
+            conn.setAutoCommit(false);
+            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                pstmt.setInt(1, idGrupoParcela);
+                pstmt.setInt(2, numeroParcela);
+                pstmt.setInt(3, totalParcelas);
+                pstmt.setInt(4, idGasto);
+                pstmt.executeUpdate();
+                conn.commit();
+            } catch (Exception e) {
+                conn.rollback();
+                throw e;
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Erro ao atualizar informações de parcela: " + e.getMessage(), e);
+        }
+    }
+    
+    /**
+     * Busca gastos de um grupo de parcelas
+     */
+    public List<Gasto> buscarGastosPorGrupoParcela(int idGrupoParcela) {
+        String sql = "SELECT id_gasto, descricao, valor, data, frequencia, id_usuario, id_conta, " +
+                    "proxima_recorrencia, id_gasto_original, ativo, id_grupo_parcela, numero_parcela, total_parcelas " +
+                    "FROM gastos " +
+                    "WHERE id_grupo_parcela = ? AND ativo = TRUE " +
+                    "ORDER BY numero_parcela ASC";
+        List<Gasto> gastos = new ArrayList<>();
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, idGrupoParcela);
+            ResultSet rs = pstmt.executeQuery();
+            while (rs.next()) {
+                Gasto gasto = mapGasto(rs);
+                gasto.setObservacoes(buscarObservacoesGasto(gasto.getIdGasto()));
+                gastos.add(gasto);
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Erro ao buscar gastos do grupo de parcelas: " + e.getMessage(), e);
+        }
+        return gastos;
+    }
+    
+    /**
+     * Cancela parcelas futuras de um grupo (soft delete)
+     */
+    public int cancelarParcelasFuturas(int idGrupoParcela, LocalDate dataLimite) {
+        String sql = "UPDATE gastos SET ativo = FALSE WHERE id_grupo_parcela = ? AND data > ? AND ativo = TRUE";
+        try (Connection conn = getConnection()) {
+            conn.setAutoCommit(false);
+            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                pstmt.setInt(1, idGrupoParcela);
+                pstmt.setDate(2, java.sql.Date.valueOf(dataLimite));
+                int canceladas = pstmt.executeUpdate();
+                conn.commit();
+                return canceladas;
+            } catch (Exception e) {
+                conn.rollback();
+                throw e;
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Erro ao cancelar parcelas futuras: " + e.getMessage(), e);
         }
     }
 }

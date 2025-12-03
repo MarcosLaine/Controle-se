@@ -6,6 +6,7 @@ import { formatCurrency } from '../../utils/formatters';
 import Modal from '../common/Modal';
 import toast from 'react-hot-toast';
 import SkeletonSection from '../common/SkeletonSection';
+import Spinner from '../common/Spinner';
 
 export default function CategoriesAndTags() {
   const { user } = useAuth();
@@ -28,6 +29,14 @@ export default function CategoriesAndTags() {
   const [categoryFormData, setCategoryFormData] = useState({ nome: '', budget: '' });
   const [tagFormData, setTagFormData] = useState({ nome: '', cor: '#3498db' });
   const [budgetFormData, setBudgetFormData] = useState({ categoryId: '', value: '', period: 'MENSAL' });
+  
+  // Loading states
+  const [categoryLoading, setCategoryLoading] = useState(false);
+  const [tagLoading, setTagLoading] = useState(false);
+  const [budgetLoading, setBudgetLoading] = useState(false);
+  const [deletingCategoryIds, setDeletingCategoryIds] = useState(new Set());
+  const [deletingTagIds, setDeletingTagIds] = useState(new Set());
+  const [deletingBudgetIds, setDeletingBudgetIds] = useState(new Set());
 
   useEffect(() => {
     if (user) {
@@ -67,6 +76,7 @@ export default function CategoriesAndTags() {
       return;
     }
 
+    setCategoryLoading(true);
     try {
       if (editingCategory) {
         const response = await api.put(`/categories/${editingCategory.idCategoria}`, {
@@ -92,6 +102,8 @@ export default function CategoriesAndTags() {
       }
     } catch (error) {
       toast.error(error.message || 'Erro ao salvar categoria');
+    } finally {
+      setCategoryLoading(false);
     }
   };
 
@@ -103,6 +115,7 @@ export default function CategoriesAndTags() {
 
   const handleDeleteCategory = async (id) => {
     if (!confirm('Tem certeza que deseja excluir esta categoria?')) return;
+    setDeletingCategoryIds(prev => new Set(prev).add(id));
     try {
       const response = await api.delete(`/categories/${id}?userId=${user.id}`);
       if (response.success) {
@@ -111,6 +124,12 @@ export default function CategoriesAndTags() {
       }
     } catch (error) {
       toast.error(error.message || 'Erro ao excluir categoria');
+    } finally {
+      setDeletingCategoryIds(prev => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
     }
   };
 
@@ -123,6 +142,7 @@ export default function CategoriesAndTags() {
   // ========== TAGS ==========
   const handleTagSubmit = async (e) => {
     e.preventDefault();
+    setTagLoading(true);
     try {
       const data = { nome: tagFormData.nome, cor: tagFormData.cor, userId: user.id };
       if (editingTag) {
@@ -142,6 +162,8 @@ export default function CategoriesAndTags() {
       }
     } catch (error) {
       toast.error(error.message || 'Erro ao salvar tag');
+    } finally {
+      setTagLoading(false);
     }
   };
 
@@ -153,6 +175,7 @@ export default function CategoriesAndTags() {
 
   const handleDeleteTag = async (id) => {
     if (!confirm('Tem certeza que deseja excluir esta tag?')) return;
+    setDeletingTagIds(prev => new Set(prev).add(id));
     try {
       const response = await api.delete(`/tags/${id}`);
       if (response.success) {
@@ -161,6 +184,12 @@ export default function CategoriesAndTags() {
       }
     } catch (error) {
       toast.error('Erro ao excluir tag');
+    } finally {
+      setDeletingTagIds(prev => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
     }
   };
 
@@ -173,6 +202,7 @@ export default function CategoriesAndTags() {
   // ========== ORÇAMENTOS ==========
   const handleBudgetSubmit = async (e) => {
     e.preventDefault();
+    setBudgetLoading(true);
     try {
       const data = {
         categoryId: parseInt(budgetFormData.categoryId),
@@ -198,6 +228,8 @@ export default function CategoriesAndTags() {
       }
     } catch (error) {
       toast.error(error.message || 'Erro ao salvar orçamento');
+    } finally {
+      setBudgetLoading(false);
     }
   };
 
@@ -213,6 +245,7 @@ export default function CategoriesAndTags() {
 
   const handleDeleteBudget = async (id) => {
     if (!confirm('Tem certeza que deseja excluir este orçamento?')) return;
+    setDeletingBudgetIds(prev => new Set(prev).add(id));
     try {
       const response = await api.delete(`/budgets/${id}?userId=${user.id}`);
       if (response.success) {
@@ -221,6 +254,12 @@ export default function CategoriesAndTags() {
       }
     } catch (error) {
       toast.error('Erro ao excluir orçamento');
+    } finally {
+      setDeletingBudgetIds(prev => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
     }
   };
 
@@ -320,9 +359,14 @@ export default function CategoriesAndTags() {
                         </button>
                         <button
                           onClick={() => handleDeleteBudget(budget.idOrcamento)}
-                          className="text-xs px-2 py-1 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors"
+                          className="text-xs px-2 py-1 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          disabled={deletingBudgetIds.has(budget.idOrcamento)}
                         >
-                          Remover
+                          {deletingBudgetIds.has(budget.idOrcamento) ? (
+                            <Spinner size={12} className="text-red-700 dark:text-red-300" />
+                          ) : (
+                            'Remover'
+                          )}
                         </button>
                       </div>
                     </div>
@@ -359,9 +403,16 @@ export default function CategoriesAndTags() {
                     <button
                       onClick={() => handleDeleteCategory(category.idCategoria)}
                       className="btn-danger flex-1"
+                      disabled={deletingCategoryIds.has(category.idCategoria)}
                     >
-                      <Trash2 className="w-4 h-4" />
-                      Excluir
+                      {deletingCategoryIds.has(category.idCategoria) ? (
+                        <Spinner size={16} className="text-white" />
+                      ) : (
+                        <>
+                          <Trash2 className="w-4 h-4" />
+                          Excluir
+                        </>
+                      )}
                     </button>
                   </div>
                 </div>
@@ -426,9 +477,16 @@ export default function CategoriesAndTags() {
                   <button
                     onClick={() => handleDeleteTag(tag.idTag)}
                     className="btn-danger flex-1"
+                    disabled={deletingTagIds.has(tag.idTag)}
                   >
-                    <Trash2 className="w-4 h-4" />
-                    Excluir
+                    {deletingTagIds.has(tag.idTag) ? (
+                      <Spinner size={16} className="text-white" />
+                    ) : (
+                      <>
+                        <Trash2 className="w-4 h-4" />
+                        Excluir
+                      </>
+                    )}
                   </button>
                 </div>
               </div>
@@ -487,8 +545,15 @@ export default function CategoriesAndTags() {
             >
               Cancelar
             </button>
-            <button type="submit" className="btn-primary">
-              {editingCategory ? 'Atualizar' : 'Criar'}
+            <button type="submit" className="btn-primary" disabled={categoryLoading}>
+              {categoryLoading ? (
+                <>
+                  <Spinner size={16} className="text-white mr-2" />
+                  {editingCategory ? 'Atualizando...' : 'Criando...'}
+                </>
+              ) : (
+                editingCategory ? 'Atualizar' : 'Criar'
+              )}
             </button>
           </div>
         </form>
@@ -533,8 +598,15 @@ export default function CategoriesAndTags() {
             <button type="button" onClick={handleCloseTagModal} className="btn-secondary">
               Cancelar
             </button>
-            <button type="submit" className="btn-primary">
-              {editingTag ? 'Atualizar' : 'Criar'}
+            <button type="submit" className="btn-primary" disabled={tagLoading}>
+              {tagLoading ? (
+                <>
+                  <Spinner size={16} className="text-white mr-2" />
+                  {editingTag ? 'Atualizando...' : 'Criando...'}
+                </>
+              ) : (
+                editingTag ? 'Atualizar' : 'Criar'
+              )}
             </button>
           </div>
         </form>
@@ -592,8 +664,15 @@ export default function CategoriesAndTags() {
             <button type="button" onClick={handleCloseBudgetModal} className="btn-secondary">
               Cancelar
             </button>
-            <button type="submit" className="btn-primary">
-              {editingBudget ? 'Atualizar' : 'Criar'}
+            <button type="submit" className="btn-primary" disabled={budgetLoading}>
+              {budgetLoading ? (
+                <>
+                  <Spinner size={16} className="text-white mr-2" />
+                  {editingBudget ? 'Atualizando...' : 'Criando...'}
+                </>
+              ) : (
+                editingBudget ? 'Atualizar' : 'Criar'
+              )}
             </button>
           </div>
         </form>

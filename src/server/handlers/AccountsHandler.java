@@ -56,7 +56,16 @@ public class AccountsHandler implements HttpHandler {
                 accountData.put("idConta", conta.getIdConta());
                 accountData.put("nome", conta.getNome());
                 accountData.put("tipo", conta.getTipo());
+                
+                // Para contas de investimento, calcula o saldo baseado no valor atual dos investimentos
+                String tipoConta = conta.getTipo() != null ? conta.getTipo().toLowerCase().trim() : "";
+                if (tipoConta.equals("investimento") || tipoConta.equals("investimento (corretora)") || tipoConta.startsWith("investimento")) {
+                    double valorAtualInvestimentos = accountRepository.calcularValorAtualInvestimentos(conta.getIdConta());
+                    accountData.put("saldoAtual", valorAtualInvestimentos);
+                } else {
                 accountData.put("saldoAtual", conta.getSaldoAtual());
+                }
+                
                 accountData.put("idUsuario", conta.getIdUsuario());
                 if (conta.getDiaFechamento() != null) {
                     accountData.put("diaFechamento", conta.getDiaFechamento());

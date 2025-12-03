@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Minus, Trash2, ArrowUp, ArrowDown, Filter } from 'lucide-react';
+import { Plus, Minus, Trash2, ArrowUp, ArrowDown, Filter, CreditCard } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useData } from '../../contexts/DataContext';
 import api from '../../services/api';
@@ -7,6 +7,7 @@ import { formatCurrency, formatDate } from '../../utils/formatters';
 import Modal from '../common/Modal';
 import toast from 'react-hot-toast';
 import SkeletonSection from '../common/SkeletonSection';
+import Spinner from '../common/Spinner';
 
 export default function Transactions() {
   const { user } = useAuth();
@@ -18,13 +19,78 @@ export default function Transactions() {
   const [categories, setCategories] = useState([]);
   const [accounts, setAccounts] = useState([]);
   const [tags, setTags] = useState([]);
-  const [filters, setFilters] = useState({ category: '', tag: '', date: '' });
+  const [filters, setFilters] = useState({ category: '', tag: '', date: '', type: '' });
+  const [showPayInstallmentModal, setShowPayInstallmentModal] = useState(false);
+  const [selectedInstallment, setSelectedInstallment] = useState(null);
 
   useEffect(() => {
     if (user) {
       loadData();
     }
   }, [user, filters]);
+
+  // Verifica se uma parcela está paga
+  const isParcelaPaga = (transaction) => {
+    if (!transaction.numeroParcela || !transaction.totalParcelas) {
+      return false;
+    }
+    
+    // Se o backend indicou que foi paga
+    if (transaction.parcelaPaga === true || transaction.parcelaPaga === 'true') {
+      return true;
+    }
+    
+    // Se ativo for false, verifica se foi paga ou excluída
+    if (transaction.ativo === false || transaction.ativo === 'false') {
+      // Se o backend não indicou, usa lógica de fallback: se data passou, foi paga
+      try {
+        const parcelaDate = new Date(transaction.date);
+        const hoje = new Date();
+        hoje.setHours(0, 0, 0, 0);
+        parcelaDate.setHours(0, 0, 0, 0);
+        
+        // Se a data passou, considera como paga (fechamento de fatura)
+        if (parcelaDate < hoje) {
+          return true;
+        }
+      } catch (e) {
+        console.error('Erro ao verificar data da parcela:', e);
+      }
+    }
+    
+    // Se está ativa e a data passou, foi paga por fechamento de fatura
+    if (transaction.ativo === true || transaction.ativo === 'true') {
+      try {
+        const parcelaDate = new Date(transaction.date);
+        const hoje = new Date();
+        hoje.setHours(0, 0, 0, 0);
+        parcelaDate.setHours(0, 0, 0, 0);
+        
+        if (parcelaDate < hoje) {
+          return true;
+        }
+      } catch (e) {
+        console.error('Erro ao verificar data da parcela:', e);
+      }
+    }
+    
+    return false;
+  };
+  
+  // Verifica se uma parcela foi excluída (não paga)
+  const isParcelaExcluida = (transaction) => {
+    if (!transaction.numeroParcela || !transaction.totalParcelas) {
+      return false;
+    }
+    
+    // Se está inativa e não foi paga, foi excluída
+    if ((transaction.ativo === false || transaction.ativo === 'false') && 
+        !isParcelaPaga(transaction)) {
+      return true;
+    }
+    
+    return false;
+  };
 
   const loadData = async () => {
     setLoading(true);
@@ -36,6 +102,11 @@ export default function Transactions() {
       }
       if (filters.date) {
         transactionsUrl += `&date=${filters.date}`;
+      }
+      // Se o filtro for "parceladas" ou "unicas", envia para o backend
+      // Se for "expense" ou "income", filtra no frontend
+      if (filters.type && (filters.type === 'parceladas' || filters.type === 'unicas')) {
+        transactionsUrl += `&type=${filters.type}`;
       }
 
       const [transRes, catRes, accRes, tagRes] = await Promise.all([
@@ -53,6 +124,15 @@ export default function Transactions() {
             t.tags?.some((tag) => tag.idTag === parseInt(filters.tag))
           );
         }
+        // Filtro por tipo de transação (gasto/receita) feito no cliente
+        if (filters.type === 'expense') {
+          // Mostra apenas gastos (incluindo parcelados e únicos)
+          filtered = filtered.filter((t) => t.type === 'expense');
+        } else if (filters.type === 'income') {
+          // Mostra apenas receitas (incluindo parceladas e únicas)
+          filtered = filtered.filter((t) => t.type === 'income');
+        }
+        // O filtro por tipo (parceladas/únicas) já é feito no backend quando aplicável
         setTransactions(filtered);
       }
       if (catRes.success) setCategories(catRes.data || []);
@@ -65,9 +145,12 @@ export default function Transactions() {
     }
   };
 
+  const [deletingIds, setDeletingIds] = useState(new Set());
+
   const handleDelete = async (id, type) => {
     if (!confirm('Tem certeza que deseja excluir esta transação?')) return;
 
+    setDeletingIds(prev => new Set(prev).add(id));
     try {
       const endpoint = type === 'income' ? '/incomes' : '/expenses';
       const response = await api.delete(`${endpoint}?id=${id}`);
@@ -84,6 +167,12 @@ export default function Transactions() {
       }
     } catch (error) {
       toast.error('Erro ao excluir transação');
+    } finally {
+      setDeletingIds(prev => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
     }
   };
 
@@ -120,7 +209,7 @@ export default function Transactions() {
           <Filter className="w-5 h-5 text-gray-500" />
           <h3 className="font-semibold text-gray-900 dark:text-white">Filtros</h3>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
             <label className="label">Categoria</label>
             <select
@@ -160,9 +249,23 @@ export default function Transactions() {
               className="input"
             />
           </div>
+          <div>
+            <label className="label">Tipo</label>
+            <select
+              value={filters.type}
+              onChange={(e) => setFilters({ ...filters, type: e.target.value })}
+              className="input"
+            >
+              <option value="">Todas as Transações</option>
+              <option value="expense">Gastos</option>
+              <option value="income">Receitas</option>
+              <option value="parceladas">Compras Parceladas</option>
+              <option value="unicas">Transações Únicas</option>
+            </select>
+          </div>
         </div>
         <button
-          onClick={() => setFilters({ category: '', tag: '', date: '' })}
+          onClick={() => setFilters({ category: '', tag: '', date: '', type: '' })}
           className="btn-secondary mt-4"
         >
           Limpar Filtros
@@ -198,11 +301,41 @@ export default function Transactions() {
                   )}
                 </div>
                 <div className="min-w-0">
-                  <p className="font-semibold text-gray-900 dark:text-white truncate">
-                    {transaction.description}
-                  </p>
-                  <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
-                    {formatDate(transaction.date)} - {transaction.category}
+                  <div className="flex items-center gap-2">
+                    <p className={`font-semibold truncate ${
+                      isParcelaPaga(transaction)
+                        ? 'line-through opacity-60 text-gray-600 dark:text-gray-400'
+                        : isParcelaExcluida(transaction)
+                        ? 'line-through opacity-40 text-gray-400 dark:text-gray-600'
+                        : 'text-gray-900 dark:text-white'
+                    }`}>
+                      {transaction.description}
+                    </p>
+                    {transaction.numeroParcela && transaction.totalParcelas && (
+                      <span className={`px-2 py-0.5 text-xs font-medium rounded-full shrink-0 ${
+                        isParcelaPaga(transaction)
+                          ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 line-through opacity-60'
+                          : isParcelaExcluida(transaction)
+                          ? 'bg-gray-200 dark:bg-gray-800 text-gray-500 dark:text-gray-600 line-through opacity-40'
+                          : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
+                      }`}>
+                        {transaction.numeroParcela}/{transaction.totalParcelas}
+                        {isParcelaPaga(transaction) && ' ✓'}
+                        {isParcelaExcluida(transaction) && ' ✕'}
+                      </span>
+                    )}
+                  </div>
+                  <p className={`text-sm truncate ${
+                    isParcelaPaga(transaction)
+                      ? 'text-gray-400 dark:text-gray-500 line-through opacity-60'
+                      : isParcelaExcluida(transaction)
+                      ? 'text-gray-400 dark:text-gray-600 line-through opacity-40'
+                      : 'text-gray-500 dark:text-gray-400'
+                  }`}>
+                    {formatDate(transaction.date)}
+                    {transaction.category && transaction.category !== 'Sem Categoria' && (
+                      <> - {transaction.category}</>
+                    )}
                   </p>
                   {transaction.tags && transaction.tags.length > 0 && (
                     <div className="flex flex-wrap gap-2 mt-2">
@@ -235,7 +368,11 @@ export default function Transactions() {
               <div className="flex items-center justify-between sm:justify-end gap-4 w-full sm:w-auto border-t sm:border-t-0 pt-4 sm:pt-0 border-gray-100 dark:border-gray-700">
                 <span
                   className={`text-lg font-bold ${
-                    transaction.type === 'income'
+                    isParcelaPaga(transaction)
+                      ? 'line-through opacity-60 text-green-600 dark:text-green-500'
+                      : isParcelaExcluida(transaction)
+                      ? 'line-through opacity-40 text-gray-400 dark:text-gray-600'
+                      : transaction.type === 'income'
                       ? 'text-green-600 dark:text-green-400'
                       : 'text-red-600 dark:text-red-400'
                   }`}
@@ -243,12 +380,43 @@ export default function Transactions() {
                   {transaction.type === 'income' ? '+' : '-'}
                   {formatCurrency(transaction.value || 0)}
                 </span>
-                <button
-                  onClick={() => handleDelete(transaction.id, transaction.type)}
-                  className="btn-danger shrink-0"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
+                <div className="flex items-center gap-2">
+                  {transaction.type === 'expense' && transaction.numeroParcela && transaction.totalParcelas && !isParcelaPaga(transaction) && !isParcelaExcluida(transaction) && (
+                    <button
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        console.log('Clicou no botão de pagar parcela:', transaction);
+                        setSelectedInstallment(transaction);
+                        setShowPayInstallmentModal(true);
+                      }}
+                      className="btn-secondary shrink-0 flex items-center gap-1 px-2 py-1.5 relative z-10"
+                      title="Registrar pagamento antecipado (apenas no sistema)"
+                      type="button"
+                      style={{ pointerEvents: 'auto' }}
+                    >
+                      <CreditCard className="w-4 h-4" />
+                      <span className="text-xs hidden sm:inline">Registrar</span>
+                    </button>
+                  )}
+                  <button
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleDelete(transaction.id, transaction.type);
+                    }}
+                    className="btn-danger shrink-0 relative z-10"
+                    disabled={deletingIds.has(transaction.id)}
+                    type="button"
+                    style={{ pointerEvents: 'auto' }}
+                  >
+                    {deletingIds.has(transaction.id) ? (
+                      <Spinner size={16} className="text-white" />
+                    ) : (
+                      <Trash2 className="w-4 h-4" />
+                    )}
+                  </button>
+                </div>
               </div>
             </div>
           ))}
@@ -292,6 +460,27 @@ export default function Transactions() {
         }}
         user={user}
       />
+
+      {/* Pay Installment Modal */}
+      {showPayInstallmentModal && selectedInstallment && (
+        <PayInstallmentModal
+          isOpen={showPayInstallmentModal}
+          onClose={() => {
+            setShowPayInstallmentModal(false);
+            setSelectedInstallment(null);
+          }}
+          installment={selectedInstallment}
+          accounts={accounts}
+          onSuccess={() => {
+            loadData();
+            invalidateCache(`overview-${user.id}-month`);
+            invalidateCache(`overview-${user.id}-year`);
+            invalidateCache(`overview-${user.id}-all`);
+            invalidateCache(`recent-transactions-${user.id}`);
+          }}
+          user={user}
+        />
+      )}
     </div>
   );
 }
@@ -306,8 +495,13 @@ function TransactionModal({ isOpen, onClose, type, categories, accounts, tags, o
     tagIds: [],
     observacoes: '',
     pagamentoFatura: false,
+    isParcelado: false,
+    numeroParcelas: '',
+    intervaloDias: 30,
+    contaOrigemId: '', // Conta de onde o dinheiro sai para pagar a fatura
   });
   const [invoiceInfo, setInvoiceInfo] = useState(null);
+  const [loading, setLoading] = useState(false);
 
   const formatAccountType = (tipo) => {
     if (!tipo) return '';
@@ -336,6 +530,14 @@ function TransactionModal({ isOpen, onClose, type, categories, accounts, tags, o
   const handleSubmit = async (e) => {
     e.preventDefault();
     
+    // Validação: compra parcelada deve ter pelo menos 2 parcelas
+    if (type === 'expense' && formData.isParcelado) {
+      if (formData.numeroParcelas < 2) {
+        toast.error('O número de parcelas deve ser no mínimo 2 para compras parceladas.');
+        return;
+      }
+    }
+    
     // Validação no frontend: se for receita em cartão de crédito, verifica valor
     if (type === 'income' && formData.pagamentoFatura && invoiceInfo) {
       const valorInformado = parseFloat(formData.value);
@@ -355,6 +557,7 @@ function TransactionModal({ isOpen, onClose, type, categories, accounts, tags, o
       }
     }
     
+    setLoading(true);
     try {
       const data = {
         description: formData.description,
@@ -380,6 +583,23 @@ function TransactionModal({ isOpen, onClose, type, categories, accounts, tags, o
       // Se for receita, sempre envia flag de pagamento de fatura (mesmo que false)
       if (type === 'income') {
         data.pagamentoFatura = formData.pagamentoFatura || false;
+        // Se for pagamento de fatura e tiver conta origem, envia
+        if (formData.pagamentoFatura && formData.contaOrigemId) {
+          data.contaOrigemId = parseInt(formData.contaOrigemId);
+        }
+      }
+
+      // Se for gasto parcelado, adiciona informações de parcelas
+      if (type === 'expense' && formData.isParcelado) {
+        const numParcelas = parseInt(formData.numeroParcelas);
+        if (isNaN(numParcelas) || numParcelas < 2) {
+          toast.error('O número de parcelas deve ser no mínimo 2 para compras parceladas.');
+          return;
+        }
+        data.numeroParcelas = numParcelas;
+        data.intervaloDias = parseInt(formData.intervaloDias);
+        // Para parcelas, o valor é o valor total
+        // O backend vai dividir automaticamente
       }
 
       const endpoint = type === 'expense' ? '/expenses' : '/incomes';
@@ -397,10 +617,16 @@ function TransactionModal({ isOpen, onClose, type, categories, accounts, tags, o
           tagIds: [],
           observacoes: '',
           pagamentoFatura: false,
+          isParcelado: false,
+          numeroParcelas: '',
+          intervaloDias: 30,
+          contaOrigemId: '',
         });
       }
     } catch (error) {
       toast.error(error.message || 'Erro ao salvar transação');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -422,7 +648,9 @@ function TransactionModal({ isOpen, onClose, type, categories, accounts, tags, o
           />
         </div>
         <div>
-          <label className="label">Valor</label>
+          <label className="label">
+            {formData.isParcelado && type === 'expense' ? 'Valor Total' : 'Valor'}
+          </label>
           <input
             type="number"
             step="0.01"
@@ -431,9 +659,16 @@ function TransactionModal({ isOpen, onClose, type, categories, accounts, tags, o
             className="input"
             required
           />
+          {formData.isParcelado && type === 'expense' && formData.value && formData.numeroParcelas > 1 && (
+            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+              Valor por parcela: {formatCurrency(parseFloat(formData.value || 0) / formData.numeroParcelas)}
+            </p>
+          )}
         </div>
         <div>
-          <label className="label">Data</label>
+          <label className="label">
+            {formData.isParcelado && type === 'expense' ? 'Data da Primeira Parcela' : 'Data'}
+          </label>
           <input
             type="date"
             value={formData.date}
@@ -442,6 +677,96 @@ function TransactionModal({ isOpen, onClose, type, categories, accounts, tags, o
             required
           />
         </div>
+        {type === 'expense' && (
+          <div>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={formData.isParcelado}
+                onChange={(e) => setFormData({ ...formData, isParcelado: e.target.checked })}
+                className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
+              />
+              <span className="label">Compra parcelada</span>
+            </label>
+            {formData.isParcelado && (
+              <div className="mt-3 space-y-3 pl-6 border-l-2 border-primary-200 dark:border-primary-800">
+                <div>
+                  <label className="label">Número de Parcelas</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="120"
+                    value={formData.numeroParcelas}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      // Permite campo vazio ou qualquer número
+                      if (value === '' || value === null || value === undefined) {
+                        setFormData({ ...formData, numeroParcelas: '' });
+                        return;
+                      }
+                      const num = parseInt(value);
+                      if (isNaN(num)) {
+                        setFormData({ ...formData, numeroParcelas: '' });
+                        return;
+                      }
+                      // Limita entre 0 e 120, mas permite qualquer valor digitado
+                      const clampedNum = Math.max(0, Math.min(120, num));
+                      setFormData({ ...formData, numeroParcelas: clampedNum });
+                    }}
+                    className="input"
+                    required
+                  />
+                  {formData.numeroParcelas !== '' && formData.numeroParcelas < 2 && (
+                    <p className="text-xs text-red-600 dark:text-red-400 mt-1">
+                      O número de parcelas deve ser no mínimo 2 para compras parceladas.
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <label className="label">Intervalo entre Parcelas (dias)</label>
+                  <select
+                    value={formData.intervaloDias}
+                    onChange={(e) => setFormData({ ...formData, intervaloDias: parseInt(e.target.value) })}
+                    className="input"
+                  >
+                    <option value="7">Semanal (7 dias)</option>
+                    <option value="15">Quinzenal (15 dias)</option>
+                    <option value="30">Mensal (30 dias)</option>
+                    <option value="60">Bimestral (60 dias)</option>
+                    <option value="90">Trimestral (90 dias)</option>
+                  </select>
+                </div>
+                {formData.value && formData.numeroParcelas !== '' && parseInt(formData.numeroParcelas) >= 2 && formData.date && (
+                  <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+                    <p className="text-sm font-medium text-blue-800 dark:text-blue-200 mb-2">
+                      Preview das Parcelas:
+                    </p>
+                    <div className="space-y-1 text-xs text-blue-700 dark:text-blue-300 max-h-32 overflow-y-auto">
+                      {Array.from({ length: Math.min(parseInt(formData.numeroParcelas), 10) }, (_, i) => {
+                        const parcelaNum = i + 1;
+                        const numParcelas = parseInt(formData.numeroParcelas);
+                        const valorParcela = parseFloat(formData.value || 0) / numParcelas;
+                        return (
+                          <div key={parcelaNum} className="flex justify-between">
+                            <span>Parcela {parcelaNum}/{numParcelas}:</span>
+                            <span className="font-semibold">
+                              {formatCurrency(valorParcela)}
+                            </span>
+                          </div>
+                        );
+                      })}
+                      {parseInt(formData.numeroParcelas) > 10 && (
+                        <p className="text-blue-600 dark:text-blue-400 italic">
+                          ... e mais {parseInt(formData.numeroParcelas) - 10} parcelas
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
         {type === 'expense' && (
           <div>
             <label className="label">Categorias</label>
@@ -481,15 +806,14 @@ function TransactionModal({ isOpen, onClose, type, categories, accounts, tags, o
                                    selectedAccount?.tipo?.toLowerCase().includes('cartão') ||
                                    selectedAccount?.tipo?.toLowerCase().includes('credito') ||
                                    selectedAccount?.tipo?.toLowerCase().includes('crédito');
-              setFormData({ 
-                ...formData, 
-                accountId: e.target.value,
-                pagamentoFatura: false // Reseta quando muda a conta
-              });
-              setInvoiceInfo(null); // Reseta informações da fatura
-
-              // Se for receita e cartão de crédito, carrega informações da fatura
+              // Se for receita e cartão de crédito, marca checkbox por padrão e carrega informações da fatura
               if (type === 'income' && isCreditCard && user) {
+                setFormData({ 
+                  ...formData, 
+                  accountId: e.target.value,
+                  pagamentoFatura: true, // Marca por padrão quando for cartão de crédito
+                  contaOrigemId: ''
+                });
                 try {
                   const response = await api.get(`/accounts/${e.target.value}/invoice-info?userId=${user.id}`);
                   if (response.success && response.data) {
@@ -505,6 +829,14 @@ function TransactionModal({ isOpen, onClose, type, categories, accounts, tags, o
                   console.error('Erro ao carregar informações da fatura:', error);
                   setInvoiceInfo(null);
                 }
+              } else {
+                setFormData({ 
+                  ...formData, 
+                  accountId: e.target.value,
+                  pagamentoFatura: false,
+                  contaOrigemId: ''
+                });
+                setInvoiceInfo(null);
               }
             }}
             className="input"
@@ -565,36 +897,64 @@ function TransactionModal({ isOpen, onClose, type, categories, accounts, tags, o
                   </p>
                 )}
                 {formData.pagamentoFatura && invoiceInfo && (
-                  <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 mt-2">
-                    <p className="text-sm text-blue-800 dark:text-blue-200 font-medium mb-2">
-                      Informações da Fatura:
-                    </p>
-                    <div className="text-xs text-blue-700 dark:text-blue-300 space-y-1">
-                      <div className="flex justify-between">
-                        <span>Valor da fatura:</span>
-                        <span className="font-semibold">{formatCurrency(invoiceInfo.valorFatura || 0)}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Valor já pago:</span>
-                        <span className="font-semibold">{formatCurrency(invoiceInfo.valorJaPago || 0)}</span>
-                      </div>
-                      <div className="flex justify-between pt-1 border-t border-blue-200 dark:border-blue-700">
-                        <span className="font-medium">Disponível para pagamento:</span>
-                        <span className={`font-bold ${
-                          (invoiceInfo.valorDisponivel || 0) <= 0 
-                            ? 'text-red-600 dark:text-red-400' 
-                            : 'text-blue-900 dark:text-blue-100'
-                        }`}>
-                          {formatCurrency(invoiceInfo.valorDisponivel || 0)}
-                        </span>
-                      </div>
-                    </div>
-                    {formData.value && parseFloat(formData.value) > (invoiceInfo.valorDisponivel || 0) + 0.01 && (
-                      <p className="text-xs text-red-600 dark:text-red-400 mt-2 font-medium">
-                        ⚠️ O valor informado excede o valor disponível!
+                  <>
+                    <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 mt-2">
+                      <p className="text-sm text-blue-800 dark:text-blue-200 font-medium mb-2">
+                        Informações da Fatura:
                       </p>
-                    )}
-                  </div>
+                      <div className="text-xs text-blue-700 dark:text-blue-300 space-y-1">
+                        <div className="flex justify-between">
+                          <span>Valor da fatura:</span>
+                          <span className="font-semibold">{formatCurrency(invoiceInfo.valorFatura || 0)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Valor já pago:</span>
+                          <span className="font-semibold">{formatCurrency(invoiceInfo.valorJaPago || 0)}</span>
+                        </div>
+                        <div className="flex justify-between pt-1 border-t border-blue-200 dark:border-blue-700">
+                          <span className="font-medium">Disponível para pagamento:</span>
+                          <span className={`font-bold ${
+                            (invoiceInfo.valorDisponivel || 0) <= 0 
+                              ? 'text-red-600 dark:text-red-400' 
+                              : 'text-blue-900 dark:text-blue-100'
+                          }`}>
+                            {formatCurrency(invoiceInfo.valorDisponivel || 0)}
+                          </span>
+                        </div>
+                      </div>
+                      {formData.value && parseFloat(formData.value) > (invoiceInfo.valorDisponivel || 0) + 0.01 && (
+                        <p className="text-xs text-red-600 dark:text-red-400 mt-2 font-medium">
+                          ⚠️ O valor informado excede o valor disponível!
+                        </p>
+                      )}
+                    </div>
+                    <div className="mt-3">
+                      <label className="label">Conta de Origem (Opcional)</label>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+                        Selecione a conta corrente de onde o dinheiro sairá para pagar esta fatura
+                      </p>
+                      <select
+                        value={formData.contaOrigemId}
+                        onChange={(e) => setFormData({ ...formData, contaOrigemId: e.target.value })}
+                        className="input"
+                      >
+                        <option value="">Nenhuma (apenas registro da receita)</option>
+                        {accounts
+                          .filter((acc) => {
+                            const tipo = acc.tipo?.toLowerCase() || '';
+                            return (
+                              acc.idConta.toString() !== formData.accountId && // Não pode ser a mesma conta do cartão
+                              (tipo.includes('corrente') || tipo.includes('poupança') || tipo.includes('poupanca') || tipo.includes('dinheiro'))
+                            );
+                          })
+                          .map((acc) => (
+                            <option key={acc.idConta} value={acc.idConta}>
+                              {acc.nome} {acc.tipo ? `(${formatAccountType(acc.tipo)})` : ''}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                  </>
                 )}
               </div>
             );
@@ -649,8 +1009,158 @@ function TransactionModal({ isOpen, onClose, type, categories, accounts, tags, o
           <button type="button" onClick={onClose} className="btn-secondary">
             Cancelar
           </button>
-          <button type="submit" className="btn-primary">
-            Salvar
+          <button type="submit" className="btn-primary" disabled={loading}>
+            {loading ? (
+              <>
+                <Spinner size={16} className="text-white mr-2" />
+                Salvando...
+              </>
+            ) : (
+              'Salvar'
+            )}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function PayInstallmentModal({ isOpen, onClose, installment, accounts, onSuccess, user }) {
+  const [contaOrigemId, setContaOrigemId] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const formatAccountType = (tipo) => {
+    if (!tipo) return '';
+    const tipoLower = tipo.toLowerCase();
+    if (tipoLower.includes('cartão') || tipoLower.includes('cartao') || tipoLower.includes('cartao_credito') || tipoLower.includes('credito') || tipoLower.includes('crédito')) {
+      return 'Cartão de Crédito';
+    }
+    if (tipoLower.includes('investimento')) {
+      return 'Investimento';
+    }
+    if (tipoLower.includes('corrente')) {
+      return 'Conta Corrente';
+    }
+    if (tipoLower.includes('poupança') || tipoLower.includes('poupanca')) {
+      return 'Poupança';
+    }
+    if (tipoLower.includes('dinheiro')) {
+      return 'Dinheiro';
+    }
+    return tipo.split('_').map(word => 
+      word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+    ).join(' ');
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    
+    if (!contaOrigemId) {
+      toast.error('Selecione a conta de origem para o pagamento');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const response = await api.post('/expenses/pay-installment', {
+        expenseId: installment.id,
+        contaOrigemId: parseInt(contaOrigemId),
+        userId: user.id
+      });
+
+      if (response.success) {
+        toast.success('Pagamento registrado com sucesso no sistema!');
+        onSuccess();
+        onClose();
+        setContaOrigemId('');
+      } else {
+        toast.error(response.message || 'Erro ao registrar pagamento');
+      }
+    } catch (error) {
+      toast.error(error.message || 'Erro ao registrar pagamento');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!isOpen || !installment) return null;
+
+  return (
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={`Registrar Pagamento Antecipado - Parcela ${installment.numeroParcela}/${installment.totalParcelas}`}
+    >
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+          <p className="text-sm font-medium text-blue-800 dark:text-blue-200 mb-2">
+            Informações da Parcela:
+          </p>
+          <div className="text-xs text-blue-700 dark:text-blue-300 space-y-1">
+            <div className="flex justify-between">
+              <span>Descrição:</span>
+              <span className="font-semibold">{installment.description}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Valor:</span>
+              <span className="font-semibold">{formatCurrency(installment.value || 0)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Data original:</span>
+              <span className="font-semibold">{formatDate(installment.date)}</span>
+            </div>
+            <div className="flex justify-between pt-1 border-t border-blue-200 dark:border-blue-700">
+              <span className="font-medium">Parcela:</span>
+              <span className="font-bold">
+                {installment.numeroParcela}/{installment.totalParcelas}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <label className="label">Conta de Origem *</label>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+            Selecione a conta de onde o dinheiro sairá (apenas para registro no sistema)
+          </p>
+          <select
+            value={contaOrigemId}
+            onChange={(e) => setContaOrigemId(e.target.value)}
+            className="input"
+            required
+          >
+            <option value="">Selecione a conta</option>
+            {accounts
+              .filter((acc) => {
+                const tipo = acc.tipo?.toLowerCase() || '';
+                return (
+                  (tipo.includes('corrente') || tipo.includes('poupança') || tipo.includes('poupanca') || tipo.includes('dinheiro')) &&
+                  acc.tipo?.toLowerCase() !== 'investimento'
+                );
+              })
+              .map((acc) => (
+                <option key={acc.idConta} value={acc.idConta}>
+                  {acc.nome} {acc.tipo ? `(${formatAccountType(acc.tipo)})` : ''}
+                </option>
+              ))}
+          </select>
+        </div>
+
+        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+          <p className="text-xs text-blue-800 dark:text-blue-200 mb-2">
+            <strong>ℹ️ Informação:</strong> Esta ação apenas registra o pagamento no sistema de controle financeiro.
+          </p>
+          <p className="text-xs text-blue-700 dark:text-blue-300">
+            O valor será registrado como debitado da conta de origem selecionada e a parcela será marcada como paga no sistema. <strong>Esta ação não realiza nenhuma transação bancária real.</strong>
+          </p>
+        </div>
+
+        <div className="flex gap-2 justify-end">
+          <button type="button" onClick={onClose} className="btn-secondary" disabled={loading}>
+            Cancelar
+          </button>
+          <button type="submit" className="btn-primary" disabled={loading}>
+            {loading ? 'Registrando...' : 'Registrar Pagamento'}
           </button>
         </div>
       </form>

@@ -2,9 +2,12 @@ package server.repository;
 
 import server.database.DatabaseConnection;
 import server.model.Conta;
+import server.model.Investimento;
+import server.services.QuoteService;
 import server.validation.InputValidator;
 import server.validation.ValidationResult;
 import java.sql.*;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -268,10 +271,13 @@ public class AccountRepository {
     }
     
     public double calcularTotalSaldoContasUsuario(int idUsuario) {
+        // Exclui contas de investimento porque o saldo delas já inclui o valor atual dos investimentos
+        // e será calculado dinamicamente no AccountsHandler
         String sql = "SELECT COALESCE(SUM(saldo_atual), 0) as total " +
                     "FROM contas WHERE id_usuario = ? " +
                     "AND ativo = TRUE " +
-                    "AND (tipo IS NULL OR (UPPER(tipo) NOT LIKE 'CARTAO%' AND UPPER(tipo) != 'CARTAO_CREDITO'))";
+                    "AND (tipo IS NULL OR (UPPER(tipo) NOT LIKE 'CARTAO%' AND UPPER(tipo) != 'CARTAO_CREDITO' " +
+                    "AND UPPER(tipo) NOT LIKE 'INVESTIMENTO%'))";
         return executeDoubleQuery(sql, idUsuario);
     }
 
@@ -287,6 +293,34 @@ public class AccountRepository {
         }
     }
 
+    /**
+     * Decrementa o saldo de uma conta
+     */
+    public void decrementarSaldo(int idConta, double valor) {
+        if (valor <= 0) {
+            throw new IllegalArgumentException("Valor deve ser maior que zero");
+        }
+        
+        String sql = "UPDATE contas SET saldo_atual = saldo_atual - ? WHERE id_conta = ?";
+        try (Connection conn = getConnection()) {
+            conn.setAutoCommit(false);
+            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                pstmt.setDouble(1, valor);
+                pstmt.setInt(2, idConta);
+                int rowsAffected = pstmt.executeUpdate();
+                if (rowsAffected == 0) {
+                    throw new RuntimeException("Conta não encontrada ou não foi possível atualizar o saldo");
+                }
+                conn.commit();
+            } catch (Exception e) {
+                conn.rollback();
+                throw e;
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Erro ao decrementar saldo da conta: " + e.getMessage(), e);
+        }
+    }
+
     private Boolean hasCartaoCreditoColumnsCache = null;
     private boolean hasCartaoCreditoColumns(Connection conn) {
         if (hasCartaoCreditoColumnsCache != null) return hasCartaoCreditoColumnsCache;
@@ -298,6 +332,90 @@ public class AccountRepository {
         } catch (SQLException e) {
             hasCartaoCreditoColumnsCache = false;
             return false;
+        }
+    }
+
+    /**
+     * Calcula o valor atual dos investimentos de uma conta de investimento
+     * Retorna 0 se a conta não for de investimento ou não tiver investimentos
+     */
+    public double calcularValorAtualInvestimentos(int idConta) {
+        try {
+            Conta conta = buscarConta(idConta);
+            if (conta == null) {
+                return 0.0;
+            }
+            
+            // Verifica se é conta de investimento
+            String tipoConta = conta.getTipo() != null ? conta.getTipo().toLowerCase().trim() : "";
+            if (!tipoConta.equals("investimento") && !tipoConta.equals("investimento (corretora)") && !tipoConta.startsWith("investimento")) {
+                return 0.0;
+            }
+            
+            // Busca investimentos da conta
+            InvestmentRepository investmentRepository = new InvestmentRepository();
+            List<Investimento> investments = investmentRepository.buscarInvestimentosPorConta(idConta);
+            
+            if (investments.isEmpty()) {
+                return 0.0;
+            }
+            
+            QuoteService quoteService = QuoteService.getInstance();
+            double totalCurrent = 0.0;
+            
+            for (Investimento inv : investments) {
+                try {
+                    double currentValue = 0.0;
+                    
+                    // Converte valor do aporte para BRL se o investimento foi registrado em outra moeda
+                    double valorAporteBRL = inv.getValorAporte();
+                    
+                    if (!"BRL".equals(inv.getMoeda())) {
+                        double exchangeRate = quoteService.getExchangeRate(inv.getMoeda(), "BRL");
+                        valorAporteBRL *= exchangeRate;
+                    }
+                    
+                    // Para renda fixa, calcula valor atual baseado nos índices
+                    if ("RENDA_FIXA".equals(inv.getCategoria())) {
+                        currentValue = quoteService.calculateFixedIncomeValue(
+                            valorAporteBRL,
+                            inv.getTipoInvestimento(),
+                            inv.getTipoRentabilidade(),
+                            inv.getIndice(),
+                            inv.getPercentualIndice(),
+                            inv.getTaxaFixa(),
+                            inv.getDataAporte(),
+                            inv.getDataVencimento(),
+                            LocalDate.now()
+                        );
+                    } else {
+                        // Para outros tipos, busca cotação atual
+                        QuoteService.QuoteResult quote = quoteService.getQuote(inv.getNome(), inv.getCategoria(), null);
+                        double currentPrice = quote != null && quote.success ? quote.price : inv.getPrecoAporte();
+                        
+                        // Converte preço atual para BRL se a cotação vier em outra moeda
+                        if (quote != null && quote.success && !"BRL".equals(quote.currency)) {
+                            double exchangeRate = quoteService.getExchangeRate(quote.currency, "BRL");
+                            currentPrice *= exchangeRate;
+                        } else if (!"BRL".equals(inv.getMoeda())) {
+                            double exchangeRate = quoteService.getExchangeRate(inv.getMoeda(), "BRL");
+                            currentPrice *= exchangeRate;
+                        }
+                        
+                        currentValue = inv.getQuantidade() * currentPrice;
+                    }
+                    
+                    totalCurrent += currentValue;
+                } catch (Exception e) {
+                    // Continua processando os outros investimentos mesmo se um falhar
+                    e.printStackTrace();
+                }
+            }
+            
+            return totalCurrent;
+        } catch (Exception e) {
+            e.printStackTrace();
+            return 0.0;
         }
     }
 

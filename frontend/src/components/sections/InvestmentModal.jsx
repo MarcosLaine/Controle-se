@@ -5,6 +5,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import api from '../../services/api';
 import Modal from '../common/Modal';
 import { parseFloatBrazilian, parseIntBrazilian } from '../../utils/formatters';
+import Spinner from '../common/Spinner';
 
 export default function InvestmentModal({ isOpen, onClose, onSuccess, investmentToEdit }) {
   const { user } = useAuth();
@@ -223,10 +224,14 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
       if (response && response.success) {
         if (investmentToEdit) {
           toast.success('Investimento atualizado com sucesso!');
+          // Dispara evento para recarregar contas
+          window.dispatchEvent(new CustomEvent('investmentUpdated'));
         } else if (variableForm.operationType === 'SELL') {
           toast.success('Venda de ativo registrada com sucesso!');
+          window.dispatchEvent(new CustomEvent('investmentUpdated'));
         } else {
           toast.success('Investimento criado com sucesso!');
+          window.dispatchEvent(new CustomEvent('investmentUpdated'));
         }
         if (onSuccess) {
           await onSuccess();
@@ -321,6 +326,8 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
       
       if (response && response.success) {
         toast.success(`Investimento de Renda Fixa ${investmentToEdit ? 'atualizado' : 'criado'}!`);
+        // Dispara evento para recarregar contas
+        window.dispatchEvent(new CustomEvent('investmentUpdated'));
         onSuccess();
         onClose();
         resetForms();
@@ -566,7 +573,14 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
           <div className="flex justify-end gap-2 mt-6">
             <button type="button" onClick={onClose} className="btn-secondary">Cancelar</button>
             <button type="submit" className="btn-primary" disabled={loading}>
-              {loading ? 'Salvando...' : 'Salvar'}
+              {loading ? (
+                <>
+                  <Spinner size={16} className="text-white mr-2" />
+                  Salvando...
+                </>
+              ) : (
+                'Salvar'
+              )}
             </button>
           </div>
         </form>
@@ -756,7 +770,14 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
           <div className="flex justify-end gap-2 mt-6">
             <button type="button" onClick={onClose} className="btn-secondary">Cancelar</button>
             <button type="submit" className="btn-primary" disabled={loading}>
-              {loading ? 'Salvando...' : 'Salvar'}
+              {loading ? (
+                <>
+                  <Spinner size={16} className="text-white mr-2" />
+                  Salvando...
+                </>
+              ) : (
+                'Salvar'
+              )}
             </button>
           </div>
         </form>
