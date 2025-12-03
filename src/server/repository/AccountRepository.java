@@ -236,20 +236,92 @@ public class AccountRepository {
     }
     
     public void excluirConta(int idConta) {
-        String sql = "DELETE FROM contas WHERE id_conta = ?";
-        try (Connection conn = getConnection()) {
+        Connection conn = null;
+        try {
+            conn = getConnection();
             conn.setAutoCommit(false);
+            
+            // Verifica se a conta existe e está ativa
+            String sqlVerificar = "SELECT id_conta, ativo FROM contas WHERE id_conta = ?";
+            boolean contaExiste = false;
+            boolean contaAtiva = false;
+            try (PreparedStatement pstmt = conn.prepareStatement(sqlVerificar)) {
+                pstmt.setInt(1, idConta);
+                ResultSet rs = pstmt.executeQuery();
+                if (rs.next()) {
+                    contaExiste = true;
+                    contaAtiva = rs.getBoolean("ativo");
+                }
+            }
+            
+            if (!contaExiste) {
+                throw new IllegalArgumentException("Conta não encontrada");
+            }
+            
+            // Exclui logicamente todas as receitas ativas que referenciam esta conta
+            String sqlReceitas = "UPDATE receitas SET ativo = FALSE WHERE id_conta = ? AND ativo = TRUE";
+            try (PreparedStatement pstmt = conn.prepareStatement(sqlReceitas)) {
+                pstmt.setInt(1, idConta);
+                pstmt.executeUpdate();
+            }
+            
+            // Exclui logicamente todos os gastos ativos que referenciam esta conta
+            String sqlGastos = "UPDATE gastos SET ativo = FALSE WHERE id_conta = ? AND ativo = TRUE";
+            try (PreparedStatement pstmt = conn.prepareStatement(sqlGastos)) {
+                pstmt.setInt(1, idConta);
+                pstmt.executeUpdate();
+            }
+            
+            // Exclui logicamente todos os investimentos ativos que referenciam esta conta
+            String sqlInvestimentos = "UPDATE investimentos SET ativo = FALSE WHERE id_conta = ? AND ativo = TRUE";
+            try (PreparedStatement pstmt = conn.prepareStatement(sqlInvestimentos)) {
+                pstmt.setInt(1, idConta);
+                pstmt.executeUpdate();
+            }
+            
+            // Exclui logicamente todos os grupos de parcelas ativos que referenciam esta conta
+            // (ignora se a tabela não existir, pois pode ser uma instalação antiga)
+            try {
+                String sqlInstallmentGroups = "UPDATE installment_groups SET ativo = FALSE WHERE id_conta = ? AND ativo = TRUE";
+                try (PreparedStatement pstmt = conn.prepareStatement(sqlInstallmentGroups)) {
+                    pstmt.setInt(1, idConta);
+                    pstmt.executeUpdate();
+                }
+            } catch (SQLException e) {
+                // Ignora erro se a tabela não existir (instalação antiga sem suporte a parcelas)
+                if (!e.getMessage().contains("does not exist") && !e.getMessage().contains("relation") && !e.getMessage().contains("table")) {
+                    throw e; // Re-lança se for outro tipo de erro
+                }
+            }
+            
+            // Agora pode excluir a conta fisicamente
+            String sql = "DELETE FROM contas WHERE id_conta = ?";
             try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
                 pstmt.setInt(1, idConta);
                 int deleted = pstmt.executeUpdate();
-                if (deleted == 0) throw new IllegalArgumentException("Conta não encontrada");
-                conn.commit();
-            } catch (Exception e) {
-                conn.rollback();
-                throw e;
+                if (deleted == 0) {
+                    throw new IllegalArgumentException("Conta não encontrada");
+                }
             }
+            
+            conn.commit();
         } catch (SQLException e) {
+            if (conn != null) {
+                try {
+                    conn.rollback();
+                } catch (SQLException ex) {
+                    // Ignora erro no rollback
+                }
+            }
             throw new RuntimeException("Erro ao excluir conta: " + e.getMessage(), e);
+        } finally {
+            if (conn != null) {
+                try {
+                    conn.close();
+                } catch (SQLException e) {
+                    // Ignora erro ao fechar conexão
+                }
+            }
         }
     }
     
