@@ -91,11 +91,12 @@ public class AccountsHandler implements HttpHandler {
                             proximoFechamento
                         );
                         
-                        double totalJaPago = incomeRepository.calcularTotalReceitasPorPeriodoEConta(
+                        double totalJaPago = incomeRepository.calcularTotalPagoFatura(
                             userId, 
                             conta.getIdConta(), 
                             ultimoFechamento, 
-                            proximoFechamento
+                            proximoFechamento,
+                            expenseRepository
                         );
                         
                         double valorDisponivelParaPagamento = valorFaturaAtual - totalJaPago;
@@ -176,11 +177,12 @@ public class AccountsHandler implements HttpHandler {
                 proximoFechamento
             );
             
-            double totalJaPago = incomeRepository.calcularTotalReceitasPorPeriodoEConta(
+            double totalJaPago = incomeRepository.calcularTotalPagoFatura(
                 userId, 
                 conta.getIdConta(), 
                 ultimoFechamento, 
-                proximoFechamento
+                proximoFechamento,
+                expenseRepository
             );
             
             double valorDisponivelParaPagamento = valorFaturaAtual - totalJaPago;

@@ -102,3 +102,4 @@ java -cp ".:lib/postgresql.jar:lib/hikaricp.jar:lib/slf4j-api.jar:lib/slf4j-simp
      -Dfile.encoding=UTF-8 \
      ControleSeServer
 
+

@@ -111,15 +111,9 @@ public class TransactionsHandler implements HttpHandler {
                     transaction.put("totalParcelas", gasto.getTotalParcelas());
                     
                     // Determina se foi paga ou excluída
-                    // Se está ativa, não foi paga nem excluída
-                    // Se está inativa e a data passou, foi paga (fechamento de fatura ou antecipada)
-                    // Se está inativa e a data não passou, foi excluída (mas não deve aparecer na lista)
-                    boolean foiPaga = false;
-                    if (!gasto.isAtivo()) {
-                        LocalDate hoje = LocalDate.now();
-                        // Se chegou aqui e está inativa, significa que a data passou (senão não apareceria na query)
-                        foiPaga = gasto.getData().isBefore(hoje) || gasto.getData().isEqual(hoje);
-                    }
+                    // Se está inativa, foi paga (pagamento antecipado ou fechamento de fatura)
+                    // Parcelas pagas aparecem na lista, parcelas excluídas não aparecem
+                    boolean foiPaga = !gasto.isAtivo();
                     transaction.put("parcelaPaga", foiPaga);
                 }
                 transactions.add(transaction);

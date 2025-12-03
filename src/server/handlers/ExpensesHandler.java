@@ -14,11 +14,13 @@ public class ExpensesHandler implements HttpHandler {
     private final ExpenseRepository expenseRepository;
     private final AccountRepository accountRepository;
     private final TagRepository tagRepository;
+    private final IncomeRepository incomeRepository;
 
     public ExpensesHandler() {
         this.expenseRepository = new ExpenseRepository();
         this.accountRepository = new AccountRepository();
         this.tagRepository = new TagRepository();
+        this.incomeRepository = new IncomeRepository();
     }
 
     @Override
@@ -263,7 +265,7 @@ public class ExpensesHandler implements HttpHandler {
     
     private void handleDelete(HttpExchange exchange) throws IOException {
         try {
-            AuthUtil.requireUserId(exchange);
+            int userId = AuthUtil.requireUserId(exchange);
             String idParam = RequestUtil.getQueryParam(exchange, "id");
             
             if (idParam == null) {
@@ -274,15 +276,64 @@ public class ExpensesHandler implements HttpHandler {
                 return;
             }
             
-            int expenseId = Integer.parseInt(idParam);
+            int expenseId;
+            try {
+                expenseId = Integer.parseInt(idParam);
+            } catch (NumberFormatException e) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "ID do gasto inválido");
+                ResponseUtil.sendJsonResponse(exchange, 400, response);
+                return;
+            }
+            
+            // Busca o gasto (incluindo parcelas pagas/inativas)
             Gasto gasto = expenseRepository.buscarGasto(expenseId);
-            int userId = gasto != null ? gasto.getIdUsuario() : AuthUtil.requireUserId(exchange);
+            if (gasto == null) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Gasto não encontrado");
+                ResponseUtil.sendJsonResponse(exchange, 404, response);
+                return;
+            }
+            
+            // Verifica se o usuário tem permissão para excluir este gasto
+            if (gasto.getIdUsuario() != userId) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Você não tem permissão para excluir este gasto");
+                ResponseUtil.sendJsonResponse(exchange, 403, response);
+                return;
+            }
+            
+            boolean isParcela = gasto.isParcela();
+            boolean parcelaPaga = isParcela && !gasto.isAtivo();
+            
+            // Se for uma parcela paga, cria uma receita oculta para manter o valor da fatura
+            // O pagamento já foi feito, então o valor deve continuar sendo contabilizado
+            // Usa prefixo especial [SISTEMA] para que não apareça na listagem
+            if (parcelaPaga) {
+                Conta conta = accountRepository.buscarConta(gasto.getIdConta());
+                if (conta != null && conta.isCartaoCredito()) {
+                    String descricaoReceita = "[SISTEMA] Pagamento de parcela excluída: " + gasto.getDescricao();
+                    LocalDate dataPagamento = LocalDate.now();
+                    incomeRepository.cadastrarReceita(
+                        descricaoReceita,
+                        gasto.getValor(),
+                        dataPagamento,
+                        userId,
+                        gasto.getIdConta(),
+                        null // sem observações
+                    );
+                }
+            }
             
             expenseRepository.excluirGasto(expenseId);
             
             CacheUtil.invalidateCache("overview_" + userId);
             CacheUtil.invalidateCache("categories_" + userId);
             CacheUtil.invalidateCache("totalExpense_" + userId);
+            CacheUtil.invalidateCache("totalIncome_" + userId);
             CacheUtil.invalidateCache("balance_" + userId);
             
             Map<String, Object> response = new HashMap<>();

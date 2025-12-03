@@ -168,9 +168,11 @@ public class ExpenseRepository {
     }
 
     public Gasto buscarGasto(int idGasto) {
+        // Busca gasto independente de estar ativo ou não
+        // Isso permite buscar parcelas pagas (inativas) para exclusão
         String sql = "SELECT id_gasto, descricao, valor, data, frequencia, id_usuario, id_conta, " +
                     "proxima_recorrencia, id_gasto_original, ativo, id_grupo_parcela, numero_parcela, total_parcelas " +
-                    "FROM gastos WHERE id_gasto = ? AND ativo = TRUE";
+                    "FROM gastos WHERE id_gasto = ?";
         
         try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
@@ -428,8 +430,8 @@ public class ExpenseRepository {
         // - Se não houver filtro de tipo: mostra ativas OU parcelas (ativas e pagas)
         if (type != null && !type.isEmpty()) {
             if ("parceladas".equals(type)) {
-                // Mostra parcelas ativas OU parcelas pagas (inativas mas com data passada)
-                sql.append(" AND g.id_grupo_parcela IS NOT NULL AND (g.ativo = TRUE OR g.data <= CURRENT_DATE)");
+                // Mostra parcelas ativas OU parcelas pagas (inativas)
+                sql.append(" AND g.id_grupo_parcela IS NOT NULL");
             } else if ("unicas".equals(type)) {
                 // Mostra apenas transações únicas ativas (excluídas não aparecem)
                 sql.append(" AND g.id_grupo_parcela IS NULL AND g.ativo = TRUE");
@@ -440,8 +442,8 @@ public class ExpenseRepository {
         } else {
             // Sem filtro de tipo: mostra ativas OU parcelas (ativas e pagas)
             // Gastos excluídos (não parcelas) não aparecem
-            // Parcelas excluídas (inativas com data futura) não aparecem
-            sql.append(" AND (g.ativo = TRUE OR (g.id_grupo_parcela IS NOT NULL AND g.data <= CURRENT_DATE))");
+            // Parcelas pagas (inativas) aparecem independente da data
+            sql.append(" AND (g.ativo = TRUE OR (g.id_grupo_parcela IS NOT NULL AND g.ativo = FALSE))");
         }
         
         if (idCategoria != null) {
@@ -484,7 +486,7 @@ public class ExpenseRepository {
             conn.setAutoCommit(false);
             
             String sqlBuscar = "SELECT id_gasto, descricao, valor, data, frequencia, id_usuario, id_conta, " +
-                              "proxima_recorrencia, id_gasto_original, ativo " +
+                              "proxima_recorrencia, id_gasto_original, ativo, id_grupo_parcela, numero_parcela, total_parcelas " +
                               "FROM gastos WHERE id_gasto = ?";
             Gasto gasto = null;
             try (PreparedStatement pstmt = conn.prepareStatement(sqlBuscar)) {
@@ -494,41 +496,66 @@ public class ExpenseRepository {
             }
             
             if (gasto == null) throw new IllegalArgumentException("Gasto não encontrado");
-            if (!gasto.isAtivo()) throw new IllegalArgumentException("Gasto já foi excluído");
             
-            String sql = "UPDATE gastos SET ativo = FALSE WHERE id_gasto = ?";
-            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
-                pstmt.setInt(1, idGasto);
-                pstmt.executeUpdate();
+            // Permite excluir parcelas mesmo que estejam pagas (inativas)
+            // Mas não permite excluir gastos já excluídos que não são parcelas
+            boolean isParcela = gasto.isParcela();
+            if (!gasto.isAtivo() && !isParcela) {
+                throw new IllegalArgumentException("Gasto já foi excluído");
+            }
+            
+            // Se for uma parcela paga, precisa reverter o estorno que foi feito ao cartão
+            boolean parcelaPaga = isParcela && !gasto.isAtivo();
+            
+            // Se já está inativa (parcela paga), deleta fisicamente
+            // Se está ativa, marca como inativa (exclusão lógica)
+            if (parcelaPaga) {
+                // Para parcelas pagas, deleta fisicamente do banco
+                String sqlDelete = "DELETE FROM gastos WHERE id_gasto = ?";
+                try (PreparedStatement pstmt = conn.prepareStatement(sqlDelete)) {
+                    pstmt.setInt(1, idGasto);
+                    pstmt.executeUpdate();
+                }
+            } else {
+                // Para gastos ativos, marca como inativo (exclusão lógica)
+                String sql = "UPDATE gastos SET ativo = FALSE WHERE id_gasto = ?";
+                try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                    pstmt.setInt(1, idGasto);
+                    pstmt.executeUpdate();
+                }
             }
             
             // Verifica se a conta é cartão de crédito
-            AccountRepository accountRepo = new AccountRepository();
-            Conta conta = accountRepo.buscarConta(gasto.getIdConta());
-            if (conta != null) {
-                String tipoConta = conta.getTipo() != null ? conta.getTipo().toLowerCase().trim() : "";
-                boolean isCartao = tipoConta.contains("cartão") || tipoConta.contains("cartao") || 
-                                  tipoConta.contains("credito") || tipoConta.contains("crédito");
-                
-                // Se não for cartão de crédito, estorna o saldo
-                // Se for cartão, apenas retorna o saldo (aumenta o limite disponível)
-                if (!isCartao) {
-                    String sqlConta = "UPDATE contas SET saldo_atual = saldo_atual + ? WHERE id_conta = ?";
-                    try (PreparedStatement pstmt = conn.prepareStatement(sqlConta)) {
-                        pstmt.setDouble(1, gasto.getValor());
-                        pstmt.setInt(2, gasto.getIdConta());
-                        pstmt.executeUpdate();
-                    }
-                } else {
-                    // Para cartão de crédito, apenas retorna o saldo (aumenta o limite disponível)
-                    String sqlConta = "UPDATE contas SET saldo_atual = saldo_atual + ? WHERE id_conta = ?";
-                    try (PreparedStatement pstmt = conn.prepareStatement(sqlConta)) {
-                        pstmt.setDouble(1, gasto.getValor());
-                        pstmt.setInt(2, gasto.getIdConta());
-                        pstmt.executeUpdate();
+            // Para parcelas pagas, não reverte o estorno - apenas remove o registro
+            // Para gastos normais ativos, estorna o saldo normalmente
+            if (!parcelaPaga) {
+                AccountRepository accountRepo = new AccountRepository();
+                Conta conta = accountRepo.buscarConta(gasto.getIdConta());
+                if (conta != null) {
+                    String tipoConta = conta.getTipo() != null ? conta.getTipo().toLowerCase().trim() : "";
+                    boolean isCartao = tipoConta.contains("cartão") || tipoConta.contains("cartao") || 
+                                      tipoConta.contains("credito") || tipoConta.contains("crédito");
+                    
+                    // Para gastos normais (não parcelas pagas), estorna o saldo normalmente
+                    if (!isCartao) {
+                        String sqlConta = "UPDATE contas SET saldo_atual = saldo_atual + ? WHERE id_conta = ?";
+                        try (PreparedStatement pstmt = conn.prepareStatement(sqlConta)) {
+                            pstmt.setDouble(1, gasto.getValor());
+                            pstmt.setInt(2, gasto.getIdConta());
+                            pstmt.executeUpdate();
+                        }
+                    } else {
+                        // Para cartão de crédito, apenas retorna o saldo (aumenta o limite disponível)
+                        String sqlConta = "UPDATE contas SET saldo_atual = saldo_atual + ? WHERE id_conta = ?";
+                        try (PreparedStatement pstmt = conn.prepareStatement(sqlConta)) {
+                            pstmt.setDouble(1, gasto.getValor());
+                            pstmt.setInt(2, gasto.getIdConta());
+                            pstmt.executeUpdate();
+                        }
                     }
                 }
             }
+            // Se for parcela paga, não faz nada com o saldo - apenas remove o registro
             
             conn.commit();
         } catch (SQLException e) {
@@ -577,11 +604,30 @@ public class ExpenseRepository {
             }
             
             // Estorna o saldo ao cartão de crédito (aumenta o limite disponível)
-            String sqlConta = "UPDATE contas SET saldo_atual = saldo_atual + ? WHERE id_conta = ?";
-            try (PreparedStatement pstmt = conn.prepareStatement(sqlConta)) {
-                pstmt.setDouble(1, valor);
-                pstmt.setInt(2, idConta);
-                pstmt.executeUpdate();
+            // Verifica se a conta é cartão de crédito antes de estornar
+            String sqlVerificarConta = "SELECT tipo FROM contas WHERE id_conta = ?";
+            boolean isCartao = false;
+            try (PreparedStatement pstmt = conn.prepareStatement(sqlVerificarConta)) {
+                pstmt.setInt(1, idConta);
+                ResultSet rs = pstmt.executeQuery();
+                if (rs.next()) {
+                    String tipo = rs.getString("tipo");
+                    if (tipo != null) {
+                        String tipoLower = tipo.toLowerCase();
+                        isCartao = tipoLower.contains("cartão") || tipoLower.contains("cartao") || 
+                                   tipoLower.contains("credito") || tipoLower.contains("crédito");
+                    }
+                }
+            }
+            
+            // Só estorna se for cartão de crédito
+            if (isCartao) {
+                String sqlConta = "UPDATE contas SET saldo_atual = saldo_atual + ? WHERE id_conta = ?";
+                try (PreparedStatement pstmt = conn.prepareStatement(sqlConta)) {
+                    pstmt.setDouble(1, valor);
+                    pstmt.setInt(2, idConta);
+                    pstmt.executeUpdate();
+                }
             }
             
             conn.commit();
@@ -625,6 +671,35 @@ public class ExpenseRepository {
             return 0.0;
         } catch (SQLException e) {
             throw new RuntimeException("Erro ao calcular valor da fatura: " + e.getMessage(), e);
+        }
+    }
+    
+    /**
+     * Calcula o total de parcelas pagas antecipadamente em um período específico
+     * Usado para verificar quanto já foi pago de uma fatura de cartão de crédito
+     * Considera apenas gastos inativos que são parcelas (id_grupo_parcela IS NOT NULL)
+     * e que foram pagos no período (data do pagamento está no período)
+     */
+    public double calcularTotalParcelasPagasPorPeriodoEConta(int idConta, LocalDate dataInicio, LocalDate dataFim) {
+        // Busca gastos inativos que são parcelas e foram pagos no período
+        // A data do pagamento é a data atual quando a parcela foi marcada como paga
+        // Mas como não temos essa data, vamos considerar todas as parcelas inativas
+        // que estavam no período da fatura (mesmo que pagas antes)
+        String sql = "SELECT COALESCE(SUM(valor), 0) as total " +
+                    "FROM gastos " +
+                    "WHERE id_conta = ? AND ativo = FALSE " +
+                    "AND id_grupo_parcela IS NOT NULL " +
+                    "AND data >= ? AND data < ?";
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, idConta);
+            pstmt.setDate(2, java.sql.Date.valueOf(dataInicio));
+            pstmt.setDate(3, java.sql.Date.valueOf(dataFim));
+            ResultSet rs = pstmt.executeQuery();
+            if (rs.next()) return rs.getDouble("total");
+            return 0.0;
+        } catch (SQLException e) {
+            throw new RuntimeException("Erro ao calcular total de parcelas pagas por período: " + e.getMessage(), e);
         }
     }
 

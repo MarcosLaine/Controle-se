@@ -130,7 +130,9 @@ public class IncomeRepository {
     public List<Receita> buscarReceitasPorUsuario(int idUsuario) {
         String sql = "SELECT id_receita, descricao, valor, data, frequencia, id_usuario, id_conta, " +
                     "proxima_recorrencia, id_receita_original, ativo " +
-                    "FROM receitas WHERE id_usuario = ? AND ativo = TRUE ORDER BY data DESC";
+                    "FROM receitas WHERE id_usuario = ? AND ativo = TRUE " +
+                    "AND descricao NOT LIKE '[SISTEMA]%' " +
+                    "ORDER BY data DESC";
         List<Receita> receitas = new ArrayList<>();
         try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
@@ -216,7 +218,8 @@ public class IncomeRepository {
             "SELECT id_receita, descricao, valor, data, frequencia, id_usuario, id_conta, " +
             "proxima_recorrencia, id_receita_original, ativo, id_grupo_parcela, numero_parcela, total_parcelas " +
             "FROM receitas " +
-            "WHERE id_usuario = ? AND ativo = TRUE"
+            "WHERE id_usuario = ? AND ativo = TRUE " +
+            "AND descricao NOT LIKE '[SISTEMA]%'"
         );
         if (data != null) sql.append(" AND data = ?");
         if (type != null && !type.isEmpty()) {
@@ -250,6 +253,7 @@ public class IncomeRepository {
                     "proxima_recorrencia, id_receita_original, ativo " +
                     "FROM receitas " +
                     "WHERE id_usuario = ? AND ativo = TRUE " +
+                    "AND descricao NOT LIKE '[SISTEMA]%' " +
                     "AND data >= ? AND data <= ? " +
                     "ORDER BY data DESC";
         List<Receita> receitas = new ArrayList<>();
@@ -389,6 +393,16 @@ public class IncomeRepository {
         } catch (SQLException e) {
             throw new RuntimeException("Erro ao calcular total de receitas por período: " + e.getMessage(), e);
         }
+    }
+    
+    /**
+     * Calcula o total já pago de uma fatura considerando receitas e parcelas pagas antecipadamente
+     * @param expenseRepository Repositório de gastos para calcular parcelas pagas
+     */
+    public double calcularTotalPagoFatura(int idUsuario, int idConta, LocalDate dataInicio, LocalDate dataFim, ExpenseRepository expenseRepository) {
+        double totalReceitas = calcularTotalReceitasPorPeriodoEConta(idUsuario, idConta, dataInicio, dataFim);
+        double totalParcelasPagas = expenseRepository.calcularTotalParcelasPagasPorPeriodoEConta(idConta, dataInicio, dataFim);
+        return totalReceitas + totalParcelasPagas;
     }
 
     public List<Receita> buscarReceitasComRecorrenciaPendente(LocalDate hoje) {
