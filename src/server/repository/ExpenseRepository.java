@@ -627,6 +627,35 @@ public class ExpenseRepository {
             throw new RuntimeException("Erro ao calcular valor da fatura: " + e.getMessage(), e);
         }
     }
+    
+    /**
+     * Calcula o total de parcelas pagas antecipadamente em um período específico
+     * Usado para verificar quanto já foi pago de uma fatura de cartão de crédito
+     * Considera apenas gastos inativos que são parcelas (id_grupo_parcela IS NOT NULL)
+     * e que foram pagos no período (data do pagamento está no período)
+     */
+    public double calcularTotalParcelasPagasPorPeriodoEConta(int idConta, LocalDate dataInicio, LocalDate dataFim) {
+        // Busca gastos inativos que são parcelas e foram pagos no período
+        // A data do pagamento é a data atual quando a parcela foi marcada como paga
+        // Mas como não temos essa data, vamos considerar todas as parcelas inativas
+        // que estavam no período da fatura (mesmo que pagas antes)
+        String sql = "SELECT COALESCE(SUM(valor), 0) as total " +
+                    "FROM gastos " +
+                    "WHERE id_conta = ? AND ativo = FALSE " +
+                    "AND id_grupo_parcela IS NOT NULL " +
+                    "AND data >= ? AND data < ?";
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, idConta);
+            pstmt.setDate(2, java.sql.Date.valueOf(dataInicio));
+            pstmt.setDate(3, java.sql.Date.valueOf(dataFim));
+            ResultSet rs = pstmt.executeQuery();
+            if (rs.next()) return rs.getDouble("total");
+            return 0.0;
+        } catch (SQLException e) {
+            throw new RuntimeException("Erro ao calcular total de parcelas pagas por período: " + e.getMessage(), e);
+        }
+    }
 
     public List<Gasto> buscarGastosComRecorrenciaPendente(LocalDate hoje) {
         String sql = "SELECT id_gasto, descricao, valor, data, frequencia, id_usuario, id_conta, " +

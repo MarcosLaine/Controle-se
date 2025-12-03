@@ -117,12 +117,13 @@ public class IncomesHandler implements HttpHandler {
                         proximoFechamento
                     );
                     
-                    // Calcula o total já pago nesta fatura (soma das receitas no período)
-                    double totalJaPago = incomeRepository.calcularTotalReceitasPorPeriodoEConta(
+                    // Calcula o total já pago nesta fatura (soma das receitas e parcelas pagas no período)
+                    double totalJaPago = incomeRepository.calcularTotalPagoFatura(
                         userId, 
                         accountId, 
                         ultimoFechamento, 
-                        proximoFechamento
+                        proximoFechamento,
+                        expenseRepository
                     );
                     
                     double valorDisponivelParaPagamento = valorFaturaAtual - totalJaPago;

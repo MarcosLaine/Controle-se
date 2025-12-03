@@ -390,6 +390,16 @@ public class IncomeRepository {
             throw new RuntimeException("Erro ao calcular total de receitas por período: " + e.getMessage(), e);
         }
     }
+    
+    /**
+     * Calcula o total já pago de uma fatura considerando receitas e parcelas pagas antecipadamente
+     * @param expenseRepository Repositório de gastos para calcular parcelas pagas
+     */
+    public double calcularTotalPagoFatura(int idUsuario, int idConta, LocalDate dataInicio, LocalDate dataFim, ExpenseRepository expenseRepository) {
+        double totalReceitas = calcularTotalReceitasPorPeriodoEConta(idUsuario, idConta, dataInicio, dataFim);
+        double totalParcelasPagas = expenseRepository.calcularTotalParcelasPagasPorPeriodoEConta(idConta, dataInicio, dataFim);
+        return totalReceitas + totalParcelasPagas;
+    }
 
     public List<Receita> buscarReceitasComRecorrenciaPendente(LocalDate hoje) {
         String sql = "SELECT id_receita, descricao, valor, data, frequencia, id_usuario, id_conta, " +
