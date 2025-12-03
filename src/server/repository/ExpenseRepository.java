@@ -634,7 +634,7 @@ public class ExpenseRepository {
                         throw new RuntimeException("Falha ao estornar saldo: nenhuma linha atualizada para conta " + idConta);
                     }
                     // Log para depuração
-                    LOGGER.info("Estorno realizado: R$ " + valor + " estornado para conta " + idConta + " (tipo: " + tipoConta + ")");
+                    // LOGGER.info("Estorno realizado: R$ " + valor + " estornado para conta " + idConta + " (tipo: " + tipoConta + ")");
                 }
             } else {
                 // Log de aviso se não for cartão de crédito

@@ -467,7 +467,7 @@ export default function Transactions() {
                       onClick={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        console.log('Clicou no botão de pagar parcela:', transaction);
+                        // console.log('Clicou no botão de pagar parcela:', transaction);
                         setSelectedInstallment(transaction);
                         setShowPayInstallmentModal(true);
                       }}

@@ -67,7 +67,7 @@ public class InstallmentService {
         int idGrupo = installmentRepository.criarGrupoParcelas(grupo);
         grupo.setIdGrupo(idGrupo);
         
-        LOGGER.info("Criando compra parcelada: " + descricao + " - " + numeroParcelas + "x de R$ " + grupo.getValorParcela());
+        // LOGGER.info("Criando compra parcelada: " + descricao + " - " + numeroParcelas + "x de R$ " + grupo.getValorParcela());
         
         // Calcula o valor base da parcela (arredondado para 2 casas decimais)
         double valorParcelaBase = Math.round((valorTotal / numeroParcelas) * 100.0) / 100.0;
@@ -160,7 +160,7 @@ public class InstallmentService {
         int idGrupo = installmentRepository.criarGrupoParcelas(grupo);
         grupo.setIdGrupo(idGrupo);
         
-        LOGGER.info("Criando receita parcelada: " + descricao + " - " + numeroParcelas + "x de R$ " + grupo.getValorParcela());
+        // LOGGER.info("Criando receita parcelada: " + descricao + " - " + numeroParcelas + "x de R$ " + grupo.getValorParcela());
         
         // Calcula o valor base da parcela (arredondado para 2 casas decimais)
         double valorParcelaBase = Math.round((valorTotal / numeroParcelas) * 100.0) / 100.0;
