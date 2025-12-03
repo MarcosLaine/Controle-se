@@ -430,8 +430,8 @@ public class ExpenseRepository {
         // - Se não houver filtro de tipo: mostra ativas OU parcelas (ativas e pagas)
         if (type != null && !type.isEmpty()) {
             if ("parceladas".equals(type)) {
-                // Mostra parcelas ativas OU parcelas pagas (inativas mas com data passada)
-                sql.append(" AND g.id_grupo_parcela IS NOT NULL AND (g.ativo = TRUE OR g.data <= CURRENT_DATE)");
+                // Mostra parcelas ativas OU parcelas pagas (inativas)
+                sql.append(" AND g.id_grupo_parcela IS NOT NULL");
             } else if ("unicas".equals(type)) {
                 // Mostra apenas transações únicas ativas (excluídas não aparecem)
                 sql.append(" AND g.id_grupo_parcela IS NULL AND g.ativo = TRUE");
@@ -442,8 +442,8 @@ public class ExpenseRepository {
         } else {
             // Sem filtro de tipo: mostra ativas OU parcelas (ativas e pagas)
             // Gastos excluídos (não parcelas) não aparecem
-            // Parcelas excluídas (inativas com data futura) não aparecem
-            sql.append(" AND (g.ativo = TRUE OR (g.id_grupo_parcela IS NOT NULL AND g.data <= CURRENT_DATE))");
+            // Parcelas pagas (inativas) aparecem independente da data
+            sql.append(" AND (g.ativo = TRUE OR (g.id_grupo_parcela IS NOT NULL AND g.ativo = FALSE))");
         }
         
         if (idCategoria != null) {
@@ -604,11 +604,30 @@ public class ExpenseRepository {
             }
             
             // Estorna o saldo ao cartão de crédito (aumenta o limite disponível)
-            String sqlConta = "UPDATE contas SET saldo_atual = saldo_atual + ? WHERE id_conta = ?";
-            try (PreparedStatement pstmt = conn.prepareStatement(sqlConta)) {
-                pstmt.setDouble(1, valor);
-                pstmt.setInt(2, idConta);
-                pstmt.executeUpdate();
+            // Verifica se a conta é cartão de crédito antes de estornar
+            String sqlVerificarConta = "SELECT tipo FROM contas WHERE id_conta = ?";
+            boolean isCartao = false;
+            try (PreparedStatement pstmt = conn.prepareStatement(sqlVerificarConta)) {
+                pstmt.setInt(1, idConta);
+                ResultSet rs = pstmt.executeQuery();
+                if (rs.next()) {
+                    String tipo = rs.getString("tipo");
+                    if (tipo != null) {
+                        String tipoLower = tipo.toLowerCase();
+                        isCartao = tipoLower.contains("cartão") || tipoLower.contains("cartao") || 
+                                   tipoLower.contains("credito") || tipoLower.contains("crédito");
+                    }
+                }
+            }
+            
+            // Só estorna se for cartão de crédito
+            if (isCartao) {
+                String sqlConta = "UPDATE contas SET saldo_atual = saldo_atual + ? WHERE id_conta = ?";
+                try (PreparedStatement pstmt = conn.prepareStatement(sqlConta)) {
+                    pstmt.setDouble(1, valor);
+                    pstmt.setInt(2, idConta);
+                    pstmt.executeUpdate();
+                }
             }
             
             conn.commit();
