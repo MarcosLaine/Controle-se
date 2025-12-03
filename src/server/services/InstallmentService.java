@@ -3,11 +3,13 @@ package server.services;
 import server.model.InstallmentGroup;
 import server.model.Gasto;
 import server.model.Receita;
+import server.model.Conta;
 import server.repository.InstallmentRepository;
 import server.repository.ExpenseRepository;
 import server.repository.IncomeRepository;
 import server.repository.CategoryRepository;
 import server.repository.TagRepository;
+import server.repository.AccountRepository;
 import server.model.Categoria;
 import server.model.Tag;
 import java.time.LocalDate;
@@ -25,6 +27,7 @@ public class InstallmentService {
     private final IncomeRepository incomeRepository;
     private final CategoryRepository categoryRepository;
     private final TagRepository tagRepository;
+    private final AccountRepository accountRepository;
     
     public InstallmentService() {
         this.installmentRepository = new InstallmentRepository();
@@ -32,6 +35,7 @@ public class InstallmentService {
         this.incomeRepository = new IncomeRepository();
         this.tagRepository = new TagRepository();
         this.categoryRepository = new CategoryRepository();
+        this.accountRepository = new AccountRepository();
     }
     
     /**
@@ -101,6 +105,22 @@ public class InstallmentService {
             if (idsTags != null) {
                 for (int tagId : idsTags) {
                     tagRepository.associarTagTransacao(idGasto, "GASTO", tagId);
+                }
+            }
+            
+            // Se a parcela já passou (data no passado), marca automaticamente como paga
+            // Isso faz o estorno automático do valor ao cartão de crédito
+            LocalDate hoje = LocalDate.now();
+            if (dataParcela.isBefore(hoje)) {
+                Conta conta = accountRepository.buscarConta(idConta);
+                if (conta != null && conta.isCartaoCredito()) {
+                    try {
+                        expenseRepository.marcarParcelaComoPaga(idGasto);
+                        LOGGER.info("Parcela " + i + "/" + numeroParcelas + " marcada automaticamente como paga (data passada: " + dataParcela + ")");
+                    } catch (Exception e) {
+                        LOGGER.warning("Erro ao marcar parcela " + i + " como paga automaticamente: " + e.getMessage());
+                        // Não interrompe o processo, apenas loga o erro
+                    }
                 }
             }
         }

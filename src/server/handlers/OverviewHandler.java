@@ -9,7 +9,6 @@ import server.services.QuoteService;
 
 import java.io.IOException;
 import java.time.LocalDate;
-import java.time.temporal.ChronoUnit;
 import java.util.*;
 
 public class OverviewHandler implements HttpHandler {
@@ -77,28 +76,57 @@ public class OverviewHandler implements HttpHandler {
             contasCartao.removeIf(c -> !c.isCartaoCredito() || c.getDiaFechamento() == null || c.getDiaPagamento() == null);
             
             Map<String, Object> cartoesInfo = null;
+            Double valorFaturaAPagar = null;
             if (!contasCartao.isEmpty()) {
                 LocalDate proximoPagamentoMaisProximo = null;
                 LocalDate proximoFechamentoMaisProximo = null;
                 long menorDiasAtePagamento = Long.MAX_VALUE;
+                long menorDiasAteFechamento = Long.MAX_VALUE;
                 
                 for (Conta cartao : contasCartao) {
                     Map<String, Object> faturaInfo = CreditCardUtil.calcularInfoFatura(cartao.getDiaFechamento(), cartao.getDiaPagamento());
                     long diasAtePagamento = (Long) faturaInfo.get("diasAtePagamento");
+                    long diasAteFechamento = (Long) faturaInfo.get("diasAteFechamento");
                     
-                    if (diasAtePagamento < menorDiasAtePagamento) {
+                    // Calcula o valor da fatura a pagar para este cartão
+                    LocalDate ultimoFechamento = LocalDate.parse((String) faturaInfo.get("ultimoFechamento"));
+                    LocalDate proximoFechamento = LocalDate.parse((String) faturaInfo.get("proximoFechamento"));
+                    
+                    double valorFaturaAtual = expenseRepository.calcularValorFaturaAtual(
+                        cartao.getIdConta(), 
+                        ultimoFechamento, 
+                        proximoFechamento
+                    );
+                    
+                    double totalJaPago = incomeRepository.calcularTotalPagoFatura(
+                        userId, 
+                        cartao.getIdConta(), 
+                        ultimoFechamento, 
+                        proximoFechamento,
+                        expenseRepository
+                    );
+                    
+                    double valorAPagar = valorFaturaAtual - totalJaPago;
+                    if (valorAPagar < 0) {
+                        valorAPagar = 0;
+                    }
+                    
+                    // Encontra a fatura mais próxima do fechamento (menor diasAteFechamento)
+                    if (diasAteFechamento < menorDiasAteFechamento) {
+                        menorDiasAteFechamento = diasAteFechamento;
                         menorDiasAtePagamento = diasAtePagamento;
                         proximoPagamentoMaisProximo = LocalDate.parse((String) faturaInfo.get("proximoPagamento"));
                         proximoFechamentoMaisProximo = LocalDate.parse((String) faturaInfo.get("proximoFechamento"));
+                        valorFaturaAPagar = valorAPagar;
                     }
                 }
                 
-                if (proximoPagamentoMaisProximo != null) {
+                if (proximoPagamentoMaisProximo != null && proximoFechamentoMaisProximo != null) {
                     cartoesInfo = new HashMap<>();
                     cartoesInfo.put("proximoPagamento", proximoPagamentoMaisProximo.toString());
                     cartoesInfo.put("proximoFechamento", proximoFechamentoMaisProximo.toString());
                     cartoesInfo.put("diasAtePagamento", menorDiasAtePagamento);
-                    cartoesInfo.put("diasAteFechamento", ChronoUnit.DAYS.between(LocalDate.now(), proximoFechamentoMaisProximo));
+                    cartoesInfo.put("diasAteFechamento", menorDiasAteFechamento);
                 }
             }
             
@@ -200,6 +228,9 @@ public class OverviewHandler implements HttpHandler {
             dataMap.put("balance", balance);
             dataMap.put("netWorth", netWorth);
             dataMap.put("totalCreditoDisponivel", totalCreditoDisponivel);
+            if (valorFaturaAPagar != null) {
+                dataMap.put("valorFaturaAPagar", valorFaturaAPagar);
+            }
             if (cartoesInfo != null) {
                 dataMap.put("cartoesInfo", cartoesInfo);
             }

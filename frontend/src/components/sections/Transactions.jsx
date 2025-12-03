@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Minus, Trash2, ArrowUp, ArrowDown, Filter, CreditCard } from 'lucide-react';
+import { Plus, Minus, Trash2, ArrowUp, ArrowDown, Filter, CreditCard, Search } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useData } from '../../contexts/DataContext';
 import api from '../../services/api';
@@ -19,9 +19,18 @@ export default function Transactions() {
   const [categories, setCategories] = useState([]);
   const [accounts, setAccounts] = useState([]);
   const [tags, setTags] = useState([]);
-  const [filters, setFilters] = useState({ category: '', tag: '', date: '', type: '' });
+  const [filters, setFilters] = useState({ category: '', tag: '', date: '', type: '', search: '' });
   const [showPayInstallmentModal, setShowPayInstallmentModal] = useState(false);
   const [selectedInstallment, setSelectedInstallment] = useState(null);
+
+  // Função para normalizar string (remover acentos e converter para minúsculas)
+  const normalizeString = (str) => {
+    if (!str) return '';
+    return str
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+  };
 
   useEffect(() => {
     if (user) {
@@ -132,6 +141,14 @@ export default function Transactions() {
           // Mostra apenas receitas (incluindo parceladas e únicas)
           filtered = filtered.filter((t) => t.type === 'income');
         }
+        // Filtro de busca por palavra na descrição (case-insensitive e sem acentos)
+        if (filters.search) {
+          const searchNormalized = normalizeString(filters.search);
+          filtered = filtered.filter((t) => {
+            const descriptionNormalized = normalizeString(t.description || '');
+            return descriptionNormalized.includes(searchNormalized);
+          });
+        }
         // O filtro por tipo (parceladas/únicas) já é feito no backend quando aplicável
         setTransactions(filtered);
       }
@@ -203,6 +220,27 @@ export default function Transactions() {
         </div>
       </div>
 
+      {/* Search */}
+      <div className="card">
+        <div className="flex items-center gap-2 mb-4">
+          <Search className="w-5 h-5 text-gray-500" />
+          <h3 className="font-semibold text-gray-900 dark:text-white">Buscar Transações</h3>
+        </div>
+        <div>
+          <label className="label">Buscar por palavra na descrição</label>
+          <input
+            type="text"
+            value={filters.search}
+            onChange={(e) => setFilters({ ...filters, search: e.target.value })}
+            className="input"
+            placeholder="Ex: Farm, farma, Farmácia..."
+          />
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            A busca não diferencia maiúsculas/minúsculas e ignora acentos
+          </p>
+        </div>
+      </div>
+
       {/* Filters */}
       <div className="card">
         <div className="flex items-center gap-2 mb-4">
@@ -265,7 +303,7 @@ export default function Transactions() {
           </div>
         </div>
         <button
-          onClick={() => setFilters({ category: '', tag: '', date: '', type: '' })}
+          onClick={() => setFilters({ category: '', tag: '', date: '', type: '', search: '' })}
           className="btn-secondary mt-4"
         >
           Limpar Filtros

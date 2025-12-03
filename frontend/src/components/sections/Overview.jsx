@@ -33,7 +33,6 @@ export default function Overview() {
   const { user } = useAuth();
   const { fetchData, getCachedData } = useData();
   const [loading, setLoading] = useState(true);
-  const [period, setPeriod] = useState('month');
   const [overviewData, setOverviewData] = useState(null);
   const [recentTransactions, setRecentTransactions] = useState([]);
   const [showSaldoInfo, setShowSaldoInfo] = useState(false);
@@ -43,7 +42,7 @@ export default function Overview() {
     if (!user) return;
     
     const loadData = async () => {
-      const cacheKey = `overview-${user.id}-${period}`;
+      const cacheKey = `overview-${user.id}`;
       const transactionsKey = `recent-transactions-${user.id}`;
       
       // Verifica cache primeiro
@@ -86,7 +85,7 @@ export default function Overview() {
     };
 
     loadData();
-  }, [user, period, fetchData, getCachedData]);
+  }, [user, fetchData, getCachedData]);
 
   const categoryChartData = overviewData?.categoryBreakdown
     ? {
@@ -119,24 +118,13 @@ export default function Overview() {
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-3xl font-bold text-gray-900 dark:text-white">
-            Visão Geral
-          </h2>
-          <p className="text-gray-600 dark:text-gray-400 mt-1">
-            Resumo das suas finanças
-          </p>
-        </div>
-        <select
-          value={period}
-          onChange={(e) => setPeriod(e.target.value)}
-          className="input w-auto"
-        >
-          <option value="month">Este Mês</option>
-          <option value="year">Este Ano</option>
-          <option value="all">Todos os Períodos</option>
-        </select>
+      <div>
+        <h2 className="text-3xl font-bold text-gray-900 dark:text-white">
+          Visão Geral
+        </h2>
+        <p className="text-gray-600 dark:text-gray-400 mt-1">
+          Resumo das suas finanças
+        </p>
       </div>
 
       {/* Summary Cards */}
@@ -190,7 +178,7 @@ export default function Overview() {
       </div>
 
       {/* Cartão de Crédito Agregado */}
-      {overviewData?.totalCreditoDisponivel > 0 && (
+      {(overviewData?.valorFaturaAPagar !== undefined && overviewData?.valorFaturaAPagar !== null) && (
         <div className="card border-2 border-orange-500 bg-orange-50 dark:bg-orange-900/10">
           <div className="flex items-center justify-between">
             <div className="flex-1">
@@ -198,10 +186,10 @@ export default function Overview() {
                 Cartões de Crédito
               </h3>
               <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
-                Crédito Disponível Total
+                Fatura à Pagar
               </p>
               <p className="text-3xl font-bold text-orange-600 dark:text-orange-400 mb-3">
-                {formatCurrency(overviewData.totalCreditoDisponivel)}
+                {formatCurrency(overviewData.valorFaturaAPagar || 0)}
               </p>
               {overviewData.cartoesInfo && (
                 <div className="space-y-1 text-sm">
