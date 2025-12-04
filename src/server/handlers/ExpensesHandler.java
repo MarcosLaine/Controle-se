@@ -312,6 +312,7 @@ public class ExpensesHandler implements HttpHandler {
             // Se for uma parcela paga, cria uma receita oculta para manter o valor da fatura
             // O pagamento já foi feito, então o valor deve continuar sendo contabilizado
             // Usa prefixo especial [SISTEMA] para que não apareça na listagem
+            // IMPORTANTE: não incrementa o saldo porque o estorno já foi feito quando a parcela foi paga
             if (parcelaPaga) {
                 Conta conta = accountRepository.buscarConta(gasto.getIdConta());
                 if (conta != null && conta.isCartaoCredito()) {
@@ -323,7 +324,8 @@ public class ExpensesHandler implements HttpHandler {
                         dataPagamento,
                         userId,
                         gasto.getIdConta(),
-                        null // sem observações
+                        null, // sem observações
+                        false // NÃO incrementa o saldo - o estorno já foi feito quando a parcela foi paga
                     );
                 }
             }

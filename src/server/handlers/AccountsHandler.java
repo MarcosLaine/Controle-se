@@ -324,6 +324,7 @@ public class AccountsHandler implements HttpHandler {
             }
             
             // Obtém o ID do usuário autenticado do token JWT
+            // O userId do token JWT é a fonte de verdade e sempre será usado
             int userId;
             try {
                 userId = AuthUtil.requireUserId(exchange);
@@ -335,28 +336,7 @@ public class AccountsHandler implements HttpHandler {
                 return;
             }
             
-            // Valida se o userId do body (se presente) corresponde ao do token
-            Object userIdBodyObj = data.get("userId");
-            if (userIdBodyObj != null) {
-                int userIdBody;
-                try {
-                    if (userIdBodyObj instanceof Number) {
-                        userIdBody = ((Number) userIdBodyObj).intValue();
-                    } else {
-                        userIdBody = Integer.parseInt(userIdBodyObj.toString());
-                    }
-                    
-                    if (userIdBody != userId) {
-                        Map<String, Object> response = new HashMap<>();
-                        response.put("success", false);
-                        response.put("message", "Token de autenticação desatualizado. Faça logout e login novamente. (Token: " + userId + ", Enviado: " + userIdBody + ")");
-                        ResponseUtil.sendJsonResponse(exchange, 401, response);
-                        return;
-                    }
-                } catch (NumberFormatException e) {
-                    // Ignora se userId do body não for um número válido
-                }
-            }
+            // Ignora qualquer userId que venha no body - sempre usa o do token JWT
             
             int accountId = accountRepository.cadastrarConta(name, type, balance, userId, diaFechamento, diaPagamento);
             
