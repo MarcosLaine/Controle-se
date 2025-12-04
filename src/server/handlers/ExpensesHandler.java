@@ -85,6 +85,15 @@ public class ExpensesHandler implements HttpHandler {
                 return;
             }
             
+            // Valida que a conta pertence ao usuário autenticado
+            if (conta.getIdUsuario() != userId) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Você não tem permissão para usar esta conta");
+                ResponseUtil.sendJsonResponse(exchange, 403, response);
+                return;
+            }
+            
             String tipoConta = conta.getTipo() != null ? conta.getTipo().toLowerCase().trim() : "";
             if (tipoConta.equals("investimento") || tipoConta.equals("investimento (corretora)") || tipoConta.startsWith("investimento")) {
                 Map<String, Object> response = new HashMap<>();
@@ -190,6 +199,15 @@ public class ExpensesHandler implements HttpHandler {
                 return;
             }
             
+            // Valida que o gasto pertence ao usuário autenticado
+            if (gasto.getIdUsuario() != userId) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Você não tem permissão para pagar esta parcela");
+                ResponseUtil.sendJsonResponse(exchange, 403, response);
+                return;
+            }
+            
             // Verifica se é uma parcela
             if (gasto.getIdGrupoParcela() == null || gasto.getNumeroParcela() == null) {
                 Map<String, Object> response = new HashMap<>();
@@ -215,6 +233,15 @@ public class ExpensesHandler implements HttpHandler {
                 response.put("success", false);
                 response.put("message", "Conta de origem não encontrada");
                 ResponseUtil.sendJsonResponse(exchange, 404, response);
+                return;
+            }
+            
+            // Valida que a conta origem pertence ao usuário autenticado
+            if (contaOrigem.getIdUsuario() != userId) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Você não tem permissão para usar esta conta de origem");
+                ResponseUtil.sendJsonResponse(exchange, 403, response);
                 return;
             }
             
@@ -315,6 +342,7 @@ public class ExpensesHandler implements HttpHandler {
             // Se for uma parcela paga, cria uma receita oculta para manter o valor da fatura
             // O pagamento já foi feito, então o valor deve continuar sendo contabilizado
             // Usa prefixo especial [SISTEMA] para que não apareça na listagem
+            // IMPORTANTE: não incrementa o saldo porque o estorno já foi feito quando a parcela foi paga
             if (parcelaPaga) {
                 Conta conta = accountRepository.buscarConta(gasto.getIdConta());
                 if (conta != null && conta.isCartaoCredito()) {
@@ -326,12 +354,13 @@ public class ExpensesHandler implements HttpHandler {
                         dataPagamento,
                         userId,
                         gasto.getIdConta(),
-                        null // sem observações
+                        null, // sem observações
+                        false // NÃO incrementa o saldo - o estorno já foi feito quando a parcela foi paga
                     );
                 }
             }
             
-            expenseRepository.excluirGasto(expenseId);
+            expenseRepository.excluirGasto(expenseId, userId);
             
             CacheUtil.invalidateCache("overview_" + userId);
             CacheUtil.invalidateCache("categories_" + userId);

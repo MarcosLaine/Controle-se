@@ -11,6 +11,7 @@ import java.util.*;
 import server.model.Investimento;
 import server.repository.InvestmentRepository;
 import server.services.QuoteService;
+import server.utils.AuthUtil;
 import server.utils.RequestUtil;
 import server.utils.ResponseUtil;
 
@@ -34,8 +35,9 @@ public class InvestmentEvolutionHandler implements HttpHandler {
         }
 
         try {
-            String userIdParam = RequestUtil.getQueryParam(exchange, "userId");
-            int userId = userIdParam != null ? Integer.parseInt(userIdParam) : 1;
+            // Usa o userId do token JWT autenticado, não do parâmetro da query string
+            // Isso previne que usuários vejam evolução de investimentos de outros usuários
+            int userId = AuthUtil.requireUserId(exchange);
 
             LocalDate today = LocalDate.now();
             LocalDate endDate = parseDateOrDefault(RequestUtil.getQueryParam(exchange, "endDate"), today);

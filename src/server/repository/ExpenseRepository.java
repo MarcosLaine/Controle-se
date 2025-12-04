@@ -173,6 +173,7 @@ public class ExpenseRepository {
     public Gasto buscarGasto(int idGasto) {
         // Busca gasto independente de estar ativo ou não
         // Isso permite buscar parcelas pagas (inativas) para exclusão
+        // NOTA: Este método não valida userId - os handlers devem validar antes de usar
         String sql = "SELECT id_gasto, descricao, valor, data, frequencia, id_usuario, id_conta, " +
                     "proxima_recorrencia, id_gasto_original, ativo, id_grupo_parcela, numero_parcela, total_parcelas " +
                     "FROM gastos WHERE id_gasto = ?";
@@ -180,6 +181,29 @@ public class ExpenseRepository {
         try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setInt(1, idGasto);
+            ResultSet rs = pstmt.executeQuery();
+            
+            if (rs.next()) {
+                Gasto gasto = mapGasto(rs);
+                gasto.setObservacoes(buscarObservacoesGasto(idGasto));
+                return gasto;
+            }
+            return null;
+        } catch (SQLException e) {
+            throw new RuntimeException("Erro ao buscar gasto: " + e.getMessage(), e);
+        }
+    }
+    
+    public Gasto buscarGastoPorUsuario(int idGasto, int idUsuario) {
+        // Busca gasto validando que pertence ao usuário
+        String sql = "SELECT id_gasto, descricao, valor, data, frequencia, id_usuario, id_conta, " +
+                    "proxima_recorrencia, id_gasto_original, ativo, id_grupo_parcela, numero_parcela, total_parcelas " +
+                    "FROM gastos WHERE id_gasto = ? AND id_usuario = ?";
+        
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, idGasto);
+            pstmt.setInt(2, idUsuario);
             ResultSet rs = pstmt.executeQuery();
             
             if (rs.next()) {
@@ -500,7 +524,7 @@ public class ExpenseRepository {
         return gastos;
     }
 
-    public void excluirGasto(int idGasto) {
+    public void excluirGasto(int idGasto, int idUsuario) {
         Connection conn = null;
         try {
             conn = getConnection();
@@ -517,6 +541,11 @@ public class ExpenseRepository {
             }
             
             if (gasto == null) throw new IllegalArgumentException("Gasto não encontrado");
+            
+            // Valida que o gasto pertence ao usuário
+            if (gasto.getIdUsuario() != idUsuario) {
+                throw new IllegalArgumentException("Você não tem permissão para excluir este gasto");
+            }
             
             // Permite excluir parcelas mesmo que estejam pagas (inativas)
             // Mas não permite excluir gastos já excluídos que não são parcelas

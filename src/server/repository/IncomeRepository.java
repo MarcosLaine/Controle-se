@@ -36,6 +36,84 @@ public class IncomeRepository {
     public int cadastrarReceita(String descricao, double valor, LocalDate data, int idUsuario, int idConta) {
         return cadastrarReceita(descricao, valor, data, idUsuario, idConta, null);
     }
+    
+    /**
+     * Cadastra uma receita com opção de não incrementar o saldo da conta
+     * @param incrementarSaldo Se false, apenas registra a receita sem alterar o saldo (útil para receitas do sistema)
+     */
+    public int cadastrarReceita(String descricao, double valor, LocalDate data, int idUsuario, int idConta, String[] observacoes, boolean incrementarSaldo) {
+        ValidationResult descValidation = InputValidator.validateDescription("Descrição da receita", descricao, true);
+        if (!descValidation.isValid()) throw new IllegalArgumentException(descValidation.getErrors().get(0));
+        
+        validateAmount("Valor da receita", valor);
+        validateId("ID do usuário", idUsuario);
+        validateId("ID da conta", idConta);
+        
+        if (data == null) throw new IllegalArgumentException("Data não pode ser nula");
+        
+        AccountRepository accountRepo = new AccountRepository();
+        Conta conta = accountRepo.buscarConta(idConta);
+        if (conta == null) throw new IllegalArgumentException("Conta não encontrada");
+        if (conta.getTipo() != null && conta.getTipo().equalsIgnoreCase("INVESTIMENTO")) {
+            throw new IllegalArgumentException("Contas de investimento não podem ser usadas para receitas");
+        }
+        
+        descricao = InputValidator.sanitizeDescription(descricao);
+        
+        Connection conn = null;
+        try {
+            conn = getConnection();
+            conn.setAutoCommit(false);
+            
+            String sql = "INSERT INTO receitas (descricao, valor, data, id_usuario, id_conta) VALUES (?, ?, ?, ?, ?) RETURNING id_receita";
+            
+            int idReceita;
+            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                pstmt.setString(1, descricao);
+                pstmt.setDouble(2, valor);
+                pstmt.setDate(3, java.sql.Date.valueOf(data));
+                pstmt.setInt(4, idUsuario);
+                pstmt.setInt(5, idConta);
+                
+                ResultSet rs = pstmt.executeQuery();
+                if (!rs.next()) throw new RuntimeException("Erro ao cadastrar receita");
+                idReceita = rs.getInt(1);
+            }
+            
+            if (observacoes != null && observacoes.length > 0) {
+                String sqlObs = "INSERT INTO receita_observacoes (id_receita, observacao, ordem) VALUES (?, ?, ?)";
+                try (PreparedStatement pstmt = conn.prepareStatement(sqlObs)) {
+                    for (int i = 0; i < observacoes.length; i++) {
+                        if (observacoes[i] != null && !observacoes[i].trim().isEmpty()) {
+                            pstmt.setInt(1, idReceita);
+                            pstmt.setString(2, observacoes[i]);
+                            pstmt.setInt(3, i);
+                            pstmt.executeUpdate();
+                        }
+                    }
+                }
+            }
+            
+            // Só incrementa o saldo se solicitado
+            if (incrementarSaldo) {
+                String sqlConta = "UPDATE contas SET saldo_atual = saldo_atual + ? WHERE id_conta = ?";
+                try (PreparedStatement pstmt = conn.prepareStatement(sqlConta)) {
+                    pstmt.setDouble(1, valor);
+                    pstmt.setInt(2, idConta);
+                    pstmt.executeUpdate();
+                }
+            }
+            
+            conn.commit();
+            return idReceita;
+            
+        } catch (SQLException e) {
+            if (conn != null) try { conn.rollback(); } catch (SQLException ex) {}
+            throw new RuntimeException("Erro ao cadastrar receita: " + e.getMessage(), e);
+        } finally {
+            if (conn != null) try { conn.close(); } catch (SQLException e) {}
+        }
+    }
 
     public int cadastrarReceita(String descricao, double valor, LocalDate data, int idUsuario, int idConta, String[] observacoes) {
         ValidationResult descValidation = InputValidator.validateDescription("Descrição da receita", descricao, true);
@@ -90,6 +168,8 @@ public class IncomeRepository {
                 }
             }
             
+            // Sempre incrementa o saldo ao cadastrar receita
+            // (para receitas do sistema que não devem incrementar, use o método com parâmetro incrementarSaldo)
             String sqlConta = "UPDATE contas SET saldo_atual = saldo_atual + ? WHERE id_conta = ?";
             try (PreparedStatement pstmt = conn.prepareStatement(sqlConta)) {
                 pstmt.setDouble(1, valor);
@@ -109,12 +189,34 @@ public class IncomeRepository {
     }
 
     public Receita buscarReceita(int idReceita) {
+        // NOTA: Este método não valida userId - os handlers devem validar antes de usar
         String sql = "SELECT id_receita, descricao, valor, data, frequencia, id_usuario, id_conta, " +
                     "proxima_recorrencia, id_receita_original, ativo " +
                     "FROM receitas WHERE id_receita = ? AND ativo = TRUE";
         try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setInt(1, idReceita);
+            ResultSet rs = pstmt.executeQuery();
+            if (rs.next()) {
+                Receita receita = mapReceita(rs);
+                receita.setObservacoes(buscarObservacoesReceita(idReceita));
+                return receita;
+            }
+            return null;
+        } catch (SQLException e) {
+            throw new RuntimeException("Erro ao buscar receita: " + e.getMessage(), e);
+        }
+    }
+    
+    public Receita buscarReceitaPorUsuario(int idReceita, int idUsuario) {
+        // Busca receita validando que pertence ao usuário
+        String sql = "SELECT id_receita, descricao, valor, data, frequencia, id_usuario, id_conta, " +
+                    "proxima_recorrencia, id_receita_original, ativo " +
+                    "FROM receitas WHERE id_receita = ? AND id_usuario = ? AND ativo = TRUE";
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, idReceita);
+            pstmt.setInt(2, idUsuario);
             ResultSet rs = pstmt.executeQuery();
             if (rs.next()) {
                 Receita receita = mapReceita(rs);
@@ -340,7 +442,7 @@ public class IncomeRepository {
         return resultado;
     }
 
-    public void excluirReceita(int idReceita) {
+    public void excluirReceita(int idReceita, int idUsuario) {
         Connection conn = null;
         try {
             conn = getConnection();
@@ -358,6 +460,11 @@ public class IncomeRepository {
             
             if (receita == null) throw new IllegalArgumentException("Receita não encontrada");
             if (!receita.isAtivo()) throw new IllegalArgumentException("Receita já foi excluída");
+            
+            // Valida que a receita pertence ao usuário
+            if (receita.getIdUsuario() != idUsuario) {
+                throw new IllegalArgumentException("Você não tem permissão para excluir esta receita");
+            }
             
             String sql = "UPDATE receitas SET ativo = FALSE WHERE id_receita = ?";
             try (PreparedStatement pstmt = conn.prepareStatement(sql)) {

@@ -41,12 +41,13 @@ public class ReportsHandler implements HttpHandler {
     
     private void handleGetReports(HttpExchange exchange) throws IOException {
         try {
-            String userIdParam = RequestUtil.getQueryParam(exchange, "userId");
+            // Usa o userId do token JWT autenticado, não do parâmetro da query string
+            // Isso previne que usuários vejam relatórios de outros usuários
+            int userId = AuthUtil.requireUserId(exchange);
+            
             String periodParam = RequestUtil.getQueryParam(exchange, "period");
             String startDateParam = RequestUtil.getQueryParam(exchange, "startDate");
             String endDateParam = RequestUtil.getQueryParam(exchange, "endDate");
-            
-            int userId = userIdParam != null ? Integer.parseInt(userIdParam) : 1;
             String period = periodParam != null ? periodParam : "month";
             
             // Calcula datas baseado no período
@@ -86,7 +87,7 @@ public class ReportsHandler implements HttpHandler {
             Map<String, Double> accountAnalysis = new HashMap<>();
             for (Gasto gasto : expenses) {
                 Conta conta = accountRepository.buscarConta(gasto.getIdConta());
-                if (conta != null) {
+                if (conta != null && conta.getIdUsuario() == userId) {
                     accountAnalysis.merge(conta.getNome(), gasto.getValor(), Double::sum);
                 }
             }
@@ -222,7 +223,7 @@ public class ReportsHandler implements HttpHandler {
                 .orElse("Sem categoria");
             
             Conta conta = accountRepository.buscarConta(gasto.getIdConta());
-            String accountName = conta != null ? conta.getNome() : "Conta não encontrada";
+            String accountName = (conta != null && conta.getIdUsuario() == userId) ? conta.getNome() : "Conta não encontrada";
             
             String observacoes = "";
             if (gasto.getObservacoes() != null && gasto.getObservacoes().length > 0) {
@@ -241,7 +242,7 @@ public class ReportsHandler implements HttpHandler {
         // Incomes
         for (Receita receita : incomes) {
             Conta conta = accountRepository.buscarConta(receita.getIdConta());
-            String accountName = conta != null ? conta.getNome() : "Conta não encontrada";
+            String accountName = (conta != null && conta.getIdUsuario() == userId) ? conta.getNome() : "Conta não encontrada";
             
             csv.append("Receita,")
                .append(escapeCsv(receita.getDescricao())).append(",")
@@ -284,7 +285,7 @@ public class ReportsHandler implements HttpHandler {
                 .orElse("Sem categoria");
             
             Conta conta = accountRepository.buscarConta(gasto.getIdConta());
-            String accountName = conta != null ? conta.getNome() : "Conta não encontrada";
+            String accountName = (conta != null && conta.getIdUsuario() == userId) ? conta.getNome() : "Conta não encontrada";
             
             String observacoes = "";
             if (gasto.getObservacoes() != null && gasto.getObservacoes().length > 0) {
@@ -303,7 +304,7 @@ public class ReportsHandler implements HttpHandler {
         // Incomes
         for (Receita receita : incomes) {
             Conta conta = accountRepository.buscarConta(receita.getIdConta());
-            String accountName = conta != null ? conta.getNome() : "Conta não encontrada";
+            String accountName = (conta != null && conta.getIdUsuario() == userId) ? conta.getNome() : "Conta não encontrada";
             
             xlsx.append("Receita\t")
                .append(receita.getDescricao()).append("\t")

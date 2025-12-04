@@ -39,13 +39,14 @@ public class InvestmentsHandler implements HttpHandler {
     
     private void handleGetInvestments(HttpExchange exchange) throws IOException {
         try {
-            String userIdParam = RequestUtil.getQueryParam(exchange, "userId");
+            // Usa o userId do token JWT autenticado, não do parâmetro da query string
+            // Isso previne que usuários vejam investimentos de outros usuários
+            int userId = AuthUtil.requireUserId(exchange);
+            
             String limitParam = RequestUtil.getQueryParam(exchange, "limit");
             String offsetParam = RequestUtil.getQueryParam(exchange, "offset");
             String categoryParam = RequestUtil.getQueryParam(exchange, "category");
             String assetNameParam = RequestUtil.getQueryParam(exchange, "assetName");
-            
-            int userId = userIdParam != null ? Integer.parseInt(userIdParam) : 1;
             
             // Paginação: padrão 12 itens, offset 0
             int limit = (limitParam != null && !limitParam.isEmpty()) ? Integer.parseInt(limitParam) : 12;
@@ -195,13 +196,22 @@ public class InvestmentsHandler implements HttpHandler {
             int accountId = ((Number) data.get("accountId")).intValue();
             String moeda = (String) data.getOrDefault("moeda", "BRL");
             
-            // Valida se a conta é do tipo "Investimento"
+            // Valida se a conta é do tipo "Investimento" e pertence ao usuário
             Conta conta = accountRepository.buscarConta(accountId);
             if (conta == null) {
                 Map<String, Object> response = new HashMap<>();
                 response.put("success", false);
                 response.put("message", "Conta não encontrada");
                 ResponseUtil.sendJsonResponse(exchange, 400, response);
+                return;
+            }
+            
+            // Valida que a conta pertence ao usuário autenticado
+            if (conta.getIdUsuario() != userId) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Você não tem permissão para usar esta conta");
+                ResponseUtil.sendJsonResponse(exchange, 403, response);
                 return;
             }
             
@@ -348,10 +358,31 @@ public class InvestmentsHandler implements HttpHandler {
     
     private void handleUpdateInvestment(HttpExchange exchange) throws IOException {
         try {
+            // Valida que o usuário está autenticado
+            int authenticatedUserId = AuthUtil.requireUserId(exchange);
+            
             String requestBody = RequestUtil.readRequestBody(exchange);
             Map<String, Object> data = JsonUtil.parseJsonWithNested(requestBody);
             
             int idInvestimento = ((Number) data.get("id")).intValue();
+            
+            // Verifica se o investimento existe e pertence ao usuário autenticado
+            Investimento investimento = investmentRepository.buscarInvestimento(idInvestimento);
+            if (investimento == null) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Investimento não encontrado");
+                ResponseUtil.sendJsonResponse(exchange, 404, response);
+                return;
+            }
+            
+            if (investimento.getIdUsuario() != authenticatedUserId) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Você não tem permissão para atualizar este investimento");
+                ResponseUtil.sendJsonResponse(exchange, 403, response);
+                return;
+            }
             String nome = (String) data.get("nome");
             String nomeAtivo = data.containsKey("nomeAtivo") ? (String) data.get("nomeAtivo") : null;
             String categoria = (String) data.get("categoria");
@@ -394,6 +425,23 @@ public class InvestmentsHandler implements HttpHandler {
                 // Se accountId foi fornecido, busca a conta para obter o nome da corretora
                 if (accountId != null && accountId > 0) {
                     Conta conta = accountRepository.buscarConta(accountId);
+                    if (conta == null) {
+                        Map<String, Object> response = new HashMap<>();
+                        response.put("success", false);
+                        response.put("message", "Conta não encontrada");
+                        ResponseUtil.sendJsonResponse(exchange, 404, response);
+                        return;
+                    }
+                    
+                    // Valida que a conta pertence ao usuário autenticado
+                    if (conta.getIdUsuario() != authenticatedUserId) {
+                        Map<String, Object> response = new HashMap<>();
+                        response.put("success", false);
+                        response.put("message", "Você não tem permissão para usar esta conta");
+                        ResponseUtil.sendJsonResponse(exchange, 403, response);
+                        return;
+                    }
+                    
                     if (conta != null) {
                         corretora = conta.getNome();
                     }
@@ -418,6 +466,9 @@ public class InvestmentsHandler implements HttpHandler {
     
     private void handleDeleteInvestment(HttpExchange exchange) throws IOException {
         try {
+            // Valida que o usuário está autenticado
+            int authenticatedUserId = AuthUtil.requireUserId(exchange);
+            
             String idParam = RequestUtil.getQueryParam(exchange, "id");
             if (idParam == null) {
                 ResponseUtil.sendErrorResponse(exchange, 400, "ID do investimento não fornecido");
@@ -425,6 +476,25 @@ public class InvestmentsHandler implements HttpHandler {
             }
             
             int idInvestimento = Integer.parseInt(idParam);
+            
+            // Verifica se o investimento existe e pertence ao usuário autenticado
+            Investimento investimento = investmentRepository.buscarInvestimento(idInvestimento);
+            if (investimento == null) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Investimento não encontrado");
+                ResponseUtil.sendJsonResponse(exchange, 404, response);
+                return;
+            }
+            
+            if (investimento.getIdUsuario() != authenticatedUserId) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Você não tem permissão para excluir este investimento");
+                ResponseUtil.sendJsonResponse(exchange, 403, response);
+                return;
+            }
+            
             investmentRepository.excluirInvestimento(idInvestimento);
             
             Map<String, Object> response = new HashMap<>();

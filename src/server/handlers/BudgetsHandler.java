@@ -36,8 +36,9 @@ public class BudgetsHandler implements HttpHandler {
     
     private void handleGetBudgets(HttpExchange exchange) throws IOException {
         try {
-            String userIdParam = RequestUtil.getQueryParam(exchange, "userId");
-            int userId = userIdParam != null ? Integer.parseInt(userIdParam) : 1;
+            // Usa o userId do token JWT autenticado, não do parâmetro da query string
+            // Isso previne que usuários vejam orçamentos de outros usuários
+            int userId = AuthUtil.requireUserId(exchange);
             
             List<Orcamento> budgets = budgetRepository.buscarOrcamentosPorUsuario(userId);
             List<Map<String, Object>> budgetList = new ArrayList<>();
@@ -127,6 +128,24 @@ public class BudgetsHandler implements HttpHandler {
                 period = "MENSAL"; // Default
             }
             
+            // Valida que a categoria pertence ao usuário autenticado
+            Categoria categoria = categoryRepository.buscarCategoria(categoryId);
+            if (categoria == null) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Categoria não encontrada");
+                ResponseUtil.sendJsonResponse(exchange, 404, response);
+                return;
+            }
+            
+            if (categoria.getIdUsuario() != userId) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Você não tem permissão para criar orçamento para esta categoria");
+                ResponseUtil.sendJsonResponse(exchange, 403, response);
+                return;
+            }
+            
             int budgetId = budgetRepository.cadastrarOrcamento(value, period, categoryId, userId);
             
             Map<String, Object> response = new HashMap<>();
@@ -147,7 +166,7 @@ public class BudgetsHandler implements HttpHandler {
     
     private void handleUpdateBudget(HttpExchange exchange) throws IOException {
         try {
-            AuthUtil.requireUserId(exchange);
+            int authenticatedUserId = AuthUtil.requireUserId(exchange);
             String requestBody = RequestUtil.readRequestBody(exchange);
             Map<String, Object> data = JsonUtil.parseJsonWithNested(requestBody);
             
@@ -176,6 +195,24 @@ public class BudgetsHandler implements HttpHandler {
                 throw new IllegalArgumentException("ID do orçamento é obrigatório");
             }
             int budgetId = Integer.parseInt(idStr);
+            
+            // Verifica se o orçamento existe e pertence ao usuário autenticado
+            Orcamento orcamento = budgetRepository.buscarOrcamento(budgetId);
+            if (orcamento == null) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Orçamento não encontrado");
+                ResponseUtil.sendJsonResponse(exchange, 404, response);
+                return;
+            }
+            
+            if (orcamento.getIdUsuario() != authenticatedUserId) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Você não tem permissão para atualizar este orçamento");
+                ResponseUtil.sendJsonResponse(exchange, 403, response);
+                return;
+            }
             
             // Obtém valor - pode vir como Number ou String
             Object valueObj = data.get("value");
@@ -222,6 +259,8 @@ public class BudgetsHandler implements HttpHandler {
     
     private void handleDeleteBudget(HttpExchange exchange) throws IOException {
         try {
+            int authenticatedUserId = AuthUtil.requireUserId(exchange);
+            
             String idParam = RequestUtil.getQueryParam(exchange, "id");
             
             if (idParam == null) {
@@ -238,6 +277,25 @@ public class BudgetsHandler implements HttpHandler {
             }
             
             int budgetId = Integer.parseInt(idParam);
+            
+            // Verifica se o orçamento existe e pertence ao usuário autenticado
+            Orcamento orcamento = budgetRepository.buscarOrcamento(budgetId);
+            if (orcamento == null) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Orçamento não encontrado");
+                ResponseUtil.sendJsonResponse(exchange, 404, response);
+                return;
+            }
+            
+            if (orcamento.getIdUsuario() != authenticatedUserId) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Você não tem permissão para excluir este orçamento");
+                ResponseUtil.sendJsonResponse(exchange, 403, response);
+                return;
+            }
+            
             budgetRepository.excluirOrcamento(budgetId);
             
             Map<String, Object> response = new HashMap<>();

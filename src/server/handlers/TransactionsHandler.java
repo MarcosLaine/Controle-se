@@ -29,15 +29,16 @@ public class TransactionsHandler implements HttpHandler {
         }
         
         try {
-            String userIdParam = RequestUtil.getQueryParam(exchange, "userId");
+            // Usa o userId do token JWT autenticado, não do parâmetro da query string
+            // Isso previne que usuários vejam transações de outros usuários
+            int userId = AuthUtil.requireUserId(exchange);
+            
             String categoryIdParam = RequestUtil.getQueryParam(exchange, "categoryId");
             String dateStartParam = RequestUtil.getQueryParam(exchange, "dateStart");
             String dateEndParam = RequestUtil.getQueryParam(exchange, "dateEnd");
             String typeParam = RequestUtil.getQueryParam(exchange, "type");
             String limitParam = RequestUtil.getQueryParam(exchange, "limit");
             String offsetParam = RequestUtil.getQueryParam(exchange, "offset");
-            
-            int userId = userIdParam != null ? Integer.parseInt(userIdParam) : 1;
             Integer categoryId = (categoryIdParam != null && !categoryIdParam.isEmpty()) 
                 ? Integer.parseInt(categoryIdParam) : null;
             LocalDate dateStart = (dateStartParam != null && !dateStartParam.isEmpty()) 

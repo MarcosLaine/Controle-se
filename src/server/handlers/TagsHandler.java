@@ -34,8 +34,9 @@ public class TagsHandler implements HttpHandler {
     
     private void handleGetTags(HttpExchange exchange) throws IOException {
         try {
-            String userIdParam = RequestUtil.getQueryParam(exchange, "userId");
-            int userId = userIdParam != null ? Integer.parseInt(userIdParam) : 1;
+            // Usa o userId do token JWT autenticado, não do parâmetro da query string
+            // Isso previne que usuários vejam tags de outros usuários
+            int userId = AuthUtil.requireUserId(exchange);
             
             List<Tag> tags = tagRepository.buscarTagsPorUsuario(userId);
             List<Map<String, Object>> tagList = new ArrayList<>();
@@ -91,11 +92,30 @@ public class TagsHandler implements HttpHandler {
     
     private void handleUpdateTag(HttpExchange exchange) throws IOException {
         try {
-            AuthUtil.requireUserId(exchange);
+            int authenticatedUserId = AuthUtil.requireUserId(exchange);
             String requestBody = RequestUtil.readRequestBody(exchange);
             Map<String, String> data = JsonUtil.parseJson(requestBody);
             
             int tagId = Integer.parseInt(data.get("id"));
+            
+            // Verifica se a tag existe e pertence ao usuário autenticado
+            Tag tag = tagRepository.buscarTag(tagId);
+            if (tag == null) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Tag não encontrada");
+                ResponseUtil.sendJsonResponse(exchange, 404, response);
+                return;
+            }
+            
+            if (tag.getIdUsuario() != authenticatedUserId) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Você não tem permissão para atualizar esta tag");
+                ResponseUtil.sendJsonResponse(exchange, 403, response);
+                return;
+            }
+            
             String nome = data.get("nome");
             String cor = data.get("cor");
             
@@ -118,6 +138,8 @@ public class TagsHandler implements HttpHandler {
     
     private void handleDeleteTag(HttpExchange exchange) throws IOException {
         try {
+            int authenticatedUserId = AuthUtil.requireUserId(exchange);
+            
             String idParam = RequestUtil.getQueryParam(exchange, "id");
             
             if (idParam == null) {
@@ -134,6 +156,25 @@ public class TagsHandler implements HttpHandler {
             }
             
             int tagId = Integer.parseInt(idParam);
+            
+            // Verifica se a tag existe e pertence ao usuário autenticado
+            Tag tag = tagRepository.buscarTag(tagId);
+            if (tag == null) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Tag não encontrada");
+                ResponseUtil.sendJsonResponse(exchange, 404, response);
+                return;
+            }
+            
+            if (tag.getIdUsuario() != authenticatedUserId) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Você não tem permissão para excluir esta tag");
+                ResponseUtil.sendJsonResponse(exchange, 403, response);
+                return;
+            }
+            
             tagRepository.excluirTag(tagId);
             
             Map<String, Object> response = new HashMap<>();

@@ -4,10 +4,9 @@ import com.sun.net.httpserver.*;
 import java.io.*;
 import java.util.*;
 import server.model.Conta;
-import server.utils.*;
-import server.utils.CreditCardUtil;
-import server.validation.*;
 import server.repository.*;
+import server.utils.*;
+import server.validation.*;
 
 /**
  * Handler para operações com Contas
@@ -45,8 +44,9 @@ public class AccountsHandler implements HttpHandler {
     
     private void handleGet(HttpExchange exchange) throws IOException {
         try {
-            String userIdParam = RequestUtil.getQueryParam(exchange, "userId");
-            int userId = userIdParam != null ? Integer.parseInt(userIdParam) : 1;
+            // Usa o userId do token JWT autenticado, não do parâmetro da query string
+            // Isso previne que usuários vejam contas de outros usuários
+            int userId = AuthUtil.requireUserId(exchange);
             
             List<Conta> accounts = accountRepository.buscarContasPorUsuario(userId);
             List<Map<String, Object>> accountList = new ArrayList<>();
@@ -151,12 +151,19 @@ public class AccountsHandler implements HttpHandler {
                 return;
             }
             
-            String userIdParam = RequestUtil.getQueryParam(exchange, "userId");
-            int userId = userIdParam != null ? Integer.parseInt(userIdParam) : 1;
+            // Usa o userId do token JWT autenticado, não do parâmetro da query string
+            // Isso previne que usuários vejam informações de fatura de outros usuários
+            int userId = AuthUtil.requireUserId(exchange);
             
             Conta conta = accountRepository.buscarConta(accountId);
             if (conta == null) {
                 ResponseUtil.sendErrorResponse(exchange, 404, "Conta não encontrada");
+                return;
+            }
+            
+            // Valida que a conta pertence ao usuário autenticado
+            if (conta.getIdUsuario() != userId) {
+                ResponseUtil.sendErrorResponse(exchange, 403, "Você não tem permissão para acessar esta conta");
                 return;
             }
             
@@ -354,29 +361,6 @@ public class AccountsHandler implements HttpHandler {
                 return;
             }
             
-            // Valida se o userId do body (se presente) corresponde ao do token
-            Object userIdBodyObj = data.get("userId");
-            if (userIdBodyObj != null) {
-                int userIdBody;
-                try {
-                    if (userIdBodyObj instanceof Number) {
-                        userIdBody = ((Number) userIdBodyObj).intValue();
-                    } else {
-                        userIdBody = Integer.parseInt(userIdBodyObj.toString());
-                    }
-                    
-                    if (userIdBody != userId) {
-                        Map<String, Object> response = new HashMap<>();
-                        response.put("success", false);
-                        response.put("message", "Token de autenticação desatualizado. Faça logout e login novamente. (Token: " + userId + ", Enviado: " + userIdBody + ")");
-                        ResponseUtil.sendJsonResponse(exchange, 401, response);
-                        return;
-                    }
-                } catch (NumberFormatException e) {
-                    // Ignora se userId do body não for um número válido
-                }
-            }
-            
             int accountId = accountRepository.cadastrarConta(name, type, balance, userId, diaFechamento, diaPagamento);
             
             Map<String, Object> response = new HashMap<>();
@@ -522,6 +506,25 @@ public class AccountsHandler implements HttpHandler {
                 return;
             }
             
+            // Valida que o usuário está autenticado e que a conta pertence a ele
+            int userId = AuthUtil.requireUserId(exchange);
+            Conta conta = accountRepository.buscarConta(accountId);
+            if (conta == null) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Conta não encontrada");
+                ResponseUtil.sendJsonResponse(exchange, 404, response);
+                return;
+            }
+            
+            if (conta.getIdUsuario() != userId) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Você não tem permissão para atualizar esta conta");
+                ResponseUtil.sendJsonResponse(exchange, 403, response);
+                return;
+            }
+            
             // Sanitiza e converte valores
             name = InputValidator.sanitizeInput(name);
             
@@ -614,6 +617,25 @@ public class AccountsHandler implements HttpHandler {
                 response.put("success", false);
                 response.put("message", "ID da conta deve ser um número válido");
                 ResponseUtil.sendJsonResponse(exchange, 400, response);
+                return;
+            }
+            
+            // Valida que o usuário está autenticado e que a conta pertence a ele
+            int userId = AuthUtil.requireUserId(exchange);
+            Conta conta = accountRepository.buscarConta(accountId);
+            if (conta == null) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Conta não encontrada");
+                ResponseUtil.sendJsonResponse(exchange, 404, response);
+                return;
+            }
+            
+            if (conta.getIdUsuario() != userId) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Você não tem permissão para excluir esta conta");
+                ResponseUtil.sendJsonResponse(exchange, 403, response);
                 return;
             }
             
