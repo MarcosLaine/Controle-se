@@ -672,13 +672,15 @@ const {
     
     const group = acc[category][assetName];
     
-    // Atualiza nomeAtivo se o investimento atual tiver e o grupo não tiver, ou se o investimento tiver um nome mais completo
+    // Atualiza nomeAtivo sempre que o investimento atual tiver um nomeAtivo válido
+    // Prioriza nomes mais completos (mais longos) mas sempre atualiza se o grupo não tiver
     if (inv.nomeAtivo && inv.nomeAtivo.trim()) {
         if (!group.nomeAtivo || !group.nomeAtivo.trim()) {
             // Se o grupo não tem nomeAtivo, usa o do investimento atual
             group.nomeAtivo = inv.nomeAtivo;
-        } else if (inv.nomeAtivo.length > group.nomeAtivo.length) {
-            // Se o investimento atual tem um nome mais completo, atualiza
+        } else if (inv.nomeAtivo.length >= group.nomeAtivo.length) {
+            // Se o investimento atual tem um nome igual ou mais completo, atualiza
+            // Isso garante que sempre temos o nome mais completo disponível
             group.nomeAtivo = inv.nomeAtivo;
         }
     }
@@ -712,6 +714,23 @@ const {
           const validAporte = group.aportes.find(a => a.precoAtual > 0);
           if (validAporte) {
               currentPrice = validAporte.precoAtual;
+          }
+
+          // Garante que o nomeAtivo seja preservado mesmo após o processamento
+          // Busca o nomeAtivo mais completo entre todos os aportes
+          if (!group.nomeAtivo || !group.nomeAtivo.trim()) {
+              const aporteComNome = group.aportes.find(a => a.nomeAtivo && a.nomeAtivo.trim());
+              if (aporteComNome) {
+                  group.nomeAtivo = aporteComNome.nomeAtivo;
+              }
+          } else {
+              // Se já tem nomeAtivo, verifica se há algum mais completo
+              const aporteComNomeMaisCompleto = group.aportes.find(a => 
+                  a.nomeAtivo && a.nomeAtivo.trim() && a.nomeAtivo.length > group.nomeAtivo.length
+              );
+              if (aporteComNomeMaisCompleto) {
+                  group.nomeAtivo = aporteComNomeMaisCompleto.nomeAtivo;
+              }
           }
 
           group.valorAtualTotal = group.quantidadeTotal * currentPrice;
@@ -1590,7 +1609,7 @@ const {
                                 <div className="flex-1 min-w-0">
                                     <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1 sm:gap-4">
                                         <span className="font-semibold text-sm sm:text-base text-gray-900 dark:text-white truncate">
-                                            {asset.nome} {asset.nomeAtivo && asset.nomeAtivo !== asset.nome && ` - ${asset.nomeAtivo}`}
+                                            {asset.nome}{asset.nomeAtivo && asset.nomeAtivo.trim() && asset.nomeAtivo !== asset.nome ? ` - ${asset.nomeAtivo}` : ''}
                                         </span>
                                         {asset.quantidadeTotal > 0 && (
                                             <span className="text-xs text-gray-500 dark:text-gray-400 flex-shrink-0">

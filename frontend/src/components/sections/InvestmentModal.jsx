@@ -84,7 +84,7 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
         amount: inv.valorAporte ? inv.valorAporte.toString() : '',
         date: inv.dataAporte ? inv.dataAporte.split('T')[0] : '',
         maturityDate: inv.dataVencimento ? inv.dataVencimento.split('T')[0] : '',
-        accountId: '' // Account ID usually not returned in list, might need to fetch or guess
+        accountId: inv.accountId ? inv.accountId.toString() : ''
       });
       // Logic to determine preRate vs fixedRate based on type
       if (inv.tipoRentabilidade === 'PRE_FIXADO') {
@@ -101,7 +101,7 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
         quantity: inv.quantidade ? Math.abs(inv.quantidade).toString() : '',
         date: inv.dataAporte ? inv.dataAporte.split('T')[0] : '',
         brokerage: inv.corretagem ? inv.corretagem.toString() : '0',
-        accountId: '', // Need to find a way to get account ID
+        accountId: inv.accountId ? inv.accountId.toString() : '',
         currency: inv.moeda || 'BRL',
         price: inv.precoAporte ? inv.precoAporte.toString() : ''
       });
@@ -112,9 +112,9 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
     try {
       const response = await api.get(`/accounts?userId=${user.id}`);
       if (response.success) {
-        // Filter only investment accounts
+        // Filter only investment accounts (including variations like "Investimento (Corretora)")
         const investmentAccounts = response.data.filter(
-          acc => acc.tipo && acc.tipo.toLowerCase() === 'investimento'
+          acc => acc.tipo && acc.tipo.toLowerCase().includes('investimento')
         );
         setAccounts(investmentAccounts);
         
@@ -469,7 +469,7 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
               min="0"
               value={variableForm.price}
               onChange={e => setVariableForm({...variableForm, price: e.target.value})}
-              placeholder={t('investments.pricePerUnit')}
+              placeholder="0,00"
             />
             {showPriceInfo && (
               <div className="absolute top-full right-0 mt-2 w-64 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-3 text-xs text-gray-600 dark:text-gray-300 z-20">
@@ -565,7 +565,7 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
             >
               <option value="">{t('common.select')}...</option>
               {accounts.map(acc => (
-                <option key={acc.idConta} value={acc.idConta}>
+                <option key={acc.idConta} value={acc.idConta.toString()}>
                   {acc.nome} ({acc.tipo})
                 </option>
               ))}
@@ -762,7 +762,7 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
             >
               <option value="">{t('common.select')}...</option>
               {accounts.map(acc => (
-                <option key={acc.idConta} value={acc.idConta}>
+                <option key={acc.idConta} value={acc.idConta.toString()}>
                   {acc.nome} ({acc.tipo})
                 </option>
               ))}
