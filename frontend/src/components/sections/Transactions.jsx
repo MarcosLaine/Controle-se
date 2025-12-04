@@ -440,7 +440,8 @@ export default function Transactions() {
               <option value="unicas">{t('transactions.uniqueTransactions')}</option>
             </select>
           </div>
-          <div className="flex items-end">
+          <div>
+            <label className="label text-xs mb-1 invisible">{'\u200B'}</label>
             <button
               onClick={() => setFilters({ category: '', tag: '', dateStart: '', dateEnd: '', type: '', search: '' })}
               className="btn-secondary text-sm py-2 w-full"
