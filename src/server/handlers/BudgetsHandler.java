@@ -128,6 +128,24 @@ public class BudgetsHandler implements HttpHandler {
                 period = "MENSAL"; // Default
             }
             
+            // Valida que a categoria pertence ao usuário autenticado
+            Categoria categoria = categoryRepository.buscarCategoria(categoryId);
+            if (categoria == null) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Categoria não encontrada");
+                ResponseUtil.sendJsonResponse(exchange, 404, response);
+                return;
+            }
+            
+            if (categoria.getIdUsuario() != userId) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Você não tem permissão para criar orçamento para esta categoria");
+                ResponseUtil.sendJsonResponse(exchange, 403, response);
+                return;
+            }
+            
             int budgetId = budgetRepository.cadastrarOrcamento(value, period, categoryId, userId);
             
             Map<String, Object> response = new HashMap<>();

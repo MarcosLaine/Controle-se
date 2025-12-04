@@ -181,13 +181,22 @@ public class InvestmentsHandler implements HttpHandler {
             int accountId = ((Number) data.get("accountId")).intValue();
             String moeda = (String) data.getOrDefault("moeda", "BRL");
             
-            // Valida se a conta é do tipo "Investimento"
+            // Valida se a conta é do tipo "Investimento" e pertence ao usuário
             Conta conta = accountRepository.buscarConta(accountId);
             if (conta == null) {
                 Map<String, Object> response = new HashMap<>();
                 response.put("success", false);
                 response.put("message", "Conta não encontrada");
                 ResponseUtil.sendJsonResponse(exchange, 400, response);
+                return;
+            }
+            
+            // Valida que a conta pertence ao usuário autenticado
+            if (conta.getIdUsuario() != userId) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Você não tem permissão para usar esta conta");
+                ResponseUtil.sendJsonResponse(exchange, 403, response);
                 return;
             }
             
@@ -401,6 +410,23 @@ public class InvestmentsHandler implements HttpHandler {
                 // Se accountId foi fornecido, busca a conta para obter o nome da corretora
                 if (accountId != null && accountId > 0) {
                     Conta conta = accountRepository.buscarConta(accountId);
+                    if (conta == null) {
+                        Map<String, Object> response = new HashMap<>();
+                        response.put("success", false);
+                        response.put("message", "Conta não encontrada");
+                        ResponseUtil.sendJsonResponse(exchange, 404, response);
+                        return;
+                    }
+                    
+                    // Valida que a conta pertence ao usuário autenticado
+                    if (conta.getIdUsuario() != authenticatedUserId) {
+                        Map<String, Object> response = new HashMap<>();
+                        response.put("success", false);
+                        response.put("message", "Você não tem permissão para usar esta conta");
+                        ResponseUtil.sendJsonResponse(exchange, 403, response);
+                        return;
+                    }
+                    
                     if (conta != null) {
                         corretora = conta.getNome();
                     }

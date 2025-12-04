@@ -85,6 +85,15 @@ public class ExpensesHandler implements HttpHandler {
                 return;
             }
             
+            // Valida que a conta pertence ao usuário autenticado
+            if (conta.getIdUsuario() != userId) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Você não tem permissão para usar esta conta");
+                ResponseUtil.sendJsonResponse(exchange, 403, response);
+                return;
+            }
+            
             String tipoConta = conta.getTipo() != null ? conta.getTipo().toLowerCase().trim() : "";
             if (tipoConta.equals("investimento") || tipoConta.equals("investimento (corretora)") || tipoConta.startsWith("investimento")) {
                 Map<String, Object> response = new HashMap<>();
@@ -187,6 +196,15 @@ public class ExpensesHandler implements HttpHandler {
                 return;
             }
             
+            // Valida que o gasto pertence ao usuário autenticado
+            if (gasto.getIdUsuario() != userId) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Você não tem permissão para pagar esta parcela");
+                ResponseUtil.sendJsonResponse(exchange, 403, response);
+                return;
+            }
+            
             // Verifica se é uma parcela
             if (gasto.getIdGrupoParcela() == null || gasto.getNumeroParcela() == null) {
                 Map<String, Object> response = new HashMap<>();
@@ -212,6 +230,15 @@ public class ExpensesHandler implements HttpHandler {
                 response.put("success", false);
                 response.put("message", "Conta de origem não encontrada");
                 ResponseUtil.sendJsonResponse(exchange, 404, response);
+                return;
+            }
+            
+            // Valida que a conta origem pertence ao usuário autenticado
+            if (contaOrigem.getIdUsuario() != userId) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Você não tem permissão para usar esta conta de origem");
+                ResponseUtil.sendJsonResponse(exchange, 403, response);
                 return;
             }
             

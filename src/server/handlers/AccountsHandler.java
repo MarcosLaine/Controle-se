@@ -159,6 +159,12 @@ public class AccountsHandler implements HttpHandler {
                 return;
             }
             
+            // Valida que a conta pertence ao usuário autenticado
+            if (conta.getIdUsuario() != userId) {
+                ResponseUtil.sendErrorResponse(exchange, 403, "Você não tem permissão para acessar esta conta");
+                return;
+            }
+            
             if (!conta.isCartaoCredito() || conta.getDiaFechamento() == null || conta.getDiaPagamento() == null) {
                 ResponseUtil.sendErrorResponse(exchange, 400, "Esta conta não é um cartão de crédito ou não possui informações de fatura");
                 return;
@@ -481,6 +487,25 @@ public class AccountsHandler implements HttpHandler {
                 return;
             }
             
+            // Valida que o usuário está autenticado e que a conta pertence a ele
+            int userId = AuthUtil.requireUserId(exchange);
+            Conta conta = accountRepository.buscarConta(accountId);
+            if (conta == null) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Conta não encontrada");
+                ResponseUtil.sendJsonResponse(exchange, 404, response);
+                return;
+            }
+            
+            if (conta.getIdUsuario() != userId) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Você não tem permissão para atualizar esta conta");
+                ResponseUtil.sendJsonResponse(exchange, 403, response);
+                return;
+            }
+            
             // Sanitiza e converte valores
             name = InputValidator.sanitizeInput(name);
             double balance;
@@ -558,6 +583,25 @@ public class AccountsHandler implements HttpHandler {
                 response.put("success", false);
                 response.put("message", "ID da conta deve ser um número válido");
                 ResponseUtil.sendJsonResponse(exchange, 400, response);
+                return;
+            }
+            
+            // Valida que o usuário está autenticado e que a conta pertence a ele
+            int userId = AuthUtil.requireUserId(exchange);
+            Conta conta = accountRepository.buscarConta(accountId);
+            if (conta == null) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Conta não encontrada");
+                ResponseUtil.sendJsonResponse(exchange, 404, response);
+                return;
+            }
+            
+            if (conta.getIdUsuario() != userId) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Você não tem permissão para excluir esta conta");
+                ResponseUtil.sendJsonResponse(exchange, 403, response);
                 return;
             }
             

@@ -85,17 +85,17 @@ public class CategoriesHandler implements HttpHandler {
             }
             validation.addErrors(InputValidator.validateName("Nome da categoria", name, true).getErrors());
             
-            String userIdStr = null;
-            Object userIdObj = data.get("userId");
-            if (userIdObj != null) userIdStr = userIdObj.toString();
-            int userId = 1;
-            if (userIdStr != null && !userIdStr.isEmpty()) {
-                try {
-                    userId = Integer.parseInt(userIdStr);
-                    validation.addErrors(InputValidator.validateId("ID do usuário", userId, true).getErrors());
-                } catch (NumberFormatException e) {
-                    validation.addError("ID do usuário deve ser um número válido");
-                }
+            // Obtém o ID do usuário autenticado do token JWT
+            // NÃO aceita userId do body da requisição para prevenir que usuários criem categorias para outros
+            int userId;
+            try {
+                userId = AuthUtil.requireUserId(exchange);
+            } catch (AuthUtil.UnauthorizedException e) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Usuário não autenticado");
+                ResponseUtil.sendJsonResponse(exchange, 401, response);
+                return;
             }
             
             if (!validation.isValid()) {

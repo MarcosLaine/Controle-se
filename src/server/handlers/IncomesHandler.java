@@ -70,6 +70,15 @@ public class IncomesHandler implements HttpHandler {
                 return;
             }
             
+            // Valida que a conta pertence ao usuário autenticado
+            if (conta.getIdUsuario() != userId) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Você não tem permissão para usar esta conta");
+                ResponseUtil.sendJsonResponse(exchange, 403, response);
+                return;
+            }
+            
             String tipoConta = conta.getTipo() != null ? conta.getTipo().toLowerCase().trim() : "";
             if (tipoConta.equals("investimento") || tipoConta.equals("investimento (corretora)") || tipoConta.startsWith("investimento")) {
                 Map<String, Object> response = new HashMap<>();
@@ -182,6 +191,15 @@ public class IncomesHandler implements HttpHandler {
                     return;
                 }
                 
+                // Valida que a conta origem pertence ao usuário autenticado
+                if (contaOrigem.getIdUsuario() != userId) {
+                    Map<String, Object> response = new HashMap<>();
+                    response.put("success", false);
+                    response.put("message", "Você não tem permissão para usar esta conta de origem");
+                    ResponseUtil.sendJsonResponse(exchange, 403, response);
+                    return;
+                }
+                
                 // Valida que a conta origem não é investimento
                 String tipoContaOrigem = contaOrigem.getTipo() != null ? contaOrigem.getTipo().toLowerCase().trim() : "";
                 if (tipoContaOrigem.equals("investimento") || tipoContaOrigem.equals("investimento (corretora)") || tipoContaOrigem.startsWith("investimento")) {
@@ -238,7 +256,7 @@ public class IncomesHandler implements HttpHandler {
     
     private void handleDelete(HttpExchange exchange) throws IOException {
         try {
-            AuthUtil.requireUserId(exchange);
+            int userId = AuthUtil.requireUserId(exchange);
             String idParam = RequestUtil.getQueryParam(exchange, "id");
             if (idParam == null || !idParam.matches("\\d+")) {
                 ResponseUtil.sendErrorResponse(exchange, 400, "ID da receita inválido");
@@ -246,8 +264,24 @@ public class IncomesHandler implements HttpHandler {
             }
             
             int incomeId = Integer.parseInt(idParam);
+            
+            // Verifica se a receita existe e pertence ao usuário autenticado
             Receita receita = incomeRepository.buscarReceita(incomeId);
-            int userId = receita != null ? receita.getIdUsuario() : AuthUtil.requireUserId(exchange);
+            if (receita == null) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Receita não encontrada");
+                ResponseUtil.sendJsonResponse(exchange, 404, response);
+                return;
+            }
+            
+            if (receita.getIdUsuario() != userId) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Você não tem permissão para excluir esta receita");
+                ResponseUtil.sendJsonResponse(exchange, 403, response);
+                return;
+            }
             
             incomeRepository.excluirReceita(incomeId);
             
