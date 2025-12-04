@@ -511,6 +511,7 @@ export default function Investments() {
   const loadInvestments = async () => {
     setLoading(true);
     try {
+      // Carrega todos os investimentos (sem paginação)
       const response = await api.get(`/investments?userId=${user.id}`);
       if (response && response.success) {
         const newInvestments = response.data || [];

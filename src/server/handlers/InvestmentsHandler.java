@@ -53,19 +53,10 @@ public class InvestmentsHandler implements HttpHandler {
             }
             // System.out.println("[DEBUG] InvestimentosHandler.get: Usando userId=" + userId + " do token JWT");
             
-            String limitParam = RequestUtil.getQueryParam(exchange, "limit");
-            String offsetParam = RequestUtil.getQueryParam(exchange, "offset");
             String categoryParam = RequestUtil.getQueryParam(exchange, "category");
             String assetNameParam = RequestUtil.getQueryParam(exchange, "assetName");
             
-            // Paginação: padrão 12 itens, offset 0
-            int limit = (limitParam != null && !limitParam.isEmpty()) ? Integer.parseInt(limitParam) : 12;
-            int offset = (offsetParam != null && !offsetParam.isEmpty()) ? Integer.parseInt(offsetParam) : 0;
-            
-            // Busca investimentos paginados para a resposta
-            List<Investimento> investments = investmentRepository.buscarInvestimentosPorUsuario(userId, limit, offset, categoryParam, assetNameParam);
-            
-            // Busca TODOS os investimentos para calcular o summary corretamente
+            // Busca TODOS os investimentos (sem paginação)
             List<Investimento> allInvestments = investmentRepository.buscarInvestimentosPorUsuario(userId);
             if (categoryParam != null && !categoryParam.isEmpty()) {
                 allInvestments = allInvestments.stream()
@@ -77,6 +68,9 @@ public class InvestmentsHandler implements HttpHandler {
                     .filter(inv -> inv.getNome().equals(assetNameParam))
                     .collect(Collectors.toList());
             }
+            
+            // Usa todos os investimentos para processar
+            List<Investimento> investments = allInvestments;
             
             QuoteService quoteService = QuoteService.getInstance();
             
@@ -139,6 +133,7 @@ public class InvestmentsHandler implements HttpHandler {
                 try {
                     double currentPrice = 0.0;
                     double currentValue = 0.0;
+                    QuoteService.QuoteResult quote = null;
                     
                     // Converte valor do aporte para BRL se o investimento foi registrado em outra moeda
                     double valorAporteBRL = inv.getValorAporte();
@@ -166,7 +161,7 @@ public class InvestmentsHandler implements HttpHandler {
                     currentPrice = currentValue; // Para renda fixa, preço = valor atual
                 } else {
                     // Para outros tipos, busca cotação atual
-                    QuoteService.QuoteResult quote = quoteService.getQuote(inv.getNome(), inv.getCategoria(), null);
+                    quote = quoteService.getQuote(inv.getNome(), inv.getCategoria(), null);
                     currentPrice = quote != null && quote.success ? quote.price : inv.getPrecoAporte();
                     
                     // Converte preço atual para BRL se a cotação vier em outra moeda
@@ -186,10 +181,27 @@ public class InvestmentsHandler implements HttpHandler {
                 double returnValue = currentValue - valorAporteBRL;
                 double returnPercent = valorAporteBRL > 0 ? (returnValue / valorAporteBRL) * 100 : 0;
                 
+                // Se o nomeAtivo não estiver preenchido ou for igual ao ticker, tenta buscar da cotação
+                String nomeAtivoFinal = inv.getNomeAtivo();
+                if ((nomeAtivoFinal == null || nomeAtivoFinal.trim().isEmpty() || nomeAtivoFinal.equals(inv.getNome())) 
+                    && !"RENDA_FIXA".equals(inv.getCategoria()) && quote != null && quote.success 
+                    && quote.assetName != null && !quote.assetName.trim().isEmpty() 
+                    && !quote.assetName.equals(inv.getNome())) {
+                    nomeAtivoFinal = quote.assetName;
+                    // Atualiza no banco de dados para persistir o nome
+                    try {
+                        investmentRepository.atualizarNomeAtivo(inv.getIdInvestimento(), nomeAtivoFinal);
+                    } catch (Exception e) {
+                        // Ignora erros ao atualizar, mas usa o nome da cotação na resposta
+                        System.err.println("Erro ao atualizar nomeAtivo para investimento " + inv.getIdInvestimento() + ": " + e.getMessage());
+                    }
+                }
+                
                 Map<String, Object> invData = new HashMap<>();
                 invData.put("idInvestimento", inv.getIdInvestimento());
                 invData.put("nome", inv.getNome());
-                invData.put("nomeAtivo", inv.getNomeAtivo());
+                // Sempre retorna o nomeAtivo na resposta da API (pode ser null se não estiver disponível)
+                invData.put("nomeAtivo", nomeAtivoFinal);
                 invData.put("categoria", inv.getCategoria());
                 invData.put("quantidade", inv.getQuantidade());
                 invData.put("precoAporte", precoAporteBRL);
@@ -229,17 +241,10 @@ public class InvestmentsHandler implements HttpHandler {
             summary.put("totalReturn", totalCurrent - totalInvested);
             summary.put("totalReturnPercent", totalInvested > 0 ? ((totalCurrent - totalInvested) / totalInvested) * 100 : 0);
             
-            // Verifica se há mais investimentos para carregar
-            int totalCount = investmentRepository.contarInvestimentosPorUsuario(userId, categoryParam, assetNameParam);
-            boolean hasMore = (offset + investmentList.size()) < totalCount;
-            
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);
             response.put("data", investmentList);
             response.put("summary", summary);
-            response.put("hasMore", hasMore);
-            response.put("limit", limit);
-            response.put("offset", offset);
             
             ResponseUtil.sendJsonResponse(exchange, 200, response);
         } catch (Exception e) {

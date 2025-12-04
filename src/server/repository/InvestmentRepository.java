@@ -327,6 +327,19 @@ public class InvestmentRepository {
         }
     }
 
+    public void atualizarNomeAtivo(int idInvestimento, String nomeAtivo) {
+        String sql = "UPDATE investimentos SET nome_ativo = ? WHERE id_investimento = ?";
+        try (Connection conn = getConnection()) {
+            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                pstmt.setString(1, nomeAtivo);
+                pstmt.setInt(2, idInvestimento);
+                pstmt.executeUpdate();
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Erro ao atualizar nome do ativo: " + e.getMessage(), e);
+        }
+    }
+
     /**
      * Classe auxiliar para representar uma camada de posição (FIFO)
      */
