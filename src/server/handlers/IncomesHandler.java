@@ -283,7 +283,7 @@ public class IncomesHandler implements HttpHandler {
                 return;
             }
             
-            incomeRepository.excluirReceita(incomeId);
+            incomeRepository.excluirReceita(incomeId, userId);
             
             CacheUtil.invalidateCache("overview_" + userId);
             CacheUtil.invalidateCache("totalIncome_" + userId);

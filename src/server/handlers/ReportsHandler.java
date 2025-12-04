@@ -87,7 +87,7 @@ public class ReportsHandler implements HttpHandler {
             Map<String, Double> accountAnalysis = new HashMap<>();
             for (Gasto gasto : expenses) {
                 Conta conta = accountRepository.buscarConta(gasto.getIdConta());
-                if (conta != null) {
+                if (conta != null && conta.getIdUsuario() == userId) {
                     accountAnalysis.merge(conta.getNome(), gasto.getValor(), Double::sum);
                 }
             }
@@ -223,7 +223,7 @@ public class ReportsHandler implements HttpHandler {
                 .orElse("Sem categoria");
             
             Conta conta = accountRepository.buscarConta(gasto.getIdConta());
-            String accountName = conta != null ? conta.getNome() : "Conta não encontrada";
+            String accountName = (conta != null && conta.getIdUsuario() == userId) ? conta.getNome() : "Conta não encontrada";
             
             String observacoes = "";
             if (gasto.getObservacoes() != null && gasto.getObservacoes().length > 0) {
@@ -242,7 +242,7 @@ public class ReportsHandler implements HttpHandler {
         // Incomes
         for (Receita receita : incomes) {
             Conta conta = accountRepository.buscarConta(receita.getIdConta());
-            String accountName = conta != null ? conta.getNome() : "Conta não encontrada";
+            String accountName = (conta != null && conta.getIdUsuario() == userId) ? conta.getNome() : "Conta não encontrada";
             
             csv.append("Receita,")
                .append(escapeCsv(receita.getDescricao())).append(",")
@@ -285,7 +285,7 @@ public class ReportsHandler implements HttpHandler {
                 .orElse("Sem categoria");
             
             Conta conta = accountRepository.buscarConta(gasto.getIdConta());
-            String accountName = conta != null ? conta.getNome() : "Conta não encontrada";
+            String accountName = (conta != null && conta.getIdUsuario() == userId) ? conta.getNome() : "Conta não encontrada";
             
             String observacoes = "";
             if (gasto.getObservacoes() != null && gasto.getObservacoes().length > 0) {
@@ -304,7 +304,7 @@ public class ReportsHandler implements HttpHandler {
         // Incomes
         for (Receita receita : incomes) {
             Conta conta = accountRepository.buscarConta(receita.getIdConta());
-            String accountName = conta != null ? conta.getNome() : "Conta não encontrada";
+            String accountName = (conta != null && conta.getIdUsuario() == userId) ? conta.getNome() : "Conta não encontrada";
             
             xlsx.append("Receita\t")
                .append(receita.getDescricao()).append("\t")

@@ -357,7 +357,7 @@ public class ExpensesHandler implements HttpHandler {
                 }
             }
             
-            expenseRepository.excluirGasto(expenseId);
+            expenseRepository.excluirGasto(expenseId, userId);
             
             CacheUtil.invalidateCache("overview_" + userId);
             CacheUtil.invalidateCache("categories_" + userId);

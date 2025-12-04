@@ -189,12 +189,34 @@ public class IncomeRepository {
     }
 
     public Receita buscarReceita(int idReceita) {
+        // NOTA: Este método não valida userId - os handlers devem validar antes de usar
         String sql = "SELECT id_receita, descricao, valor, data, frequencia, id_usuario, id_conta, " +
                     "proxima_recorrencia, id_receita_original, ativo " +
                     "FROM receitas WHERE id_receita = ? AND ativo = TRUE";
         try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setInt(1, idReceita);
+            ResultSet rs = pstmt.executeQuery();
+            if (rs.next()) {
+                Receita receita = mapReceita(rs);
+                receita.setObservacoes(buscarObservacoesReceita(idReceita));
+                return receita;
+            }
+            return null;
+        } catch (SQLException e) {
+            throw new RuntimeException("Erro ao buscar receita: " + e.getMessage(), e);
+        }
+    }
+    
+    public Receita buscarReceitaPorUsuario(int idReceita, int idUsuario) {
+        // Busca receita validando que pertence ao usuário
+        String sql = "SELECT id_receita, descricao, valor, data, frequencia, id_usuario, id_conta, " +
+                    "proxima_recorrencia, id_receita_original, ativo " +
+                    "FROM receitas WHERE id_receita = ? AND id_usuario = ? AND ativo = TRUE";
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, idReceita);
+            pstmt.setInt(2, idUsuario);
             ResultSet rs = pstmt.executeQuery();
             if (rs.next()) {
                 Receita receita = mapReceita(rs);
@@ -398,7 +420,7 @@ public class IncomeRepository {
         return resultado;
     }
 
-    public void excluirReceita(int idReceita) {
+    public void excluirReceita(int idReceita, int idUsuario) {
         Connection conn = null;
         try {
             conn = getConnection();
@@ -416,6 +438,11 @@ public class IncomeRepository {
             
             if (receita == null) throw new IllegalArgumentException("Receita não encontrada");
             if (!receita.isAtivo()) throw new IllegalArgumentException("Receita já foi excluída");
+            
+            // Valida que a receita pertence ao usuário
+            if (receita.getIdUsuario() != idUsuario) {
+                throw new IllegalArgumentException("Você não tem permissão para excluir esta receita");
+            }
             
             String sql = "UPDATE receitas SET ativo = FALSE WHERE id_receita = ?";
             try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
