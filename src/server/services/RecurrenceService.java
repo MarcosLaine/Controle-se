@@ -32,7 +32,7 @@ public class RecurrenceService {
         int totalCriadas = 0;
         LocalDate hoje = LocalDate.now();
         
-        LOGGER.info("[RECORRÊNCIAS] Processando recorrências para " + hoje);
+        // LOGGER.info("[RECORRÊNCIAS] Processando recorrências para " + hoje);
         
         // Processa gastos recorrentes
         totalCriadas += processarGastosRecorrentes(hoje);
@@ -41,9 +41,9 @@ public class RecurrenceService {
         totalCriadas += processarReceitasRecorrentes(hoje);
         
         if (totalCriadas > 0) {
-            LOGGER.info("[RECORRÊNCIAS] Total de " + totalCriadas + " transações criadas automaticamente");
+            // LOGGER.info("[RECORRÊNCIAS] Total de " + totalCriadas + " transações criadas automaticamente");
         } else {
-            LOGGER.info("[RECORRÊNCIAS] Nenhuma recorrência pendente para hoje");
+            // LOGGER.info("[RECORRÊNCIAS] Nenhuma recorrência pendente para hoje");
         }
         
         return totalCriadas;
@@ -56,7 +56,7 @@ public class RecurrenceService {
         
         for (Gasto gastoOriginal : gastosRecorrentes) {
             try {
-                LOGGER.info("[RECORRÊNCIAS] Criando recorrência de gasto: " + gastoOriginal.getDescricao());
+                // LOGGER.info("[RECORRÊNCIAS] Criando recorrência de gasto: " + gastoOriginal.getDescricao());
                 
                 // Busca categorias do gasto original
                 List<Categoria> categorias = categoryRepository.buscarCategoriasDoGasto(gastoOriginal.getIdGasto());
@@ -109,7 +109,7 @@ public class RecurrenceService {
         
         for (Receita receitaOriginal : receitasRecorrentes) {
             try {
-                LOGGER.info("[RECORRÊNCIAS] Criando recorrência de receita: " + receitaOriginal.getDescricao());
+                // LOGGER.info("[RECORRÊNCIAS] Criando recorrência de receita: " + receitaOriginal.getDescricao());
                 
                 // Cria nova receita com a data de recorrência
                 int novoIdReceita = incomeRepository.cadastrarReceita(

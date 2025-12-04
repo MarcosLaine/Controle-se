@@ -108,3 +108,4 @@ COMMENT ON COLUMN receitas.id_grupo_parcela IS 'Referência ao grupo de parcelas
 COMMENT ON COLUMN receitas.numero_parcela IS 'Número da parcela (1, 2, 3, ...)';
 COMMENT ON COLUMN receitas.total_parcelas IS 'Total de parcelas do grupo';
 
+

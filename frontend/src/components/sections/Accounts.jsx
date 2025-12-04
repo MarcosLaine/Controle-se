@@ -1,8 +1,9 @@
 import { Building2, Edit, Plus, Trash2 } from 'lucide-react';
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../contexts/AuthContext';
 import api from '../../services/api';
+import axios from 'axios';
 import { formatCurrency, parseFloatBrazilian, formatDate } from '../../utils/formatters';
 import Modal from '../common/Modal';
 import SkeletonSection from '../common/SkeletonSection';
@@ -23,6 +24,9 @@ export default function Accounts() {
     diaFechamento: '',
     diaPagamento: '',
   });
+  
+  // Ref para armazenar o AbortController da requisição atual
+  const abortControllerRef = useRef(null);
 
   const formatAccountType = (tipo) => {
     if (!tipo) return '';
@@ -46,6 +50,59 @@ export default function Accounts() {
     return tipo.charAt(0).toUpperCase() + tipo.slice(1).toLowerCase();
   };
 
+  const loadAccounts = useCallback(async () => {
+    if (!user) return;
+    
+    // Cancela a requisição anterior se ainda estiver em andamento
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    // Cria um novo AbortController para esta requisição
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+    
+    setLoading(true);
+    try {
+      const response = await api.get(`/accounts?userId=${user.id}`, {
+        signal: abortController.signal
+      });
+      
+      // Verifica se a requisição foi cancelada antes de processar a resposta
+      if (abortController.signal.aborted) {
+        return;
+      }
+      
+      if (response.success) {
+        setAccounts(response.data || []);
+      }
+    } catch (error) {
+      // Ignora erros de cancelamento
+      if (axios.isCancel && axios.isCancel(error)) {
+        return;
+      }
+      if (error.name === 'CanceledError' || error.name === 'AbortError') {
+        return;
+      }
+      
+      // Verifica se a requisição foi cancelada antes de processar o erro
+      if (abortController.signal.aborted) {
+        return;
+      }
+      
+      toast.error('Erro ao carregar contas');
+    } finally {
+      // Só atualiza o loading se a requisição não foi cancelada
+      if (!abortController.signal.aborted) {
+        setLoading(false);
+      }
+      // Limpa a referência se esta ainda é a requisição atual
+      if (abortControllerRef.current === abortController) {
+        abortControllerRef.current = null;
+      }
+    }
+  }, [user]);
+
   useEffect(() => {
     loadAccounts();
     
@@ -58,23 +115,13 @@ export default function Accounts() {
     
     return () => {
       window.removeEventListener('investmentUpdated', handleInvestmentUpdate);
-    };
-  }, [user]);
-
-  const loadAccounts = async () => {
-    if (!user) return;
-    setLoading(true);
-    try {
-      const response = await api.get(`/accounts?userId=${user.id}`);
-      if (response.success) {
-        setAccounts(response.data || []);
+      // Cleanup: cancela requisições quando o componente é desmontado
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
       }
-    } catch (error) {
-      toast.error('Erro ao carregar contas');
-    } finally {
-      setLoading(false);
-    }
-  };
+    };
+  }, [loadAccounts]);
 
 
 

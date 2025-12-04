@@ -3,11 +3,13 @@ package server.services;
 import server.model.InstallmentGroup;
 import server.model.Gasto;
 import server.model.Receita;
+import server.model.Conta;
 import server.repository.InstallmentRepository;
 import server.repository.ExpenseRepository;
 import server.repository.IncomeRepository;
 import server.repository.CategoryRepository;
 import server.repository.TagRepository;
+import server.repository.AccountRepository;
 import server.model.Categoria;
 import server.model.Tag;
 import java.time.LocalDate;
@@ -25,6 +27,7 @@ public class InstallmentService {
     private final IncomeRepository incomeRepository;
     private final CategoryRepository categoryRepository;
     private final TagRepository tagRepository;
+    private final AccountRepository accountRepository;
     
     public InstallmentService() {
         this.installmentRepository = new InstallmentRepository();
@@ -32,6 +35,7 @@ public class InstallmentService {
         this.incomeRepository = new IncomeRepository();
         this.tagRepository = new TagRepository();
         this.categoryRepository = new CategoryRepository();
+        this.accountRepository = new AccountRepository();
     }
     
     /**
@@ -63,7 +67,7 @@ public class InstallmentService {
         int idGrupo = installmentRepository.criarGrupoParcelas(grupo);
         grupo.setIdGrupo(idGrupo);
         
-        LOGGER.info("Criando compra parcelada: " + descricao + " - " + numeroParcelas + "x de R$ " + grupo.getValorParcela());
+        // LOGGER.info("Criando compra parcelada: " + descricao + " - " + numeroParcelas + "x de R$ " + grupo.getValorParcela());
         
         // Calcula o valor base da parcela (arredondado para 2 casas decimais)
         double valorParcelaBase = Math.round((valorTotal / numeroParcelas) * 100.0) / 100.0;
@@ -103,6 +107,25 @@ public class InstallmentService {
                     tagRepository.associarTagTransacao(idGasto, "GASTO", tagId);
                 }
             }
+            
+            // Se a parcela já passou (data no passado), marca automaticamente como paga
+            // Isso faz o estorno automático do valor ao cartão de crédito
+            LocalDate hoje = LocalDate.now();
+            if (dataParcela.isBefore(hoje)) {
+                Conta conta = accountRepository.buscarConta(idConta);
+                if (conta != null && conta.isCartaoCredito()) {
+                    try {
+                        // Marca a parcela como paga e estorna o saldo ao cartão de crédito
+                        expenseRepository.marcarParcelaComoPaga(idGasto);
+                        LOGGER.info("Parcela " + i + "/" + numeroParcelas + " marcada automaticamente como paga (data passada: " + dataParcela + ") - Valor estornado: R$ " + valorParcela);
+                    } catch (Exception e) {
+                        LOGGER.severe("ERRO CRÍTICO ao marcar parcela " + i + " como paga automaticamente: " + e.getMessage());
+                        e.printStackTrace();
+                        // Re-lança a exceção para garantir que o problema seja visível
+                        throw new RuntimeException("Erro ao processar parcela passada automaticamente: " + e.getMessage(), e);
+                    }
+                }
+            }
         }
         
         LOGGER.info("Compra parcelada criada com sucesso: " + numeroParcelas + " parcelas");
@@ -137,7 +160,7 @@ public class InstallmentService {
         int idGrupo = installmentRepository.criarGrupoParcelas(grupo);
         grupo.setIdGrupo(idGrupo);
         
-        LOGGER.info("Criando receita parcelada: " + descricao + " - " + numeroParcelas + "x de R$ " + grupo.getValorParcela());
+        // LOGGER.info("Criando receita parcelada: " + descricao + " - " + numeroParcelas + "x de R$ " + grupo.getValorParcela());
         
         // Calcula o valor base da parcela (arredondado para 2 casas decimais)
         double valorParcelaBase = Math.round((valorTotal / numeroParcelas) * 100.0) / 100.0;

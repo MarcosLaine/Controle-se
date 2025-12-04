@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { FileText, Download, ArrowUp, ArrowDown, Scale, TrendingUp } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import api from '../../services/api';
+import axios from 'axios';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import SummaryCard from '../common/SummaryCard';
 import toast from 'react-hot-toast';
@@ -30,34 +31,84 @@ export default function Reports() {
   const [endDate, setEndDate] = useState('');
   const [reportData, setReportData] = useState(null);
   const [exportFormat, setExportFormat] = useState('csv');
+  
+  // Ref para armazenar o AbortController da requisição atual
+  const abortControllerRef = useRef(null);
 
-  useEffect(() => {
-    if (user && (period !== 'custom' || (startDate && endDate))) {
-      loadReports();
-    }
-  }, [user, period, startDate, endDate]);
-
-  const loadReports = async () => {
+  const loadReports = useCallback(async () => {
     if (!user) return;
+    if (period === 'custom' && (!startDate || !endDate)) return;
+    
+    // Cancela a requisição anterior se ainda estiver em andamento
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    // Cria um novo AbortController para esta requisição
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+    
     setLoading(true);
     try {
       let url = `/reports?userId=${user.id}&period=${period}`;
       if (period === 'custom' && startDate && endDate) {
         url += `&startDate=${startDate}&endDate=${endDate}`;
       }
-      const response = await api.get(url);
+      const response = await api.get(url, {
+        signal: abortController.signal
+      });
+      
+      // Verifica se a requisição foi cancelada antes de processar a resposta
+      if (abortController.signal.aborted) {
+        return;
+      }
+      
       if (response.success) {
         setReportData(response.data);
       } else {
         toast.error('Erro ao carregar relatórios');
       }
     } catch (error) {
+      // Ignora erros de cancelamento
+      if (axios.isCancel && axios.isCancel(error)) {
+        return;
+      }
+      if (error.name === 'CanceledError' || error.name === 'AbortError') {
+        return;
+      }
+      
+      // Verifica se a requisição foi cancelada antes de processar o erro
+      if (abortController.signal.aborted) {
+        return;
+      }
+      
       console.error('Erro ao carregar relatórios:', error);
       toast.error('Erro ao carregar relatórios');
     } finally {
-      setLoading(false);
+      // Só atualiza o loading se a requisição não foi cancelada
+      if (!abortController.signal.aborted) {
+        setLoading(false);
+      }
+      // Limpa a referência se esta ainda é a requisição atual
+      if (abortControllerRef.current === abortController) {
+        abortControllerRef.current = null;
+      }
     }
-  };
+  }, [user, period, startDate, endDate]);
+
+  useEffect(() => {
+    if (user && (period !== 'custom' || (startDate && endDate))) {
+      loadReports();
+    }
+    
+    // Cleanup: cancela requisições quando o componente é desmontado ou quando os parâmetros mudam
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+    };
+  }, [loadReports]);
 
   const exportToPDF = () => {
     if (!reportData) {

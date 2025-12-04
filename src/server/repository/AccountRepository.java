@@ -236,20 +236,95 @@ public class AccountRepository {
     }
     
     public void excluirConta(int idConta) {
-        String sql = "DELETE FROM contas WHERE id_conta = ?";
-        try (Connection conn = getConnection()) {
+        Connection conn = null;
+        try {
+            conn = getConnection();
             conn.setAutoCommit(false);
+            
+            // Verifica se a conta existe e está ativa
+            String sqlVerificar = "SELECT id_conta, ativo FROM contas WHERE id_conta = ?";
+            boolean contaExiste = false;
+            boolean contaAtiva = false;
+            try (PreparedStatement pstmt = conn.prepareStatement(sqlVerificar)) {
+                pstmt.setInt(1, idConta);
+                ResultSet rs = pstmt.executeQuery();
+                if (rs.next()) {
+                    contaExiste = true;
+                    contaAtiva = rs.getBoolean("ativo");
+                }
+            }
+            
+            if (!contaExiste) {
+                throw new IllegalArgumentException("Conta não encontrada");
+            }
+            
+            // Deleta fisicamente todas as receitas que referenciam esta conta
+            // (tanto ativas quanto inativas, pois a constraint RESTRICT impede a exclusão da conta)
+            String sqlReceitas = "DELETE FROM receitas WHERE id_conta = ?";
+            try (PreparedStatement pstmt = conn.prepareStatement(sqlReceitas)) {
+                pstmt.setInt(1, idConta);
+                pstmt.executeUpdate();
+            }
+            
+            // Deleta fisicamente todos os gastos que referenciam esta conta
+            // (tanto ativos quanto inativos, pois a constraint RESTRICT impede a exclusão da conta)
+            String sqlGastos = "DELETE FROM gastos WHERE id_conta = ?";
+            try (PreparedStatement pstmt = conn.prepareStatement(sqlGastos)) {
+                pstmt.setInt(1, idConta);
+                pstmt.executeUpdate();
+            }
+            
+            // Exclui logicamente todos os investimentos ativos que referenciam esta conta
+            String sqlInvestimentos = "UPDATE investimentos SET ativo = FALSE WHERE id_conta = ? AND ativo = TRUE";
+            try (PreparedStatement pstmt = conn.prepareStatement(sqlInvestimentos)) {
+                pstmt.setInt(1, idConta);
+                pstmt.executeUpdate();
+            }
+            
+            // Deleta fisicamente todos os grupos de parcelas que referenciam esta conta
+            // (tanto ativos quanto inativos, pois a constraint RESTRICT impede a exclusão da conta)
+            // (ignora se a tabela não existir, pois pode ser uma instalação antiga)
+            try {
+                String sqlInstallmentGroups = "DELETE FROM installment_groups WHERE id_conta = ?";
+                try (PreparedStatement pstmt = conn.prepareStatement(sqlInstallmentGroups)) {
+                    pstmt.setInt(1, idConta);
+                    pstmt.executeUpdate();
+                }
+            } catch (SQLException e) {
+                // Ignora erro se a tabela não existir (instalação antiga sem suporte a parcelas)
+                if (!e.getMessage().contains("does not exist") && !e.getMessage().contains("relation") && !e.getMessage().contains("table")) {
+                    throw e; // Re-lança se for outro tipo de erro
+                }
+            }
+            
+            // Agora pode excluir a conta fisicamente
+            String sql = "DELETE FROM contas WHERE id_conta = ?";
             try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
                 pstmt.setInt(1, idConta);
                 int deleted = pstmt.executeUpdate();
-                if (deleted == 0) throw new IllegalArgumentException("Conta não encontrada");
-                conn.commit();
-            } catch (Exception e) {
-                conn.rollback();
-                throw e;
+                if (deleted == 0) {
+                    throw new IllegalArgumentException("Conta não encontrada");
+                }
             }
+            
+            conn.commit();
         } catch (SQLException e) {
+            if (conn != null) {
+                try {
+                    conn.rollback();
+                } catch (SQLException ex) {
+                    // Ignora erro no rollback
+                }
+            }
             throw new RuntimeException("Erro ao excluir conta: " + e.getMessage(), e);
+        } finally {
+            if (conn != null) {
+                try {
+                    conn.close();
+                } catch (SQLException e) {
+                    // Ignora erro ao fechar conexão
+                }
+            }
         }
     }
     
@@ -260,6 +335,24 @@ public class AccountRepository {
                     "AND UPPER(tipo) NOT LIKE 'CARTAO%' " +
                     "AND ativo = TRUE";
         return executeDoubleQuery(sql, idUsuario);
+    }
+    
+    /**
+     * Calcula o saldo disponível: (Conta Corrente + Dinheiro + Poupança) - Gastos
+     * @param idUsuario ID do usuário
+     * @param totalGastos Total de gastos do usuário (para subtrair)
+     * @return Saldo disponível após subtrair os gastos
+     */
+    public double calcularSaldoDisponivel(int idUsuario, double totalGastos) {
+        String sql = "SELECT COALESCE(SUM(saldo_atual), 0) as total " +
+                    "FROM contas WHERE id_usuario = ? " +
+                    "AND ativo = TRUE " +
+                    "AND (UPPER(tipo) LIKE '%CORRENTE%' " +
+                    "     OR UPPER(tipo) LIKE '%DINHEIRO%' " +
+                    "     OR UPPER(tipo) LIKE '%POUPANÇA%' " +
+                    "     OR UPPER(tipo) LIKE '%POUPANCA%')";
+        double saldoContas = executeDoubleQuery(sql, idUsuario);
+        return saldoContas - totalGastos;
     }
     
     public double calcularTotalCreditoDisponivelCartoes(int idUsuario) {
@@ -431,6 +524,12 @@ public class AccountRepository {
         
         if (hasCartaoCreditoColumns(conn)) {
             try {
+                // Valida se a conexão ainda está válida antes de usar
+                if (conn.isClosed() || !conn.isValid(2)) {
+                    // Se a conexão estiver inválida, retorna a conta sem os dados extras
+                    return conta;
+                }
+                
                 int idConta = conta.getIdConta();
                 String sqlExtra = "SELECT dia_fechamento, dia_pagamento FROM contas WHERE id_conta = ?";
                 try (PreparedStatement pstmtExtra = conn.prepareStatement(sqlExtra)) {
@@ -444,7 +543,16 @@ public class AccountRepository {
                     }
                 }
             } catch (SQLException e) {
-                // Ignore
+                // Se a conexão foi resetada ou está quebrada, ignora e retorna conta básica
+                // O HikariCP vai detectar e substituir a conexão na próxima requisição
+                if (e.getMessage() != null && 
+                    (e.getMessage().contains("Connection reset") || 
+                     e.getMessage().contains("broken") ||
+                     e.getMessage().contains("closed"))) {
+                    // Conexão quebrada - retorna conta sem dados extras
+                    return conta;
+                }
+                // Para outros erros SQL, também ignora (comportamento original)
             }
         }
         return conta;

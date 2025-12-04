@@ -1430,7 +1430,7 @@ public class QuoteService {
                                 try {
                                     double price = Double.parseDouble(priceStr);
                                     if (price > 0) {
-                                        System.out.println("Preço encontrado no campo '" + field + "': " + price);
+                                        // System.out.println("Preço encontrado no campo '" + field + "': " + price);
                                         return price;
                                     }
                                 } catch (NumberFormatException e) {

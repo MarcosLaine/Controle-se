@@ -61,7 +61,11 @@ public class DatabaseConnection {
         if (password == null) password = "postgres";
         if (sslMode == null) sslMode = "require";
 
-        String jdbcUrl = String.format("jdbc:postgresql://%s:%s/%s?sslmode=%s", host, port, database, sslMode);
+        // Configurações adicionais na URL para melhorar estabilidade da conexão
+        String jdbcUrl = String.format(
+            "jdbc:postgresql://%s:%s/%s?sslmode=%s&socketTimeout=60&tcpKeepAlive=true&connectTimeout=10",
+            host, port, database, sslMode
+        );
 
         HikariConfig config = new HikariConfig();
         config.setJdbcUrl(jdbcUrl);
@@ -71,15 +75,82 @@ public class DatabaseConnection {
         // Optimizations for limited resources (e.g. free tier database)
         config.setMaximumPoolSize(5);
         config.setMinimumIdle(2);
-        config.setIdleTimeout(300000); // 5 minutes
-        config.setConnectionTimeout(20000); // 20 seconds
-        config.setMaxLifetime(1800000); // 30 minutes
+        
+        // Timeouts ajustados para evitar conexões quebradas
+        // maxLifetime deve ser menor que qualquer timeout do servidor PostgreSQL
+        // Recomendação: 25 minutos (muitos servidores cloud têm timeout de 30min)
+        config.setConnectionTimeout(30000); // 30 seconds
+        config.setValidationTimeout(5000); // 5 seconds para validar conexão
+        config.setIdleTimeout(600000); // 10 minutes
+        config.setMaxLifetime(1500000); // 25 minutes (reduzido de 45min para evitar timeouts do servidor)
+        
+        // Validação de conexão antes de usar
+        config.setConnectionTestQuery("SELECT 1");
+        
+        // Detecção de vazamento de conexões (útil para debug)
+        config.setLeakDetectionThreshold(60000); // 60 segundos
+        
+        // Configurações adicionais para estabilidade
+        config.setRegisterMbeans(true); // Permite monitoramento via JMX
+        config.setPoolName("ControleSePool");
         
         dataSource = new HikariDataSource(config);
     }
 
     public Connection getConnection() throws SQLException {
-        return dataSource.getConnection();
+        int maxRetries = 2;
+        for (int attempt = 0; attempt < maxRetries; attempt++) {
+            try {
+                Connection conn = dataSource.getConnection();
+                // Valida a conexão antes de retornar
+                if (conn.isValid(2)) {
+                    return conn;
+                } else {
+                    // Conexão inválida, tenta fechar e pegar outra
+                    try { conn.close(); } catch (SQLException ignored) {}
+                }
+            } catch (SQLException e) {
+                // Se o pool estiver fechado ou houver erro crítico, tenta reinicializar
+                if (dataSource == null || dataSource.isClosed()) {
+                    synchronized (this) {
+                        if (dataSource == null || dataSource.isClosed()) {
+                            initializeDataSource();
+                            continue; // Tenta novamente com o pool reinicializado
+                        }
+                    }
+                }
+                
+                // Se for erro de conexão quebrada e ainda tiver tentativas, tenta novamente
+                if (attempt < maxRetries - 1 && 
+                    (e.getMessage() != null && 
+                     (e.getMessage().contains("broken") || 
+                      e.getMessage().contains("Connection reset") ||
+                      e.getMessage().contains("closed")))) {
+                    // Pequeno delay antes de tentar novamente
+                    try { Thread.sleep(100); } catch (InterruptedException ignored) {}
+                    continue;
+                }
+                
+                throw e;
+            }
+        }
+        // Se chegou aqui, todas as tentativas falharam
+        throw new SQLException("Não foi possível obter uma conexão válida após " + maxRetries + " tentativas");
+    }
+    
+    /**
+     * Reinicializa o pool de conexões (útil quando há problemas de conexão)
+     */
+    public synchronized void reconnect() {
+        if (dataSource != null && !dataSource.isClosed()) {
+            try {
+                dataSource.close();
+            } catch (Exception e) {
+                // Ignora erros ao fechar
+            }
+        }
+        dataSource = null;
+        initializeDataSource();
     }
 
     public void close() {

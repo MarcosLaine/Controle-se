@@ -12,8 +12,10 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.logging.Logger;
 
 public class ExpenseRepository {
+    private static final Logger LOGGER = Logger.getLogger(ExpenseRepository.class.getName());
 
     private Connection getConnection() throws SQLException {
         return DatabaseConnection.getInstance().getConnection();
@@ -607,13 +609,14 @@ public class ExpenseRepository {
             // Verifica se a conta é cartão de crédito antes de estornar
             String sqlVerificarConta = "SELECT tipo FROM contas WHERE id_conta = ?";
             boolean isCartao = false;
+            String tipoConta = null;
             try (PreparedStatement pstmt = conn.prepareStatement(sqlVerificarConta)) {
                 pstmt.setInt(1, idConta);
                 ResultSet rs = pstmt.executeQuery();
                 if (rs.next()) {
-                    String tipo = rs.getString("tipo");
-                    if (tipo != null) {
-                        String tipoLower = tipo.toLowerCase();
+                    tipoConta = rs.getString("tipo");
+                    if (tipoConta != null) {
+                        String tipoLower = tipoConta.toLowerCase();
                         isCartao = tipoLower.contains("cartão") || tipoLower.contains("cartao") || 
                                    tipoLower.contains("credito") || tipoLower.contains("crédito");
                     }
@@ -626,8 +629,16 @@ public class ExpenseRepository {
                 try (PreparedStatement pstmt = conn.prepareStatement(sqlConta)) {
                     pstmt.setDouble(1, valor);
                     pstmt.setInt(2, idConta);
-                    pstmt.executeUpdate();
+                    int rowsUpdated = pstmt.executeUpdate();
+                    if (rowsUpdated == 0) {
+                        throw new RuntimeException("Falha ao estornar saldo: nenhuma linha atualizada para conta " + idConta);
+                    }
+                    // Log para depuração
+                    // LOGGER.info("Estorno realizado: R$ " + valor + " estornado para conta " + idConta + " (tipo: " + tipoConta + ")");
                 }
+            } else {
+                // Log de aviso se não for cartão de crédito
+                LOGGER.warning("AVISO: Parcela " + idGasto + " não estornada - conta " + idConta + " não é cartão de crédito (tipo: " + tipoConta + ")");
             }
             
             conn.commit();
@@ -640,7 +651,11 @@ public class ExpenseRepository {
     }
 
     public double calcularTotalGastosUsuario(int idUsuario) {
-        String sql = "SELECT COALESCE(SUM(valor), 0) as total FROM gastos WHERE id_usuario = ? AND ativo = TRUE";
+        // Inclui gastos ativos E parcelas (mesmo as pagas, que têm ativo = FALSE mas id_grupo_parcela IS NOT NULL)
+        String sql = "SELECT COALESCE(SUM(valor), 0) as total " +
+                    "FROM gastos " +
+                    "WHERE id_usuario = ? " +
+                    "AND (ativo = TRUE OR id_grupo_parcela IS NOT NULL)";
         try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setInt(1, idUsuario);

@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Plus, Edit, Trash2, Tag, TrendingUp, Info } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import api from '../../services/api';
+import axios from 'axios';
 import { formatCurrency } from '../../utils/formatters';
 import Modal from '../common/Modal';
 import toast from 'react-hot-toast';
@@ -14,6 +15,9 @@ export default function CategoriesAndTags() {
   const [tags, setTags] = useState([]);
   const [budgets, setBudgets] = useState([]);
   const [loading, setLoading] = useState(true);
+  
+  // Ref para armazenar o AbortController da requisição atual
+  const abortControllerRef = useRef(null);
   
   // Modals
   const [showCategoryModal, setShowCategoryModal] = useState(false);
@@ -38,30 +42,74 @@ export default function CategoriesAndTags() {
   const [deletingTagIds, setDeletingTagIds] = useState(new Set());
   const [deletingBudgetIds, setDeletingBudgetIds] = useState(new Set());
 
-  useEffect(() => {
-    if (user) {
-      loadData();
+  const loadData = useCallback(async () => {
+    if (!user) return;
+    
+    // Cancela a requisição anterior se ainda estiver em andamento
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
     }
-  }, [user]);
 
-  const loadData = async () => {
+    // Cria um novo AbortController para esta requisição
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+
     setLoading(true);
     try {
       const [categoriesRes, tagsRes, budgetsRes] = await Promise.all([
-        api.get(`/categories?userId=${user.id}`),
-        api.get(`/tags?userId=${user.id}`),
-        api.get(`/budgets?userId=${user.id}`),
+        api.get(`/categories?userId=${user.id}`, { signal: abortController.signal }),
+        api.get(`/tags?userId=${user.id}`, { signal: abortController.signal }),
+        api.get(`/budgets?userId=${user.id}`, { signal: abortController.signal }),
       ]);
+      
+      // Verifica se a requisição foi cancelada antes de processar a resposta
+      if (abortController.signal.aborted) {
+        return;
+      }
       
       if (categoriesRes.success) setCategories(categoriesRes.data || []);
       if (tagsRes.success) setTags(tagsRes.data || []);
       if (budgetsRes.success) setBudgets(budgetsRes.data || []);
     } catch (error) {
+      // Ignora erros de cancelamento
+      if (axios.isCancel && axios.isCancel(error)) {
+        return;
+      }
+      if (error.name === 'CanceledError' || error.name === 'AbortError') {
+        return;
+      }
+      
+      // Verifica se a requisição foi cancelada antes de processar o erro
+      if (abortController.signal.aborted) {
+        return;
+      }
+      
       toast.error('Erro ao carregar dados');
     } finally {
-      setLoading(false);
+      // Só atualiza o loading se a requisição não foi cancelada
+      if (!abortController.signal.aborted) {
+        setLoading(false);
+      }
+      // Limpa a referência se esta ainda é a requisição atual
+      if (abortControllerRef.current === abortController) {
+        abortControllerRef.current = null;
+      }
     }
-  };
+  }, [user]);
+
+  useEffect(() => {
+    if (user) {
+      loadData();
+    }
+    
+    // Cleanup: cancela requisições quando o componente é desmontado
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+    };
+  }, [loadData]);
 
   // Helper para encontrar orçamento de uma categoria
   const getBudgetForCategory = (categoryId) => {
