@@ -575,7 +575,7 @@ export default function Transactions() {
                       style={{ pointerEvents: 'auto' }}
                     >
                       <CreditCard className="w-4 h-4" />
-                      <span className="text-xs hidden sm:inline">Registrar</span>
+                      <span className="text-xs hidden sm:inline">{t('transactions.register')}</span>
                     </button>
                   )}
                   <button
@@ -617,7 +617,7 @@ export default function Transactions() {
               </>
             ) : (
               <>
-                Carregar mais 12 transações
+                Carregar mais
               </>
             )}
           </button>
@@ -1080,7 +1080,7 @@ function TransactionModal({ isOpen, onClose, type, categories, accounts, tags, o
             className="input"
             required
           >
-            <option value="">Selecione a conta</option>
+            <option value="">{t('accounts.selectAccount') || t('transactions.account')}</option>
             {accounts
               .filter((acc) => {
                 // Se for gasto parcelado, mostra apenas contas de cartão de crédito
@@ -1241,13 +1241,13 @@ function TransactionModal({ isOpen, onClose, type, categories, accounts, tags, o
           </div>
         )}
         <div>
-          <label className="label">Observações (opcional)</label>
+          <label className="label">{t('transactions.notes')} ({t('common.optional')})</label>
           <textarea
             value={formData.observacoes}
             onChange={(e) => setFormData({ ...formData, observacoes: e.target.value })}
             className="input"
             rows="3"
-            placeholder="Digite observações separadas por vírgula ou quebra de linha..."
+            placeholder={t('transactions.notesPlaceholder') || 'Digite observações separadas por vírgula ou quebra de linha...'}
           />
         </div>
         <div className="flex gap-2 justify-end">
@@ -1335,28 +1335,28 @@ function PayInstallmentModal({ isOpen, onClose, installment, accounts, onSuccess
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={`Registrar Pagamento Antecipado - Parcela ${installment.numeroParcela}/${installment.totalParcelas}`}
+      title={`${t('transactions.registerAdvancePayment')} - ${t('transactions.installmentInfo', { current: installment.numeroParcela, total: installment.totalParcelas })}`}
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
           <p className="text-sm font-medium text-blue-800 dark:text-blue-200 mb-2">
-            Informações da Parcela:
+            {t('transactions.installmentInfoTitle') || t('transactions.installmentInfo', { current: installment.numeroParcela, total: installment.totalParcelas })}:
           </p>
           <div className="text-xs text-blue-700 dark:text-blue-300 space-y-1">
             <div className="flex justify-between">
-              <span>Descrição:</span>
+              <span>{t('transactions.description')}:</span>
               <span className="font-semibold">{installment.description}</span>
             </div>
             <div className="flex justify-between">
-              <span>Valor:</span>
+              <span>{t('transactions.value')}:</span>
               <span className="font-semibold">{formatCurrency(installment.value || 0)}</span>
             </div>
             <div className="flex justify-between">
-              <span>Data original:</span>
+              <span>{t('transactions.date')} {t('common.original') || 'original'}:</span>
               <span className="font-semibold">{formatDate(installment.date)}</span>
             </div>
             <div className="flex justify-between pt-1 border-t border-blue-200 dark:border-blue-700">
-              <span className="font-medium">Parcela:</span>
+              <span className="font-medium">{t('transactions.installment')}:</span>
               <span className="font-bold">
                 {installment.numeroParcela}/{installment.totalParcelas}
               </span>
@@ -1375,7 +1375,7 @@ function PayInstallmentModal({ isOpen, onClose, installment, accounts, onSuccess
             className="input"
             required
           >
-            <option value="">Selecione a conta</option>
+            <option value="">{t('accounts.selectAccount') || t('transactions.account')}</option>
             {accounts
               .filter((acc) => {
                 const tipo = acc.tipo?.toLowerCase() || '';
@@ -1394,10 +1394,10 @@ function PayInstallmentModal({ isOpen, onClose, installment, accounts, onSuccess
 
         <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
           <p className="text-xs text-blue-800 dark:text-blue-200 mb-2">
-            <strong>ℹ️ Informação:</strong> Esta ação apenas registra o pagamento no sistema de controle financeiro.
+            <strong>ℹ️ {t('common.info')}:</strong> {t('transactions.registerAdvancePayment')}
           </p>
           <p className="text-xs text-blue-700 dark:text-blue-300">
-            O valor será registrado como debitado da conta de origem selecionada e a parcela será marcada como paga no sistema. <strong>Esta ação não realiza nenhuma transação bancária real.</strong>
+            {t('transactions.noRealBankTransaction')}
           </p>
         </div>
 
@@ -1406,7 +1406,7 @@ function PayInstallmentModal({ isOpen, onClose, installment, accounts, onSuccess
             {t('common.cancel')}
           </button>
           <button type="submit" className="btn-primary" disabled={loading}>
-            {loading ? 'Registrando...' : 'Registrar Pagamento'}
+            {loading ? t('transactions.registering') : t('transactions.registerPayment')}
           </button>
         </div>
       </form>

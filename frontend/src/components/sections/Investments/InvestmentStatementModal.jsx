@@ -531,7 +531,7 @@ export default function InvestmentStatementModal({ isOpen, onClose, investments,
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="label text-xs">Data Início</label>
+              <label className="label text-xs">{t('investments.start')}</label>
               <input
                 type="date"
                 className="input"
@@ -540,7 +540,7 @@ export default function InvestmentStatementModal({ isOpen, onClose, investments,
               />
             </div>
             <div>
-              <label className="label text-xs">Data Fim</label>
+              <label className="label text-xs">{t('reports.endDate')}</label>
               <input
                 type="date"
                 className="input"
@@ -549,26 +549,26 @@ export default function InvestmentStatementModal({ isOpen, onClose, investments,
               />
             </div>
             <div>
-              <label className="label text-xs">Corretora</label>
+              <label className="label text-xs">{t('investments.brokerageLabel')}</label>
               <select
                 className="input"
                 value={filters.broker}
                 onChange={(e) => setFilters({ ...filters, broker: e.target.value })}
               >
-                <option value="">Todas</option>
+                <option value="">{t('investments.all')}</option>
                 {brokers.map(broker => (
                   <option key={broker} value={broker}>{broker}</option>
                 ))}
               </select>
             </div>
             <div>
-              <label className="label text-xs">Categoria</label>
+              <label className="label text-xs">{t('investments.categoryLabel')}</label>
               <select
                 className="input"
                 value={filters.category}
                 onChange={(e) => setFilters({ ...filters, category: e.target.value })}
               >
-                <option value="">Todas</option>
+                <option value="">{t('investments.all')}</option>
                 {categories.map(cat => (
                   <option key={cat} value={cat}>{categoryNames[cat] || cat}</option>
                 ))}
@@ -581,17 +581,17 @@ export default function InvestmentStatementModal({ isOpen, onClose, investments,
         <div className="flex flex-wrap gap-2">
           <button onClick={exportToPDF} className="btn-secondary flex items-center gap-2 text-sm px-3 py-2 flex-1 sm:flex-none">
             <FileText size={16} />
-            <span className="hidden sm:inline">Exportar PDF</span>
+            <span className="hidden sm:inline">{t('investments.exportPDF')}</span>
             <span className="sm:hidden">PDF</span>
           </button>
           <button onClick={exportToXLSX} className="btn-secondary flex items-center gap-2 text-sm px-3 py-2 flex-1 sm:flex-none">
             <FileSpreadsheet size={16} />
-            <span className="hidden sm:inline">Exportar XLSX</span>
+            <span className="hidden sm:inline">{t('investments.exportExcel')}</span>
             <span className="sm:hidden">XLSX</span>
           </button>
           <button onClick={exportToCSV} className="btn-secondary flex items-center gap-2 text-sm px-3 py-2 flex-1 sm:flex-none">
             <File size={16} />
-            <span className="hidden sm:inline">Exportar CSV</span>
+            <span className="hidden sm:inline">{t('investments.exportCSV')}</span>
             <span className="sm:hidden">CSV</span>
           </button>
         </div>
@@ -601,7 +601,7 @@ export default function InvestmentStatementModal({ isOpen, onClose, investments,
           <div className="space-y-2">
             {filteredInvestments.length === 0 ? (
               <div className="text-center py-8 text-gray-500">
-                Nenhuma operação encontrada com os filtros selecionados
+                {t('investments.noOperationsFound')}
               </div>
             ) : (
               filteredInvestments.map((inv, idx) => {
@@ -661,25 +661,25 @@ export default function InvestmentStatementModal({ isOpen, onClose, investments,
           <div className="bg-primary-50 dark:bg-primary-900/20 p-4 rounded-lg">
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 text-xs sm:text-sm">
               <div>
-                <div className="text-gray-600 dark:text-gray-400">Total Investido</div>
+                <div className="text-gray-600 dark:text-gray-400">{t('investments.totalInvestedLabel')}</div>
                 <div className="font-semibold text-gray-900 dark:text-white">
                   {formatCurrency(summaryTotals.totalInvested)}
                 </div>
               </div>
               <div>
-                <div className="text-gray-600 dark:text-gray-400">Total Recebido</div>
+                <div className="text-gray-600 dark:text-gray-400">{t('investments.totalReceived')}</div>
                 <div className="font-semibold text-gray-900 dark:text-white">
                   {formatCurrency(summaryTotals.totalReceived)}
                 </div>
               </div>
               <div>
-                <div className="text-gray-600 dark:text-gray-400">Total Corretagem</div>
+                <div className="text-gray-600 dark:text-gray-400">{t('investments.totalBrokerageLabel')}</div>
                 <div className="font-semibold text-gray-900 dark:text-white">
                   {formatCurrency(summaryTotals.totalBrokerage)}
                 </div>
               </div>
               <div>
-                <div className="text-gray-600 dark:text-gray-400">Compras / Vendas</div>
+                <div className="text-gray-600 dark:text-gray-400">{t('investments.buys')} / {t('investments.sells')}</div>
                 <div className="font-semibold text-gray-900 dark:text-white">
                   {summaryTotals.buyCount} / {summaryTotals.sellCount}
                 </div>

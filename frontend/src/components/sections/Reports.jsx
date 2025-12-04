@@ -638,14 +638,14 @@ export default function Reports() {
               amount={formatCurrency(reportData.totalIncomes || 0)}
               icon={ArrowUp}
               type="income"
-              subtitle={`${reportData.incomeCount || 0} transações`}
+              subtitle={`${reportData.incomeCount || 0} ${t('reports.transactions')}`}
             />
             <SummaryCard
               title={t('reports.totalExpenses')}
               amount={formatCurrency(reportData.totalExpenses || 0)}
               icon={ArrowDown}
               type="expense"
-              subtitle={`${reportData.expenseCount || 0} transações`}
+              subtitle={`${reportData.expenseCount || 0} ${t('reports.transactions')}`}
             />
             <SummaryCard
               title={t('reports.balancePeriod')}
@@ -822,7 +822,7 @@ export default function Reports() {
           {reportData.topExpenses && reportData.topExpenses.length > 0 && (
             <div className="card">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                Maiores Gastos
+                {t('reports.topExpenses')}
               </h3>
               <div className="space-y-3">
                 {reportData.topExpenses.map((expense, idx) => (

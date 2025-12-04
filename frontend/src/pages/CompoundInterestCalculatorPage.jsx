@@ -2,6 +2,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Calculator, Download, TrendingUp, DollarSign, Percent, Calendar, LogIn, Save, History, Trash2, Loader2, Home } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { useLanguage } from '../contexts/LanguageContext';
 import api from '../services/api';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import toast from 'react-hot-toast';
@@ -35,6 +36,7 @@ ChartJS.register(
 
 export default function CompoundInterestCalculatorPage() {
   const { user } = useAuth();
+  const { t } = useLanguage();
   const navigate = useNavigate();
   const chartRef = useRef(null);
   const [formData, setFormData] = useState({
@@ -152,7 +154,7 @@ export default function CompoundInterestCalculatorPage() {
 
     const labels = results.monthlyData.map((_, index) => {
       const meses = index;
-      if (meses === 0) return 'Início';
+      if (meses === 0) return t('tools.start');
       if (meses < 12) return `${meses}M`;
       const anos = Math.floor(meses / 12);
       const mesesRestantes = meses % 12;
@@ -164,7 +166,7 @@ export default function CompoundInterestCalculatorPage() {
       labels,
       datasets: [
         {
-          label: 'Saldo Total',
+          label: t('tools.totalBalance'),
           data: results.monthlyData.map((d) => d.saldo),
           borderColor: '#3b82f6',
           backgroundColor: 'rgba(59, 130, 246, 0.1)',
@@ -174,7 +176,7 @@ export default function CompoundInterestCalculatorPage() {
           pointHoverRadius: 4,
         },
         {
-          label: 'Valor Investido',
+          label: t('tools.investedValue'),
           data: results.monthlyData.map((d) => d.investido),
           borderColor: '#9ca3af',
           borderDash: [5, 5],
@@ -185,16 +187,16 @@ export default function CompoundInterestCalculatorPage() {
         },
       ],
     };
-  }, [results]);
+  }, [results, t]);
 
   const handleCalculate = () => {
     const calculated = calculateResults();
     if (!calculated) {
-      toast.error('Por favor, preencha todos os campos corretamente');
+      toast.error(t('tools.fillAllFields'));
       return;
     }
     setResults(calculated);
-    toast.success('Cálculo realizado com sucesso!');
+    toast.success(t('tools.calculationSuccess'));
   };
 
   const loadHistory = async () => {
@@ -206,32 +208,32 @@ export default function CompoundInterestCalculatorPage() {
       if (response.success) {
         setHistory(response.data || []);
       } else {
-        toast.error('Erro ao carregar histórico');
+        toast.error(t('tools.errorLoadingHistory'));
       }
     } catch (error) {
       console.error('Erro ao carregar histórico:', error);
-      toast.error('Erro ao carregar histórico');
+      toast.error(t('tools.errorLoadingHistory'));
     } finally {
       setLoadingHistory(false);
     }
   };
 
   const handleDeleteFromHistory = async (idCalculo) => {
-    if (!confirm('Tem certeza que deseja excluir este cálculo do histórico?')) {
+    if (!confirm(t('common.deleteCalculationConfirm'))) {
       return;
     }
 
     try {
       const response = await api.delete(`/tools/compound-interest?id=${idCalculo}`);
       if (response.success) {
-        toast.success('Cálculo excluído do histórico');
+        toast.success(t('tools.calculationDeleted'));
         loadHistory();
       } else {
-        toast.error('Erro ao excluir cálculo');
+        toast.error(t('tools.errorDeletingCalculation'));
       }
     } catch (error) {
       console.error('Erro ao excluir:', error);
-      toast.error('Erro ao excluir cálculo do histórico');
+      toast.error(t('tools.errorDeletingCalculationHistory'));
     }
   };
 
@@ -257,7 +259,7 @@ export default function CompoundInterestCalculatorPage() {
     }
     
     setShowHistoryModal(false);
-    toast.success('Cálculo carregado!');
+    toast.success(t('tools.calculationLoaded'));
   };
 
   useEffect(() => {
@@ -268,13 +270,13 @@ export default function CompoundInterestCalculatorPage() {
 
   const handleSaveToHistory = async () => {
     if (!user) {
-      toast.error('Você precisa estar logado para salvar cálculos');
+      toast.error(t('tools.mustBeLoggedIn'));
       navigate('/login?redirect=/calculadora-juros-compostos');
       return;
     }
 
     if (!results) {
-      toast.error('Realize um cálculo primeiro');
+      toast.error(t('tools.performCalculationFirst'));
       return;
     }
 
@@ -297,17 +299,17 @@ export default function CompoundInterestCalculatorPage() {
 
       const response = await api.post('/tools/compound-interest', payload);
       if (response.success) {
-        toast.success('Cálculo salvo no histórico!');
+        toast.success(t('tools.calculationSaved'));
         // Recarrega o histórico se o modal estiver aberto
         if (showHistoryModal) {
           loadHistory();
         }
       } else {
-        toast.error('Erro ao salvar cálculo');
+        toast.error(t('tools.errorSaving'));
       }
     } catch (error) {
       console.error('Erro ao salvar:', error);
-      toast.error('Erro ao salvar cálculo no histórico');
+      toast.error(t('tools.errorSavingHistory'));
     } finally {
       setLoading(false);
     }
@@ -315,7 +317,7 @@ export default function CompoundInterestCalculatorPage() {
 
   const handleExportPDF = async () => {
     if (!results) {
-      toast.error('Realize um cálculo primeiro');
+      toast.error(t('tools.performCalculationFirst'));
       return;
     }
 
@@ -430,7 +432,7 @@ export default function CompoundInterestCalculatorPage() {
       doc.setFontSize(24);
       doc.setFont(undefined, 'bold');
       doc.setTextColor(...palette.textPrimary);
-      doc.text('Calculadora de Juros Compostos', margin, yPos);
+      doc.text(t('tools.compoundInterestCalculator'), margin, yPos);
       yPos += 8;
       
       doc.setFontSize(9);
@@ -450,9 +452,9 @@ export default function CompoundInterestCalculatorPage() {
       const cardSpacing = 4;
       
       drawSummaryCard(
-        'Total Investido',
+        t('tools.totalInvestedLabel'),
         formatCurrency(results.totalInvestido),
-        'Aportes realizados',
+        t('tools.contributionsMade'),
         margin,
         yPos,
         cardWidth,
@@ -462,9 +464,9 @@ export default function CompoundInterestCalculatorPage() {
       );
       
       drawSummaryCard(
-        'Saldo Final',
+        t('tools.finalBalanceLabel'),
         formatCurrency(results.saldoFinal),
-        'Valor acumulado',
+        t('tools.accumulatedValue'),
         margin + cardWidth + cardSpacing,
         yPos,
         cardWidth,
@@ -474,9 +476,9 @@ export default function CompoundInterestCalculatorPage() {
       );
       
       drawSummaryCard(
-        'Total de Juros',
+        t('tools.totalInterestLabel'),
         formatCurrency(results.totalJuros),
-        'Rendimentos',
+        t('tools.earnings'),
         margin + (cardWidth + cardSpacing) * 2,
         yPos,
         cardWidth,
@@ -487,9 +489,9 @@ export default function CompoundInterestCalculatorPage() {
       
       const rentabilidade = ((results.totalJuros / results.totalInvestido) * 100).toFixed(2);
       drawSummaryCard(
-        'Rentabilidade',
+        t('tools.profitabilityLabel'),
         `${rentabilidade}%`,
-        'Sobre o investido',
+        t('tools.onInvested'),
         margin + (cardWidth + cardSpacing) * 3,
         yPos,
         cardWidth,
@@ -511,18 +513,18 @@ export default function CompoundInterestCalculatorPage() {
       doc.setFontSize(14);
       doc.setFont(undefined, 'bold');
       doc.setTextColor(...palette.textPrimary);
-      doc.text('Parâmetros do Cálculo', margin + 4, yPos);
+      doc.text(t('tools.calculationParameters'), margin + 4, yPos);
       yPos += 10;
       
       doc.setFontSize(9);
       doc.setFont(undefined, 'normal');
       
       const params = [
-        { label: 'Aporte Inicial', value: formatCurrency(parseFloat(formData.aporteInicial) || 0) },
-        { label: 'Aporte Mensal', value: formatCurrency(parseFloat(formData.aporteMensal) || 0) },
-        { label: 'Frequência de Aporte', value: formData.frequenciaAporte === 'mensal' ? 'Mensal' : formData.frequenciaAporte === 'quinzenal' ? 'Quinzenal' : 'Anual' },
-        { label: 'Taxa de Juros', value: `${formData.taxaJuros}% ${formData.tipoTaxa === 'mensal' ? 'Mensal' : 'Anual'}` },
-        { label: 'Prazo', value: `${formData.prazo} ${formData.tipoPrazo === 'meses' ? 'meses' : 'anos'}` },
+        { label: t('tools.initialContribution'), value: formatCurrency(parseFloat(formData.aporteInicial) || 0) },
+        { label: t('tools.monthlyContribution'), value: formatCurrency(parseFloat(formData.aporteMensal) || 0) },
+        { label: t('tools.contributionFrequency'), value: formData.frequenciaAporte === 'mensal' ? t('tools.monthly') : formData.frequenciaAporte === 'quinzenal' ? t('tools.biweekly') : t('tools.annual') },
+        { label: t('tools.interestRate'), value: `${formData.taxaJuros}% ${formData.tipoTaxa === 'mensal' ? t('tools.monthly') : t('tools.annual')}` },
+        { label: t('tools.period'), value: `${formData.prazo} ${formData.tipoPrazo === 'meses' ? t('tools.months') : t('tools.years')}` },
       ];
 
       // Desenha parâmetros em duas colunas
@@ -597,11 +599,15 @@ export default function CompoundInterestCalculatorPage() {
           addNewPage();
         }
         
-        drawSectionTitle('Evolução Mensal - Primeiros 12 Meses', palette.purple);
+        doc.setFontSize(14);
+        doc.setFont(undefined, 'bold');
+        doc.setTextColor(...palette.textPrimary);
+        doc.text(`${t('tools.monthlyEvolution')} - ${t('tools.first12Months')}`, margin, yPos);
+        yPos += 10;
         
         const first12Months = results.monthlyData.slice(0, 13);
         const tableData = first12Months.map((d, idx) => [
-          idx === 0 ? 'Início' : `${idx} mês${idx > 1 ? 'es' : ''}`,
+          idx === 0 ? t('tools.start') : `${idx} ${idx > 1 ? t('tools.monthsLabel') : t('tools.monthLabel')}`,
           formatCurrency(d.investido),
           formatCurrency(d.saldo),
           formatCurrency(d.juros),
@@ -609,7 +615,7 @@ export default function CompoundInterestCalculatorPage() {
 
         autoTable(doc, {
           startY: yPos,
-          head: [['Período', 'Valor Investido', 'Saldo Total', 'Juros Acumulados']],
+          head: [[t('tools.periodColumn'), t('tools.investedValue'), t('tools.totalBalance'), t('tools.accumulatedInterest')]],
           body: tableData,
           styles: { 
             fontSize: 9,
@@ -645,23 +651,23 @@ export default function CompoundInterestCalculatorPage() {
           doc.setFontSize(14);
           doc.setFont(undefined, 'bold');
           doc.setTextColor(...palette.textPrimary);
-          doc.text('Evolução Mensal - Últimos 12 Meses', margin, yPos);
+          doc.text(`${t('tools.monthlyEvolution')} - ${t('tools.last12Months')}`, margin, yPos);
           yPos += 10;
           
           const last12Months = results.monthlyData.slice(-13);
           const lastTableData = last12Months.map((d, idx) => {
             const monthIndex = results.monthlyData.length - last12Months.length + idx;
-            let periodLabel = 'Início';
+            let periodLabel = t('tools.start');
             if (monthIndex > 0) {
               if (monthIndex < 12) {
-                periodLabel = `${monthIndex} mês${monthIndex > 1 ? 'es' : ''}`;
+                periodLabel = `${monthIndex} ${monthIndex > 1 ? t('tools.monthsLabel') : t('tools.monthLabel')}`;
               } else {
                 const anos = Math.floor(monthIndex / 12);
                 const mesesRestantes = monthIndex % 12;
                 if (mesesRestantes === 0) {
-                  periodLabel = `${anos} ano${anos > 1 ? 's' : ''}`;
+                  periodLabel = `${anos} ${anos > 1 ? t('tools.yearsLabel') : t('tools.yearLabel')}`;
                 } else {
-                  periodLabel = `${anos} ano${anos > 1 ? 's' : ''} e ${mesesRestantes} mês${mesesRestantes > 1 ? 'es' : ''}`;
+                  periodLabel = `${anos} ${anos > 1 ? t('tools.yearsLabel') : t('tools.yearLabel')} ${t('tools.and')} ${mesesRestantes} ${mesesRestantes > 1 ? t('tools.monthsLabel') : t('tools.monthLabel')}`;
                 }
               }
             }
@@ -675,7 +681,7 @@ export default function CompoundInterestCalculatorPage() {
 
           autoTable(doc, {
             startY: yPos,
-            head: [['Período', 'Valor Investido', 'Saldo Total', 'Juros Acumulados']],
+            head: [[t('tools.periodColumn'), t('tools.investedValue'), t('tools.totalBalance'), t('tools.accumulatedInterest')]],
             body: lastTableData,
             styles: { 
               fontSize: 9,
@@ -715,7 +721,7 @@ export default function CompoundInterestCalculatorPage() {
         doc.setFontSize(8);
         doc.setTextColor(...palette.gray);
         doc.text(
-          `Página ${i} de ${totalPages} - Controle-se - Calculadora de Juros Compostos`,
+          `Página ${i} ${t('common.of')} ${totalPages} - Controle-se - ${t('tools.compoundInterestCalculator')}`,
           pageWidth / 2,
           doc.internal.pageSize.getHeight() - 10,
           { align: 'center' }
@@ -724,10 +730,10 @@ export default function CompoundInterestCalculatorPage() {
 
       const fileName = `juros_compostos_${new Date().toISOString().split('T')[0]}.pdf`;
       doc.save(fileName);
-      toast.success('PDF exportado com sucesso!');
+      toast.success(t('tools.exportSuccessPDF'));
     } catch (error) {
       console.error('Erro ao exportar PDF:', error);
-      toast.error('Erro ao exportar PDF');
+      toast.error(t('tools.errorExportingPDF'));
     }
   };
 
@@ -739,20 +745,20 @@ export default function CompoundInterestCalculatorPage() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-                Calculadora de Juros Compostos
+                {t('tools.compoundInterestCalculator')}
               </h1>
               <p className="text-gray-600 dark:text-gray-400 mt-1">
-                Calcule o crescimento do seu investimento com juros compostos
+                {t('tools.subtitle')}
               </p>
             </div>
             <div className="flex gap-2">
               <button
                 onClick={() => navigate('/dashboard')}
                 className="btn-secondary flex items-center gap-2 px-4 py-2"
-                title="Voltar para o dashboard"
+                title={t('sidebar.overview')}
               >
                 <Home className="w-4 h-4" />
-                <span>Dashboard</span>
+                <span>{t('sidebar.overview')}</span>
               </button>
               {user ? (
                 <button
@@ -761,7 +767,7 @@ export default function CompoundInterestCalculatorPage() {
                   title="Ver histórico de cálculos salvos"
                 >
                   <History className="w-4 h-4" />
-                  <span>Histórico</span>
+                  <span>{t('tools.history')}</span>
                 </button>
               ) : (
                 <button
@@ -769,7 +775,7 @@ export default function CompoundInterestCalculatorPage() {
                   className="btn-primary flex items-center gap-2 px-4 py-2"
                 >
                   <LogIn className="w-4 h-4" />
-                  <span>Entrar para Salvar</span>
+                  <span>{t('auth.login')} {t('common.to')} {t('common.save')}</span>
                 </button>
               )}
             </div>
@@ -779,13 +785,13 @@ export default function CompoundInterestCalculatorPage() {
         {/* Formulário */}
         <div className="card mb-6">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-            Parâmetros do Cálculo
+            {t('tools.calculationParameters')}
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="label">
                 <DollarSign className="w-4 h-4 inline mr-1" />
-                Aporte Inicial (R$)
+                {t('tools.initialContributionLabel')}
               </label>
               <input
                 type="number"
@@ -801,7 +807,7 @@ export default function CompoundInterestCalculatorPage() {
             <div>
               <label className="label">
                 <DollarSign className="w-4 h-4 inline mr-1" />
-                Aporte Mensal (R$)
+                {t('tools.monthlyContributionLabel')}
               </label>
               <input
                 type="number"
@@ -815,22 +821,22 @@ export default function CompoundInterestCalculatorPage() {
             </div>
 
             <div>
-              <label className="label">Frequência de Aporte</label>
+              <label className="label">{t('tools.contributionFrequencyLabel')}</label>
               <select
                 value={formData.frequenciaAporte}
                 onChange={(e) => setFormData({ ...formData, frequenciaAporte: e.target.value })}
                 className="input"
               >
-                <option value="mensal">Mensal</option>
-                <option value="quinzenal">Quinzenal</option>
-                <option value="anual">Anual</option>
+                <option value="mensal">{t('tools.monthly')}</option>
+                <option value="quinzenal">{t('tools.biweekly')}</option>
+                <option value="anual">{t('tools.annual')}</option>
               </select>
             </div>
 
             <div>
               <label className="label">
                 <Percent className="w-4 h-4 inline mr-1" />
-                Taxa de Juros (%)
+                {t('tools.interestRateLabel')}
               </label>
               <div className="flex gap-2">
                 <input
@@ -847,8 +853,8 @@ export default function CompoundInterestCalculatorPage() {
                   onChange={(e) => setFormData({ ...formData, tipoTaxa: e.target.value })}
                   className="input w-32"
                 >
-                  <option value="mensal">a.m.</option>
-                  <option value="anual">a.a.</option>
+                  <option value="mensal">{t('tools.monthly')}</option>
+                  <option value="anual">{t('tools.annual')}</option>
                 </select>
               </div>
             </div>
@@ -856,7 +862,7 @@ export default function CompoundInterestCalculatorPage() {
             <div>
               <label className="label">
                 <Calendar className="w-4 h-4 inline mr-1" />
-                Prazo
+                {t('tools.periodLabel')}
               </label>
               <div className="flex gap-2">
                 <input
@@ -872,8 +878,8 @@ export default function CompoundInterestCalculatorPage() {
                   onChange={(e) => setFormData({ ...formData, tipoPrazo: e.target.value })}
                   className="input w-32"
                 >
-                  <option value="meses">Meses</option>
-                  <option value="anos">Anos</option>
+                  <option value="meses">{t('tools.months')}</option>
+                  <option value="anos">{t('tools.years')}</option>
                 </select>
               </div>
             </div>
@@ -881,7 +887,7 @@ export default function CompoundInterestCalculatorPage() {
 
           <button onClick={handleCalculate} className="btn-primary mt-4 w-full md:w-auto">
             <Calculator className="w-4 h-4" />
-            Calcular
+            {t('tools.calculateButton')}
           </button>
         </div>
 
@@ -893,7 +899,7 @@ export default function CompoundInterestCalculatorPage() {
               <div className="card">
                 <div className="flex items-center gap-2 mb-2">
                   <DollarSign className="w-5 h-5 text-gray-500" />
-                  <span className="text-sm text-gray-600 dark:text-gray-400">Total Investido</span>
+                  <span className="text-sm text-gray-600 dark:text-gray-400">{t('tools.totalInvestedLabel')}</span>
                 </div>
                 <p className="text-2xl font-bold text-gray-900 dark:text-white">
                   {formatCurrency(results.totalInvestido)}
@@ -903,7 +909,7 @@ export default function CompoundInterestCalculatorPage() {
               <div className="card">
                 <div className="flex items-center gap-2 mb-2">
                   <TrendingUp className="w-5 h-5 text-green-500" />
-                  <span className="text-sm text-gray-600 dark:text-gray-400">Saldo Final</span>
+                  <span className="text-sm text-gray-600 dark:text-gray-400">{t('tools.finalBalanceLabel')}</span>
                 </div>
                 <p className="text-2xl font-bold text-green-600 dark:text-green-400">
                   {formatCurrency(results.saldoFinal)}
@@ -913,7 +919,7 @@ export default function CompoundInterestCalculatorPage() {
               <div className="card">
                 <div className="flex items-center gap-2 mb-2">
                   <Percent className="w-5 h-5 text-blue-500" />
-                  <span className="text-sm text-gray-600 dark:text-gray-400">Total de Juros</span>
+                  <span className="text-sm text-gray-600 dark:text-gray-400">{t('tools.totalInterestLabel')}</span>
                 </div>
                 <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">
                   {formatCurrency(results.totalJuros)}
@@ -923,7 +929,7 @@ export default function CompoundInterestCalculatorPage() {
               <div className="card">
                 <div className="flex items-center gap-2 mb-2">
                   <TrendingUp className="w-5 h-5 text-purple-500" />
-                  <span className="text-sm text-gray-600 dark:text-gray-400">Rentabilidade</span>
+                  <span className="text-sm text-gray-600 dark:text-gray-400">{t('tools.profitabilityLabel')}</span>
                 </div>
                 <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">
                   {((results.totalJuros / results.totalInvestido) * 100).toFixed(2)}%
@@ -935,7 +941,7 @@ export default function CompoundInterestCalculatorPage() {
             <div className="card mb-6">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                  Evolução do Investimento
+                  {t('tools.investmentEvolution')}
                 </h3>
                 <div className="flex gap-2">
                   {user ? (
@@ -945,7 +951,7 @@ export default function CompoundInterestCalculatorPage() {
                       className="btn-secondary"
                     >
                       <Save className="w-4 h-4" />
-                      {loading ? 'Salvando...' : 'Salvar essa Simulação'}
+                      {loading ? t('tools.saving') : t('tools.saveToHistory')}
                     </button>
                   ) : (
                     <button
@@ -954,12 +960,12 @@ export default function CompoundInterestCalculatorPage() {
                       title="Faça login para salvar seus cálculos"
                     >
                       <LogIn className="w-4 h-4" />
-                      Salvar (Requer Login)
+                      {t('common.save')} ({t('auth.login')} {t('common.to')} {t('common.save')})
                     </button>
                   )}
                   <button onClick={handleExportPDF} className="btn-secondary">
                     <Download className="w-4 h-4" />
-                    Exportar PDF
+                    {t('tools.exportPDFButton')}
                   </button>
                 </div>
               </div>
@@ -994,49 +1000,49 @@ export default function CompoundInterestCalculatorPage() {
                   />
                 </div>
               ) : (
-                <p className="text-center text-gray-500 py-8">
-                  Realize um cálculo para ver o gráfico
-                </p>
+              <p className="text-center text-gray-500 py-8">
+                {t('tools.performCalculationFirst')}
+              </p>
               )}
             </div>
 
             {/* Tabela Mensal */}
             <div className="card">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                Evolução Mês a Mês
+                {t('tools.monthlyEvolutionTitle')}
               </h3>
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
                     <tr className="border-b border-gray-200 dark:border-gray-700">
                       <th className="text-left py-3 px-4 text-sm font-semibold text-gray-900 dark:text-white">
-                        Mês
+                        {t('tools.month')}
                       </th>
                       <th className="text-right py-3 px-4 text-sm font-semibold text-gray-900 dark:text-white">
-                        Valor Investido
+                        {t('tools.investedValue')}
                       </th>
                       <th className="text-right py-3 px-4 text-sm font-semibold text-gray-900 dark:text-white">
-                        Saldo Total
+                        {t('tools.totalBalance')}
                       </th>
                       <th className="text-right py-3 px-4 text-sm font-semibold text-gray-900 dark:text-white">
-                        Juros Acumulados
+                        {t('tools.accumulatedInterest')}
                       </th>
                     </tr>
                   </thead>
                   <tbody>
                     {results.monthlyData.map((data, index) => {
                       const meses = index;
-                      let mesLabel = 'Início';
+                      let mesLabel = t('tools.start');
                       if (meses > 0) {
                         if (meses < 12) {
-                          mesLabel = `${meses} mês${meses > 1 ? 'es' : ''}`;
+                          mesLabel = `${meses} ${meses > 1 ? t('tools.monthsLabel') : t('tools.monthLabel')}`;
                         } else {
                           const anos = Math.floor(meses / 12);
                           const mesesRestantes = meses % 12;
                           if (mesesRestantes === 0) {
-                            mesLabel = `${anos} ano${anos > 1 ? 's' : ''}`;
+                            mesLabel = `${anos} ${anos > 1 ? t('tools.yearsLabel') : t('tools.yearLabel')}`;
                           } else {
-                            mesLabel = `${anos} ano${anos > 1 ? 's' : ''} e ${mesesRestantes} mês${mesesRestantes > 1 ? 'es' : ''}`;
+                            mesLabel = `${anos} ${anos > 1 ? t('tools.yearsLabel') : t('tools.yearLabel')} ${t('tools.and')} ${mesesRestantes} ${mesesRestantes > 1 ? t('tools.monthsLabel') : t('tools.monthLabel')}`;
                           }
                         }
                       }
@@ -1071,10 +1077,10 @@ export default function CompoundInterestCalculatorPage() {
             <div className="text-center py-12">
               <Calculator className="w-16 h-16 mx-auto text-gray-400 mb-4" />
               <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
-                Nenhuma simulação realizada
+                {t('tools.noSimulation')}
               </h3>
               <p className="text-gray-600 dark:text-gray-400 mb-6">
-                Preencha os campos acima e clique em "Calcular" para ver os resultados da simulação
+                {t('tools.noSimulationDescription')}
               </p>
               {user && (
                 <button
@@ -1082,7 +1088,7 @@ export default function CompoundInterestCalculatorPage() {
                   className="btn-primary"
                 >
                   <History className="w-4 h-4" />
-                  Ver Histórico de Simulações
+                  {t('tools.history')}
                 </button>
               )}
             </div>
@@ -1094,19 +1100,19 @@ export default function CompoundInterestCalculatorPage() {
           <Modal
             isOpen={showHistoryModal}
             onClose={() => setShowHistoryModal(false)}
-            title="Histórico de Cálculos"
+            title={t('tools.historyTitle')}
           >
             <div className="space-y-4">
               {loadingHistory ? (
                 <div className="flex items-center justify-center py-8">
                   <Loader2 className="w-6 h-6 animate-spin text-primary-600" />
-                  <span className="ml-2 text-gray-600 dark:text-gray-400">Carregando histórico...</span>
+                  <span className="ml-2 text-gray-600 dark:text-gray-400">{t('tools.loadingHistory')}</span>
                 </div>
               ) : history.length === 0 ? (
                 <div className="text-center py-8">
                   <History className="w-12 h-12 mx-auto text-gray-400 mb-4" />
                   <p className="text-gray-600 dark:text-gray-400">
-                    Nenhum cálculo salvo no histórico ainda.
+                    {t('tools.noCalculationsInHistory')}
                   </p>
                 </div>
               ) : (
@@ -1120,26 +1126,26 @@ export default function CompoundInterestCalculatorPage() {
                         <div className="flex-1">
                           <div className="flex items-center gap-2 mb-2">
                             <div className="text-sm font-semibold text-gray-900 dark:text-white">
-                              {formatCurrency(calculo.aporteInicial || 0)} inicial
+                              {formatCurrency(calculo.aporteInicial || 0)} {t('tools.initial')}
                               {calculo.aporteMensal > 0 && (
-                                <> + {formatCurrency(calculo.aporteMensal)} {calculo.frequenciaAporte === 'mensal' ? 'mensal' : calculo.frequenciaAporte === 'quinzenal' ? 'quinzenal' : 'anual'}</>
+                                <> + {formatCurrency(calculo.aporteMensal)} {calculo.frequenciaAporte === 'mensal' ? t('tools.monthly') : calculo.frequenciaAporte === 'quinzenal' ? t('tools.biweekly') : t('tools.annual')}</>
                               )}
                             </div>
                           </div>
                           <div className="text-xs text-gray-600 dark:text-gray-400 space-y-1">
                             <div>
-                              Taxa: {calculo.taxaJuros}% {calculo.tipoTaxa === 'mensal' ? 'Mensal' : 'Anual'}
+                              {t('tools.rate')}: {calculo.taxaJuros}% {calculo.tipoTaxa === 'mensal' ? t('tools.monthly') : t('tools.annual')}
                             </div>
                             <div>
-                              Prazo: {calculo.prazo} {calculo.tipoPrazo === 'meses' ? 'meses' : 'anos'}
+                              {t('tools.period')}: {calculo.prazo} {calculo.tipoPrazo === 'meses' ? t('tools.monthsLabel') : t('tools.yearsLabel')}
                             </div>
                             <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700">
                               <div className="flex items-center gap-4">
                                 <span className="text-green-600 dark:text-green-400 font-semibold">
-                                  Saldo Final: {formatCurrency(calculo.saldoFinal || 0)}
+                                  {t('tools.finalBalanceLabel')}: {formatCurrency(calculo.saldoFinal || 0)}
                                 </span>
                                 <span className="text-blue-600 dark:text-blue-400">
-                                  Juros: {formatCurrency(calculo.totalJuros || 0)}
+                                  {t('tools.interest')}: {formatCurrency(calculo.totalJuros || 0)}
                                 </span>
                               </div>
                             </div>
@@ -1154,14 +1160,14 @@ export default function CompoundInterestCalculatorPage() {
                           <button
                             onClick={() => handleLoadFromHistory(calculo)}
                             className="btn-primary text-sm px-3 py-1.5"
-                            title="Carregar este cálculo"
+                            title={t('tools.loadCalculation')}
                           >
-                            Carregar
+                            {t('tools.load')}
                           </button>
                           <button
                             onClick={() => handleDeleteFromHistory(calculo.idCalculo)}
                             className="btn-secondary text-sm px-3 py-1.5 text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
-                            title="Excluir do histórico"
+                            title={t('common.delete')}
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>

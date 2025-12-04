@@ -31,25 +31,25 @@ export default function AssetDetailsModal({ isOpen, onClose, assetGroup, onEdit,
         {/* Summary Header */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-            <p className="text-xs text-gray-500 dark:text-gray-400 uppercase">Preço Médio</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 uppercase">{t('investments.averagePriceLabel')}</p>
             <p className="text-lg font-bold text-gray-900 dark:text-white">
               {formatCurrency(assetGroup.precoMedio)}
             </p>
           </div>
           <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-            <p className="text-xs text-gray-500 dark:text-gray-400 uppercase">Total Atual</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 uppercase">{t('investments.currentValueLabel')}</p>
             <p className="text-lg font-bold text-gray-900 dark:text-white">
               {formatCurrency(assetGroup.valorAtualTotal)}
             </p>
           </div>
           <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-            <p className="text-xs text-gray-500 dark:text-gray-400 uppercase">Total Investido</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 uppercase">{t('investments.investedValueLabel')}</p>
             <p className="text-lg font-bold text-gray-900 dark:text-white">
               {formatCurrency(assetGroup.valorAporteTotal)}
             </p>
           </div>
           <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-            <p className="text-xs text-gray-500 dark:text-gray-400 uppercase">Retorno Total</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 uppercase">{t('investments.returnLabel')}</p>
             <p className={`text-lg font-bold ${isPositive ? 'text-green-600' : 'text-red-600'}`}>
               {isPositive ? '+' : ''}{formatCurrency(assetGroup.retornoTotal)}
             </p>
@@ -59,7 +59,7 @@ export default function AssetDetailsModal({ isOpen, onClose, assetGroup, onEdit,
         {/* List of Contributions (Aportes) */}
         <div>
           <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-3 border-b border-gray-100 dark:border-gray-700 pb-2">
-            Aportes Realizados
+            {t('investments.contributionsMade')}
           </h4>
           <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
             {displayTransactions.map((aporte) => {
@@ -86,33 +86,33 @@ export default function AssetDetailsModal({ isOpen, onClose, assetGroup, onEdit,
                     <div className="col-span-2 sm:col-span-1">
                         {isSell ? (
                             <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300">
-                                Venda
+                                {t('investments.sellLabel')}
                             </span>
                         ) : (
                             <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">
-                                Compra
+                                {t('investments.buyLabel')}
                             </span>
                         )}
                     </div>
                     <div>
-                      <p className="text-xs text-gray-500">Data</p>
+                      <p className="text-xs text-gray-500">{t('investments.dateLabel')}</p>
                       <p className="font-medium">{formatDate(aporte.dataAporte)}</p>
                     </div>
                     <div>
-                      <p className="text-xs text-gray-500">Quantidade</p>
+                      <p className="text-xs text-gray-500">{t('investments.quantityLabel')}</p>
                       <p className="font-medium">
-                        {Math.abs(aporte.quantidade)} {isFixedIncome ? 'un' : 'cotas'}
+                        {Math.abs(aporte.quantidade)} {isFixedIncome ? t('investments.units') : t('investments.shares')}
                       </p>
                     </div>
                     <div>
-                      <p className="text-xs text-gray-500">Preço Unit.</p>
+                      <p className="text-xs text-gray-500">{t('investments.unitPrice')}</p>
                       <p className="font-medium">{formatCurrency(aporte.precoAporte)}</p>
                     </div>
                   </div>
 
                   <div className="flex items-center justify-between sm:justify-end gap-4 border-t sm:border-t-0 border-gray-100 dark:border-gray-700 pt-2 sm:pt-0 mt-2 sm:mt-0">
                     <div className="text-right">
-                      <p className="text-xs text-gray-500">{isSell ? 'Valor Recebido' : 'Valor Investido'}</p>
+                      <p className="text-xs text-gray-500">{isSell ? t('investments.valueReceived') : t('investments.investedValueLabel')}</p>
                       <p className={`font-bold ${isSell ? 'text-green-600' : 'text-gray-900 dark:text-white'}`}>
                         {formatCurrency(Math.abs(aporte.valorAporte))}
                       </p>
@@ -155,7 +155,7 @@ export default function AssetDetailsModal({ isOpen, onClose, assetGroup, onEdit,
                 onClick={() => setTransactionsLimit(prev => prev + 12)}
                 className="btn-secondary text-sm"
               >
-                Carregar mais 12 transações
+                {t('common.loadMore')}
               </button>
             </div>
           )}

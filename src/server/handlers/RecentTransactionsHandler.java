@@ -45,6 +45,11 @@ public class RecentTransactionsHandler implements HttpHandler {
                     continue;
                 }
                 
+                // Filtra parcelas - apenas transações únicas
+                if (gasto.getIdGrupoParcela() != null) {
+                    continue;
+                }
+                
                 List<Categoria> categorias = expenseRepository.buscarCategoriasDoGasto(gasto.getIdGasto());
                 List<String> nomesCategorias = new ArrayList<>();
                 
@@ -63,11 +68,17 @@ public class RecentTransactionsHandler implements HttpHandler {
                 transaction.put("value", gasto.getValor());
                 transaction.put("date", gasto.getData().toString());
                 transaction.put("category", categoriasStr);
+                transaction.put("idGrupoParcela", gasto.getIdGrupoParcela());
                 transactions.add(transaction);
             }
             
             for (Receita receita : incomes) {
                 if (receita == null || !receita.isAtivo()) {
+                    continue;
+                }
+                
+                // Filtra parcelas - apenas transações únicas
+                if (receita.getIdGrupoParcela() != null) {
                     continue;
                 }
                 
@@ -78,6 +89,7 @@ public class RecentTransactionsHandler implements HttpHandler {
                 transaction.put("value", receita.getValor());
                 transaction.put("date", receita.getData().toString());
                 transaction.put("category", "Receita");
+                transaction.put("idGrupoParcela", receita.getIdGrupoParcela());
                 if (receita.getObservacoes() != null && receita.getObservacoes().length > 0) {
                     List<String> observacoesList = new ArrayList<>();
                     for (String obs : receita.getObservacoes()) {
@@ -90,8 +102,9 @@ public class RecentTransactionsHandler implements HttpHandler {
             
             transactions.sort((a, b) -> ((String) b.get("date")).compareTo((String) a.get("date")));
             
-            if (transactions.size() > limit) {
-                transactions = transactions.subList(0, limit);
+            // Limita a 3 transações
+            if (transactions.size() > 3) {
+                transactions = transactions.subList(0, 3);
             }
             
             Map<String, Object> response = new HashMap<>();

@@ -112,7 +112,11 @@ export default function Overview() {
           });
         }
         if (transactionsRes) {
-          setRecentTransactions(transactionsRes);
+          // Backend já filtra parcelas e limita a 3, mas garantimos aqui também
+          const nonInstallmentTransactions = transactionsRes
+            .filter(t => !t.idGrupoParcela && !t.installmentGroupId && !t.installment_group_id)
+            .slice(0, 3);
+          setRecentTransactions(nonInstallmentTransactions);
         } else {
           setRecentTransactions([]);
         }
@@ -343,7 +347,7 @@ export default function Overview() {
         {/* Recent Transactions */}
         <div className="card">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-            Transações Recentes
+            {t('overview.recentTransactions')}
           </h3>
           <div className="space-y-3 max-h-64 overflow-y-auto">
             {recentTransactions.length > 0 ? (
@@ -368,7 +372,7 @@ export default function Overview() {
                     </div>
                     <div>
                       <p className="font-medium text-gray-900 dark:text-white">
-                        {transaction.description || 'Sem descrição'}
+                        {transaction.description || t('transactions.noDescription') || 'Sem descrição'}
                       </p>
                       <p className="text-sm text-gray-500 dark:text-gray-400">
                         {formatDate(transaction.date)}
@@ -389,7 +393,7 @@ export default function Overview() {
               ))
             ) : (
               <p className="text-center text-gray-500 py-8">
-                Nenhuma transação recente
+                {t('overview.noRecentTransactions') || t('common.noData')}
               </p>
             )}
           </div>
