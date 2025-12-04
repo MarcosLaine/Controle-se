@@ -92,6 +92,7 @@ export default function Tools() {
 }
 
 function IRCalculatorPlaceholder() {
+  const { t } = useLanguage();
   return (
     <div className="card text-center py-16">
       <Calculator className="w-16 h-16 mx-auto text-gray-400 mb-4" />
@@ -230,7 +231,7 @@ function JurosCompostosCalculator({ chartRef }) {
 
     const labels = results.monthlyData.map((_, index) => {
       const meses = index;
-      if (meses === 0) return 'Início';
+      if (meses === 0) return t('tools.start');
       if (meses < 12) return `${meses}M`;
       const anos = Math.floor(meses / 12);
       const mesesRestantes = meses % 12;
@@ -508,7 +509,7 @@ function JurosCompostosCalculator({ chartRef }) {
       doc.setFontSize(24);
       doc.setFont(undefined, 'bold');
       doc.setTextColor(...palette.textPrimary);
-      doc.text('Calculadora de Juros Compostos', margin, yPos);
+      doc.text(t('tools.compoundInterestCalculator'), margin, yPos);
       yPos += 8;
       
       doc.setFontSize(9);
@@ -634,7 +635,7 @@ function JurosCompostosCalculator({ chartRef }) {
           doc.setFontSize(14);
           doc.setFont(undefined, 'bold');
           doc.setTextColor(...palette.textPrimary);
-          doc.text('Evolução do Investimento', margin, yPos);
+          doc.text(t('tools.investmentEvolution'), margin, yPos);
           yPos += 10;
           
           const canvas = await html2canvas(chartRef.current, {
@@ -651,7 +652,7 @@ function JurosCompostosCalculator({ chartRef }) {
             doc.setFontSize(14);
             doc.setFont(undefined, 'bold');
             doc.setTextColor(...palette.textPrimary);
-            doc.text('Evolução do Investimento', margin, yPos);
+            doc.text(t('tools.investmentEvolution'), margin, yPos);
             yPos += 10;
           }
           
@@ -685,7 +686,7 @@ function JurosCompostosCalculator({ chartRef }) {
 
         const first12Months = results.monthlyData.slice(0, 13);
         const tableData = first12Months.map((d, idx) => [
-          idx === 0 ? 'Início' : `${idx} mês${idx > 1 ? 'es' : ''}`,
+          idx === 0 ? t('tools.start') : `${idx} ${idx > 1 ? t('tools.monthsLabel') : t('tools.monthLabel')}`,
           formatCurrency(d.investido),
           formatCurrency(d.saldo),
           formatCurrency(d.juros),
@@ -735,17 +736,17 @@ function JurosCompostosCalculator({ chartRef }) {
           const last12Months = results.monthlyData.slice(-13);
           const lastTableData = last12Months.map((d, idx) => {
             const monthIndex = results.monthlyData.length - last12Months.length + idx;
-            let periodLabel = 'Início';
+            let periodLabel = t('tools.start');
             if (monthIndex > 0) {
               if (monthIndex < 12) {
-                periodLabel = `${monthIndex} mês${monthIndex > 1 ? 'es' : ''}`;
+                periodLabel = `${monthIndex} ${monthIndex > 1 ? t('tools.monthsLabel') : t('tools.monthLabel')}`;
               } else {
                 const anos = Math.floor(monthIndex / 12);
                 const mesesRestantes = monthIndex % 12;
                 if (mesesRestantes === 0) {
-                  periodLabel = `${anos} ano${anos > 1 ? 's' : ''}`;
+                  periodLabel = `${anos} ${anos > 1 ? t('tools.yearsLabel') : t('tools.yearLabel')}`;
                 } else {
-                  periodLabel = `${anos} ano${anos > 1 ? 's' : ''} e ${mesesRestantes} mês${mesesRestantes > 1 ? 'es' : ''}`;
+                  periodLabel = `${anos} ${anos > 1 ? t('tools.yearsLabel') : t('tools.yearLabel')} ${t('tools.and')} ${mesesRestantes} ${mesesRestantes > 1 ? t('tools.monthsLabel') : t('tools.monthLabel')}`;
                 }
               }
             }
@@ -797,7 +798,7 @@ function JurosCompostosCalculator({ chartRef }) {
         doc.setFontSize(8);
         doc.setTextColor(...palette.gray);
         doc.text(
-          `Página ${i} de ${totalPages} - Controle-se - Calculadora de Juros Compostos`,
+          `Página ${i} ${t('common.of')} ${totalPages} - Controle-se - ${t('tools.compoundInterestCalculator')}`,
           pageWidth / 2,
           doc.internal.pageSize.getHeight() - 10,
           { align: 'center' }
@@ -818,13 +819,13 @@ function JurosCompostosCalculator({ chartRef }) {
       {/* Formulário */}
       <div className="card">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-          Parâmetros do Cálculo
+          {t('tools.calculationParameters')}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="label">
               <DollarSign className="w-4 h-4 inline mr-1" />
-              Aporte Inicial (R$)
+              {t('tools.initialContributionLabel')}
             </label>
             <input
               type="number"
@@ -840,7 +841,7 @@ function JurosCompostosCalculator({ chartRef }) {
           <div>
             <label className="label">
               <DollarSign className="w-4 h-4 inline mr-1" />
-              Aporte Mensal (R$)
+              {t('tools.monthlyContributionLabel')}
             </label>
             <input
               type="number"
@@ -854,22 +855,22 @@ function JurosCompostosCalculator({ chartRef }) {
           </div>
 
           <div>
-            <label className="label">Frequência de Aporte</label>
+            <label className="label">{t('tools.contributionFrequencyLabel')}</label>
             <select
               value={formData.frequenciaAporte}
               onChange={(e) => setFormData({ ...formData, frequenciaAporte: e.target.value })}
               className="input"
             >
-              <option value="mensal">Mensal</option>
-              <option value="quinzenal">Quinzenal</option>
-              <option value="anual">Anual</option>
+              <option value="mensal">{t('tools.monthly')}</option>
+              <option value="quinzenal">{t('tools.biweekly')}</option>
+              <option value="anual">{t('tools.annual')}</option>
             </select>
           </div>
 
           <div>
             <label className="label">
               <Percent className="w-4 h-4 inline mr-1" />
-              Taxa de Juros (%)
+              {t('tools.interestRateLabel')}
             </label>
             <div className="flex gap-2">
               <input
@@ -886,8 +887,8 @@ function JurosCompostosCalculator({ chartRef }) {
                 onChange={(e) => setFormData({ ...formData, tipoTaxa: e.target.value })}
                 className="input w-32"
               >
-                <option value="anual">Anual</option>
-                <option value="mensal">Mensal</option>
+                <option value="anual">{t('tools.annual')}</option>
+                <option value="mensal">{t('tools.monthly')}</option>
               </select>
             </div>
           </div>
@@ -895,7 +896,7 @@ function JurosCompostosCalculator({ chartRef }) {
           <div>
             <label className="label">
               <Calendar className="w-4 h-4 inline mr-1" />
-              Prazo
+              {t('tools.periodLabel')}
             </label>
             <div className="flex gap-2">
               <input
@@ -911,8 +912,8 @@ function JurosCompostosCalculator({ chartRef }) {
                 onChange={(e) => setFormData({ ...formData, tipoPrazo: e.target.value })}
                 className="input w-32"
               >
-                <option value="anos">Anos</option>
-                <option value="meses">Meses</option>
+                <option value="anos">{t('tools.years')}</option>
+                <option value="meses">{t('tools.months')}</option>
               </select>
             </div>
           </div>
@@ -921,7 +922,7 @@ function JurosCompostosCalculator({ chartRef }) {
         <div className="flex items-center justify-between mt-4">
           <button onClick={handleCalculate} className="btn-primary w-full md:w-auto">
             <Calculator className="w-4 h-4" />
-            Calcular
+            {t('tools.calculateButton')}
           </button>
           {user && (
             <button
@@ -930,7 +931,7 @@ function JurosCompostosCalculator({ chartRef }) {
               title="Ver histórico de cálculos salvos"
             >
               <History className="w-4 h-4" />
-              <span>Histórico</span>
+              <span>{t('tools.history')}</span>
             </button>
           )}
         </div>
@@ -944,7 +945,7 @@ function JurosCompostosCalculator({ chartRef }) {
             <div className="card">
               <div className="flex items-center gap-2 mb-2">
                 <DollarSign className="w-5 h-5 text-gray-500" />
-                <span className="text-sm text-gray-600 dark:text-gray-400">Total Investido</span>
+                <span className="text-sm text-gray-600 dark:text-gray-400">{t('tools.totalInvestedLabel')}</span>
               </div>
               <p className="text-2xl font-bold text-gray-900 dark:text-white">
                 {formatCurrency(results.totalInvestido)}
@@ -954,7 +955,7 @@ function JurosCompostosCalculator({ chartRef }) {
             <div className="card">
               <div className="flex items-center gap-2 mb-2">
                 <TrendingUp className="w-5 h-5 text-green-500" />
-                <span className="text-sm text-gray-600 dark:text-gray-400">Saldo Final</span>
+                <span className="text-sm text-gray-600 dark:text-gray-400">{t('tools.finalBalanceLabel')}</span>
               </div>
               <p className="text-2xl font-bold text-green-600 dark:text-green-400">
                 {formatCurrency(results.saldoFinal)}
@@ -964,7 +965,7 @@ function JurosCompostosCalculator({ chartRef }) {
             <div className="card">
               <div className="flex items-center gap-2 mb-2">
                 <Percent className="w-5 h-5 text-blue-500" />
-                <span className="text-sm text-gray-600 dark:text-gray-400">Total de Juros</span>
+                <span className="text-sm text-gray-600 dark:text-gray-400">{t('tools.totalInterestLabel')}</span>
               </div>
               <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">
                 {formatCurrency(results.totalJuros)}
@@ -974,7 +975,7 @@ function JurosCompostosCalculator({ chartRef }) {
             <div className="card">
               <div className="flex items-center gap-2 mb-2">
                 <TrendingUp className="w-5 h-5 text-purple-500" />
-                <span className="text-sm text-gray-600 dark:text-gray-400">Rentabilidade</span>
+                <span className="text-sm text-gray-600 dark:text-gray-400">{t('tools.profitabilityLabel')}</span>
               </div>
               <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">
                 {((results.totalJuros / results.totalInvestido) * 100).toFixed(2)}%
@@ -986,7 +987,7 @@ function JurosCompostosCalculator({ chartRef }) {
           <div className="card">
               <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                Evolução do Investimento
+                {t('tools.investmentEvolution')}
               </h3>
               <div className="flex gap-2">
                 {user && (
@@ -1003,14 +1004,14 @@ function JurosCompostosCalculator({ chartRef }) {
                     ) : (
                       <>
                         <Save className="w-4 h-4" />
-                        Salvar no Histórico
+                        {t('tools.saveToHistory')}
                       </>
                     )}
                   </button>
                 )}
                 <button onClick={handleExportPDF} className="btn-secondary">
                   <Download className="w-4 h-4" />
-                  Exportar PDF
+                  {t('tools.exportPDFButton')}
                 </button>
               </div>
             </div>
@@ -1054,7 +1055,7 @@ function JurosCompostosCalculator({ chartRef }) {
           {/* Tabela Mensal */}
           <div className="card">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-              Evolução Mês a Mês
+              {t('tools.monthlyEvolutionTitle')}
             </h3>
             <div className="overflow-x-auto">
               <table className="w-full">
@@ -1077,17 +1078,17 @@ function JurosCompostosCalculator({ chartRef }) {
                 <tbody>
                   {results.monthlyData.map((data, index) => {
                     const meses = index;
-                    let mesLabel = 'Início';
+                    let mesLabel = t('tools.start');
                     if (meses > 0) {
                       if (meses < 12) {
-                        mesLabel = `${meses} mês${meses > 1 ? 'es' : ''}`;
+                        mesLabel = `${meses} ${meses > 1 ? t('tools.monthsLabel') : t('tools.monthLabel')}`;
                       } else {
                         const anos = Math.floor(meses / 12);
                         const mesesRestantes = meses % 12;
                         if (mesesRestantes === 0) {
-                          mesLabel = `${anos} ano${anos > 1 ? 's' : ''}`;
+                          mesLabel = `${anos} ${anos > 1 ? t('tools.yearsLabel') : t('tools.yearLabel')}`;
                         } else {
-                          mesLabel = `${anos} ano${anos > 1 ? 's' : ''} e ${mesesRestantes} mês${mesesRestantes > 1 ? 'es' : ''}`;
+                          mesLabel = `${anos} ${anos > 1 ? t('tools.yearsLabel') : t('tools.yearLabel')} ${t('tools.and')} ${mesesRestantes} ${mesesRestantes > 1 ? t('tools.monthsLabel') : t('tools.monthLabel')}`;
                         }
                       }
                     }
@@ -1122,10 +1123,10 @@ function JurosCompostosCalculator({ chartRef }) {
           <div className="text-center py-12">
             <Calculator className="w-16 h-16 mx-auto text-gray-400 mb-4" />
             <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
-              Nenhuma simulação realizada
+              {t('tools.noSimulation')}
             </h3>
             <p className="text-gray-600 dark:text-gray-400">
-              Preencha os campos acima e clique em "Calcular" para ver os resultados da simulação
+              {t('tools.noSimulationDescription')}
             </p>
           </div>
         </div>
@@ -1135,19 +1136,19 @@ function JurosCompostosCalculator({ chartRef }) {
       <Modal
         isOpen={showHistoryModal}
         onClose={() => setShowHistoryModal(false)}
-        title="Histórico de Cálculos"
+        title={t('tools.historyTitle')}
       >
         <div className="space-y-4">
           {loadingHistory ? (
             <div className="flex items-center justify-center py-8">
               <Loader2 className="w-6 h-6 animate-spin text-primary-600" />
-              <span className="ml-2 text-gray-600 dark:text-gray-400">Carregando histórico...</span>
+              <span className="ml-2 text-gray-600 dark:text-gray-400">{t('tools.loadingHistory')}</span>
             </div>
           ) : history.length === 0 ? (
             <div className="text-center py-8">
               <History className="w-12 h-12 mx-auto text-gray-400 mb-4" />
               <p className="text-gray-600 dark:text-gray-400">
-                Nenhum cálculo salvo no histórico ainda.
+                {t('tools.noCalculationsInHistory')}
               </p>
             </div>
           ) : (
@@ -1161,26 +1162,26 @@ function JurosCompostosCalculator({ chartRef }) {
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-2">
                         <div className="text-sm font-semibold text-gray-900 dark:text-white">
-                          {formatCurrency(calculo.aporteInicial || 0)} inicial
+                          {formatCurrency(calculo.aporteInicial || 0)} {t('tools.initial')}
                           {calculo.aporteMensal > 0 && (
-                            <> + {formatCurrency(calculo.aporteMensal)} {calculo.frequenciaAporte === 'mensal' ? 'mensal' : calculo.frequenciaAporte === 'quinzenal' ? 'quinzenal' : 'anual'}</>
+                            <> + {formatCurrency(calculo.aporteMensal)} {calculo.frequenciaAporte === 'mensal' ? t('tools.monthly') : calculo.frequenciaAporte === 'quinzenal' ? t('tools.biweekly') : t('tools.annual')}</>
                           )}
                         </div>
                       </div>
                       <div className="text-xs text-gray-600 dark:text-gray-400 space-y-1">
                         <div>
-                          Taxa: {calculo.taxaJuros}% {calculo.tipoTaxa === 'mensal' ? 'Mensal' : 'Anual'}
+                          {t('tools.rate')}: {calculo.taxaJuros}% {calculo.tipoTaxa === 'mensal' ? t('tools.monthly') : t('tools.annual')}
                         </div>
                         <div>
-                          Prazo: {calculo.prazo} {calculo.tipoPrazo === 'meses' ? 'meses' : 'anos'}
+                          {t('tools.period')}: {calculo.prazo} {calculo.tipoPrazo === 'meses' ? t('tools.monthsLabel') : t('tools.yearsLabel')}
                         </div>
                         <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700">
                           <div className="flex items-center gap-4">
                             <span className="text-green-600 dark:text-green-400 font-semibold">
-                              Saldo Final: {formatCurrency(calculo.saldoFinal || 0)}
+                              {t('tools.finalBalanceLabel')}: {formatCurrency(calculo.saldoFinal || 0)}
                             </span>
                             <span className="text-blue-600 dark:text-blue-400">
-                              Juros: {formatCurrency(calculo.totalJuros || 0)}
+                              {t('tools.interest')}: {formatCurrency(calculo.totalJuros || 0)}
                             </span>
                           </div>
                         </div>
@@ -1195,9 +1196,9 @@ function JurosCompostosCalculator({ chartRef }) {
                       <button
                         onClick={() => handleLoadFromHistory(calculo)}
                         className="btn-primary text-sm px-3 py-1.5"
-                        title="Carregar este cálculo"
+                        title={t('tools.loadCalculation')}
                       >
-                        Carregar
+                        {t('tools.load')}
                       </button>
                       <button
                         onClick={() => handleDeleteFromHistory(calculo.idCalculo)}

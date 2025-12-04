@@ -192,9 +192,9 @@ public class ReportsHandler implements HttpHandler {
             List<Receita> incomes = incomeRepository.buscarReceitasPorPeriodo(userId, startDate, endDate);
             
             if ("csv".equals(format)) {
-                exportToCSV(exchange, expenses, incomes, startDate, endDate);
+                exportToCSV(exchange, expenses, incomes, startDate, endDate, userId);
             } else if ("xlsx".equals(format)) {
-                exportToXLSX(exchange, expenses, incomes, startDate, endDate);
+                exportToXLSX(exchange, expenses, incomes, startDate, endDate, userId);
             } else {
                 ResponseUtil.sendErrorResponse(exchange, 400, "Formato não suportado. Use 'csv' ou 'xlsx'");
             }
@@ -208,7 +208,7 @@ public class ReportsHandler implements HttpHandler {
     }
     
     private void exportToCSV(HttpExchange exchange, List<Gasto> expenses, List<Receita> incomes, 
-                            LocalDate startDate, LocalDate endDate) throws IOException {
+                            LocalDate startDate, LocalDate endDate, int userId) throws IOException {
         StringBuilder csv = new StringBuilder();
         
         // Header
@@ -268,7 +268,7 @@ public class ReportsHandler implements HttpHandler {
     }
     
     private void exportToXLSX(HttpExchange exchange, List<Gasto> expenses, List<Receita> incomes, 
-                             LocalDate startDate, LocalDate endDate) throws IOException {
+                             LocalDate startDate, LocalDate endDate, int userId) throws IOException {
         // Para XLSX, vamos retornar um CSV com extensão .xlsx por simplicidade
         // Em uma implementação real, usaria Apache POI
         StringBuilder xlsx = new StringBuilder();

@@ -42,6 +42,15 @@ public class InvestmentsHandler implements HttpHandler {
             // Usa o userId do token JWT autenticado, não do parâmetro da query string
             // Isso previne que usuários vejam investimentos de outros usuários
             int userId = AuthUtil.requireUserId(exchange);
+            if (userId <= 0) {
+                ResponseUtil.sendErrorResponse(exchange, 401, "UserId inválido");
+                return;
+            }
+            String queryUserId = RequestUtil.getQueryParam(exchange, "userId");
+            if (queryUserId != null && !queryUserId.equals(String.valueOf(userId))) {
+                System.err.println("[DEBUG] InvestimentosHandler: Query string tem userId=" + queryUserId + " mas token tem userId=" + userId);
+            }
+            System.out.println("[DEBUG] InvestimentosHandler.get: Usando userId=" + userId + " do token JWT");
             
             String limitParam = RequestUtil.getQueryParam(exchange, "limit");
             String offsetParam = RequestUtil.getQueryParam(exchange, "offset");
@@ -172,9 +181,22 @@ public class InvestmentsHandler implements HttpHandler {
     private void handleCreateInvestment(HttpExchange exchange) throws IOException {
         try {
             int userId = AuthUtil.requireUserId(exchange);
+            if (userId <= 0) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "UserId inválido");
+                ResponseUtil.sendJsonResponse(exchange, 401, response);
+                return;
+            }
             String requestBody = RequestUtil.readRequestBody(exchange);
             Map<String, Object> data = JsonUtil.parseJsonWithNested(requestBody);
+            // Remove qualquer userId que possa ter vindo do frontend e usa apenas o do token
+            Object frontendUserId = data.remove("userId");
+            if (frontendUserId != null && !frontendUserId.equals(userId)) {
+                System.err.println("[DEBUG] InvestimentosHandler: Frontend enviou userId=" + frontendUserId + " mas token tem userId=" + userId);
+            }
             data.put("userId", userId);
+            System.out.println("[DEBUG] InvestimentosHandler.create: Usando userId=" + userId + " do token JWT");
             
             String nome = (String) data.get("nome");
             String categoria = (String) data.get("categoria");
@@ -335,6 +357,7 @@ public class InvestmentsHandler implements HttpHandler {
                 }
             }
             
+            // Garante que o userId usado é o do token autenticado, não o que veio no body
             int investmentId = investmentRepository.cadastrarInvestimento(nome, nomeAtivo, categoria, quantidade, 
                                                                   precoAporte, corretagem, corretoraFinal,
                                                                   dataAporte, userId, accountId, moeda,

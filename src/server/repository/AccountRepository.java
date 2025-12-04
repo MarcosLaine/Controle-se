@@ -136,6 +136,14 @@ public class AccountRepository {
             }
         } catch (SQLException e) {
             if (conn != null) try { conn.rollback(); } catch (SQLException ex) {}
+            
+            // Tratamento específico para erro de foreign key constraint
+            if (e.getSQLState() != null && e.getSQLState().equals("23503")) {
+                if (e.getMessage() != null && e.getMessage().contains("contas_id_usuario_fkey")) {
+                    throw new RuntimeException("Usuário não encontrado. Por favor, faça login novamente e tente criar a conta novamente.");
+                }
+            }
+            
             throw new RuntimeException("Erro ao cadastrar conta: " + e.getMessage(), e);
         } finally {
             if (conn != null) try { conn.close(); } catch (SQLException e) {}

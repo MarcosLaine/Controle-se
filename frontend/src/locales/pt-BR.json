@@ -23,7 +23,17 @@
     "user": "Usuário",
     "logout": "Sair",
     "changePassword": "Alterar senha",
-    "toggleTheme": "Alternar tema"
+    "toggleTheme": "Alternar tema",
+    "errorLogin": "Erro no login",
+    "errorDoingLogin": "Erro ao fazer login",
+    "errorRegister": "Erro no cadastro",
+    "errorDoingRegister": "Erro ao fazer cadastro",
+    "passwordUpdated": "Senha atualizada com sucesso!",
+    "errorUpdatingPassword": "Erro ao atualizar senha",
+    "deleteTransactionConfirm": "Tem certeza que deseja excluir esta transação?",
+    "deleteCalculationConfirm": "Tem certeza que deseja excluir este cálculo do histórico?",
+    "to": "para",
+    "of": "de"
   },
   "auth": {
     "login": "Entrar",
@@ -47,7 +57,10 @@
     "passwordsDontMatch": "As senhas não conferem",
     "captchaRequired": "Por segurança, complete o CAPTCHA abaixo:",
     "freeTools": "Ou acesse nossas ferramentas gratuitas",
-    "compoundInterestCalculator": "Calculadora de Juros Compostos"
+    "compoundInterestCalculator": "Calculadora de Juros Compostos",
+    "loginSuccess": "Login realizado com sucesso!",
+    "registerSuccess": "Cadastro realizado com sucesso!",
+    "logoutSuccess": "Logout realizado com sucesso!"
   },
   "sidebar": {
     "overview": "Visão Geral",
@@ -328,24 +341,6 @@
     "contributionsMade": "Aportes realizados",
     "feesPaid": "Taxas pagas"
   },
-  "auth": {
-    "loginSuccess": "Login realizado com sucesso!",
-    "registerSuccess": "Cadastro realizado com sucesso!",
-    "logoutSuccess": "Logout realizado com sucesso!"
-  },
-  "tools": {
-    "calculationSaved": "Cálculo salvo no histórico!",
-    "errorLoadingHistory": "Erro ao carregar histórico",
-    "calculationDeleted": "Cálculo excluído do histórico",
-    "errorDeletingCalculation": "Erro ao excluir cálculo",
-    "errorDeletingCalculationHistory": "Erro ao excluir cálculo do histórico",
-    "calculationLoaded": "Cálculo carregado!",
-    "errorExportingPDF": "Erro ao exportar PDF"
-  },
-  "reports": {
-    "errorExportingPDF": "Erro ao exportar PDF",
-    "errorExportingReport": "Erro ao exportar relatório"
-  },
   "tags": {
     "errorLoading": "Erro ao carregar tags",
     "updatedSuccess": "Tag atualizada!",
@@ -360,19 +355,6 @@
     "deletedSuccess": "Orçamento excluído!",
     "errorDeleting": "Erro ao excluir orçamento",
     "deleteConfirm": "Tem certeza que deseja excluir este orçamento?"
-  },
-  "common": {
-    "errorLogin": "Erro no login",
-    "errorDoingLogin": "Erro ao fazer login",
-    "errorRegister": "Erro no cadastro",
-    "errorDoingRegister": "Erro ao fazer cadastro",
-    "passwordUpdated": "Senha atualizada com sucesso!",
-    "errorUpdatingPassword": "Erro ao atualizar senha",
-    "deleteTransactionConfirm": "Tem certeza que deseja excluir esta transação?",
-    "deleteCalculationConfirm": "Tem certeza que deseja excluir este cálculo do histórico?"
-  },
-  "reports": {
-    "expensesByAccount": "Gastos por Conta"
   },
   "categories": {
     "title": "Categorias e Tags",
@@ -502,6 +484,7 @@
     "totalExpenses": "Total Gastos",
     "balancePeriod": "Saldo do Período",
     "expensesByCategory": "Gastos por Categoria",
+    "expensesByAccount": "Gastos por Conta",
     "expensesByMonth": "Gastos por Mês",
     "transactions": "transações",
     "totalTransactions": "Total de transações",
@@ -514,6 +497,8 @@
     "balance": "Saldo",
     "exportSuccessPDF": "Relatório exportado como PDF!",
     "exportSuccess": "Relatório exportado com sucesso!",
+    "errorExportingPDF": "Erro ao exportar PDF",
+    "errorExportingReport": "Erro ao exportar relatório",
     "customPeriod": "Período Personalizado",
     "reportPage": "Página {{current}} de {{total}} - Controle-se - Relatório Financeiro",
     "topExpenses": "Maiores Gastos",
@@ -524,6 +509,13 @@
     "title": "Ferramentas",
     "subtitle": "Calculadoras financeiras úteis",
     "compoundInterestCalculator": "Juros Compostos",
+    "calculationSaved": "Cálculo salvo no histórico!",
+    "errorLoadingHistory": "Erro ao carregar histórico",
+    "calculationDeleted": "Cálculo excluído do histórico",
+    "errorDeletingCalculation": "Erro ao excluir cálculo",
+    "errorDeletingCalculationHistory": "Erro ao excluir cálculo do histórico",
+    "calculationLoaded": "Cálculo carregado!",
+    "errorExportingPDF": "Erro ao exportar PDF",
     "irCalculator": "Calculadora de IR",
     "irCalculatorPlaceholder": "Esta funcionalidade está em desenvolvimento e estará disponível em breve.",
     "initialAmount": "Valor Inicial",
@@ -576,7 +568,39 @@
     "totalBalance": "Saldo Total",
     "accumulatedInterest": "Juros Acumulados",
     "exportSuccessPDF": "PDF exportado com sucesso!",
-    "month": "Mês"
+    "month": "Mês",
+    "initialContributionLabel": "Aporte Inicial (R$)",
+    "monthlyContributionLabel": "Aporte Mensal (R$)",
+    "contributionFrequencyLabel": "Frequência de Aporte",
+    "interestRateLabel": "Taxa de Juros (%)",
+    "periodLabel": "Prazo",
+    "calculateButton": "Calcular",
+    "history": "Histórico",
+    "totalInvestedLabel": "Total Investido",
+    "finalBalanceLabel": "Saldo Final",
+    "totalInterestLabel": "Total de Juros",
+    "profitabilityLabel": "Rentabilidade",
+    "investmentEvolution": "Evolução do Investimento",
+    "saveToHistory": "Salvar no Histórico",
+    "exportPDFButton": "Exportar PDF",
+    "monthlyEvolutionTitle": "Evolução Mês a Mês",
+    "noSimulation": "Nenhuma simulação realizada",
+    "noSimulationDescription": "Preencha os campos acima e clique em \"Calcular\" para ver os resultados da simulação",
+    "historyTitle": "Histórico de Cálculos",
+    "loadingHistory": "Carregando histórico...",
+    "noCalculationsInHistory": "Nenhum cálculo salvo no histórico ainda.",
+    "initial": "inicial",
+    "load": "Carregar",
+    "loadCalculation": "Carregar este cálculo",
+    "rate": "Taxa",
+    "interest": "Juros",
+    "start": "Início",
+    "monthLabel": "mês",
+    "monthsLabel": "meses",
+    "yearLabel": "ano",
+    "yearsLabel": "anos",
+    "and": "e",
+    "saving": "Salvando..."
   },
   "language": {
     "select": "Selecionar idioma",

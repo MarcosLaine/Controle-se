@@ -361,6 +361,27 @@ public class AccountsHandler implements HttpHandler {
                 return;
             }
             
+            // Valida se o usuário existe no banco de dados antes de criar a conta
+            // Isso previne erros de foreign key constraint quando o usuário foi recém-criado
+            try {
+                server.repository.UserRepository userRepository = new server.repository.UserRepository();
+                server.model.Usuario usuario = userRepository.buscarUsuario(userId);
+                if (usuario == null) {
+                    // Tenta buscar sem verificar ativo (pode ser usuário recém-criado)
+                    usuario = userRepository.buscarUsuarioSemAtivo(userId);
+                    if (usuario == null) {
+                        Map<String, Object> response = new HashMap<>();
+                        response.put("success", false);
+                        response.put("message", "Usuário não encontrado. Por favor, faça login novamente.");
+                        ResponseUtil.sendJsonResponse(exchange, 404, response);
+                        return;
+                    }
+                }
+            } catch (Exception e) {
+                // Se houver erro ao buscar usuário, tenta criar a conta mesmo assim
+                // O banco de dados vai validar a foreign key
+            }
+            
             int accountId = accountRepository.cadastrarConta(name, type, balance, userId, diaFechamento, diaPagamento);
             
             Map<String, Object> response = new HashMap<>();

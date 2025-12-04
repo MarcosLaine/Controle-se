@@ -110,6 +110,7 @@ public class InvestmentRepository {
             
             int idInvestimento;
             try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                System.out.println("[DEBUG] InvestmentRepository.cadastrarInvestimento: Criando investimento para userId=" + idUsuario);
                 pstmt.setString(1, nome);
                 pstmt.setString(2, nomeAtivo);
                 pstmt.setString(3, categoria);
@@ -131,6 +132,7 @@ public class InvestmentRepository {
                 ResultSet rs = pstmt.executeQuery();
                 if (!rs.next()) throw new RuntimeException("Erro ao cadastrar investimento");
                 idInvestimento = rs.getInt(1);
+                System.out.println("[DEBUG] InvestmentRepository.cadastrarInvestimento: Investimento criado com id=" + idInvestimento + " para userId=" + idUsuario);
             }
             
             // Não debita mais da conta - o saldo será calculado dinamicamente baseado no valor atual dos investimentos
@@ -170,6 +172,9 @@ public class InvestmentRepository {
     }
     
     public List<Investimento> buscarInvestimentosPorUsuario(int idUsuario, int limit, int offset, String category, String assetName) {
+        if (idUsuario <= 0) {
+            throw new IllegalArgumentException("ID do usuário deve ser maior que zero");
+        }
         StringBuilder sql = new StringBuilder("SELECT * FROM investimentos WHERE id_usuario = ? AND ativo = TRUE");
         
         if (category != null && !category.isEmpty()) {
@@ -186,6 +191,8 @@ public class InvestmentRepository {
              PreparedStatement pstmt = conn.prepareStatement(sql.toString())) {
             int paramIndex = 1;
             pstmt.setInt(paramIndex++, idUsuario);
+            System.out.println("[DEBUG] InvestmentRepository.buscarInvestimentosPorUsuario: SQL=" + sql.toString());
+            System.out.println("[DEBUG] InvestmentRepository.buscarInvestimentosPorUsuario: Parâmetro userId=" + idUsuario + " no índice " + (paramIndex - 1));
             if (category != null && !category.isEmpty()) {
                 pstmt.setString(paramIndex++, category);
             }
@@ -196,7 +203,39 @@ public class InvestmentRepository {
             pstmt.setInt(paramIndex++, offset);
             
             ResultSet rs = pstmt.executeQuery();
-            while (rs.next()) investimentos.add(mapInvestimento(rs));
+            int count = 0;
+            int skipped = 0;
+            while (rs.next()) {
+                // Validação ANTES de mapear: verifica o id_usuario diretamente do ResultSet
+                int rsUserId = rs.getInt("id_usuario");
+                if (rsUserId != idUsuario) {
+                    System.err.println("[ERRO CRÍTICO] InvestmentRepository: Query retornou investimento " + 
+                                     rs.getInt("id_investimento") + " com id_usuario=" + rsUserId + 
+                                     " mas a query foi feita para userId=" + idUsuario);
+                    System.err.println("[ERRO CRÍTICO] SQL executado: " + sql.toString());
+                    System.err.println("[ERRO CRÍTICO] Parâmetros: userId=" + idUsuario);
+                    skipped++;
+                    continue; // Ignora investimentos que não pertencem ao usuário
+                }
+                
+                Investimento inv = mapInvestimento(rs);
+                // Validação adicional de segurança após mapeamento
+                if (inv.getIdUsuario() != idUsuario) {
+                    System.err.println("[ERRO] InvestmentRepository: Investimento " + inv.getIdInvestimento() + 
+                                     " mapeado incorretamente - pertence ao usuário " + inv.getIdUsuario() + 
+                                     " mas foi retornado para usuário " + idUsuario);
+                    skipped++;
+                    continue;
+                }
+                investimentos.add(inv);
+                count++;
+            }
+            if (skipped > 0) {
+                System.err.println("[ERRO] InvestmentRepository.buscarInvestimentosPorUsuario: " + skipped + 
+                                 " investimentos foram ignorados por não pertencerem ao userId=" + idUsuario);
+            }
+            System.out.println("[DEBUG] InvestmentRepository.buscarInvestimentosPorUsuario: Encontrados " + count + 
+                             " investimentos válidos para userId=" + idUsuario);
         } catch (SQLException e) {
             throw new RuntimeException("Erro ao buscar investimentos: " + e.getMessage(), e);
         }

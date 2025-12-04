@@ -57,15 +57,29 @@ public class RegisterHandler implements HttpHandler {
             try {
                 int userId = userRepository.cadastrarUsuario(name, emailNormalizado, password);
                 
-                // Wait a bit for consistency if needed (simplified here)
-                Usuario usuario = userRepository.buscarUsuarioPorEmail(emailNormalizado);
-                
-                if (usuario == null) {
-                    usuario = userRepository.buscarUsuarioSemAtivo(userId);
+                // Tenta buscar o usuário algumas vezes para garantir que o commit seja visível
+                Usuario usuario = null;
+                int maxTentativas = 3;
+                for (int tentativa = 0; tentativa < maxTentativas && usuario == null; tentativa++) {
+                    usuario = userRepository.buscarUsuarioPorEmail(emailNormalizado);
+                    
+                    if (usuario == null) {
+                        usuario = userRepository.buscarUsuarioSemAtivo(userId);
+                    }
+                    
+                    // Se ainda não encontrou, espera um pouco antes de tentar novamente
+                    if (usuario == null && tentativa < maxTentativas - 1) {
+                        try {
+                            Thread.sleep(100); // 100ms de espera
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            break;
+                        }
+                    }
                 }
                 
                 if (usuario == null) {
-                    LOGGER.warning(String.format("Usuário cadastrado (ID: %d) mas não encontrado. Email: %s", userId, emailNormalizado));
+                    LOGGER.warning(String.format("Usuário cadastrado (ID: %d) mas não encontrado após %d tentativas. Email: %s", userId, maxTentativas, emailNormalizado));
                     Map<String, Object> response = new HashMap<>();
                     response.put("success", true);
                     response.put("message", "Usuário cadastrado com sucesso. Faça login para continuar.");
