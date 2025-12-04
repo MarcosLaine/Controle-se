@@ -540,6 +540,7 @@ public class InvestmentEvolutionHandler implements HttpHandler {
         // IMPORTANTE: Para datas futuras ou null (cotação atual), usa sempre a última cotação conhecida
         LocalDate today = LocalDate.now();
         boolean isTodayOrFuture = date == null || !date.isBefore(today);
+        boolean isFuture = date != null && date.isAfter(today);
         
         // Se date for null, busca cotação atual (hoje)
         if (date == null) {
