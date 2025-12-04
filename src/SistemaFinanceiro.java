@@ -1,3 +1,4 @@
+
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -111,6 +112,7 @@ public class SistemaFinanceiro {
             System.out.println("6. Visualizar Relatórios");
             System.out.println("7. Dashboard Financeiro");
             System.out.println("8. Filtrar/Listar Gastos");
+            System.out.println("9. Pesquisar por padrão (KMP / BM)"); 
             System.out.println("0. Voltar");
             
             opcao = lerInteiro("Escolha uma opção: ");
@@ -139,6 +141,8 @@ public class SistemaFinanceiro {
                     break;
                 case 8:
                     filtrarGastos();
+                case 9:
+                    menuPesquisarPadrao();
                     break;
                 case 0:
                     break;
@@ -458,30 +462,111 @@ public class SistemaFinanceiro {
         } else {
             gastos.forEach(System.out::println);
         }
+
+    }
+
+    private void menuPesquisarPadrao() {
+        System.out.println("\n=== PESQUISA POR PADRÃO DE TEXTO ===");
+        System.out.println("Busca realizada nas descrições de Gastos e Receitas.");
+        System.out.println("1. Algoritmo KMP (Knuth-Morris-Pratt)");
+        System.out.println("2. Algoritmo Boyer-Moore");
+        
+        int algoritmo = lerInteiro("Escolha o algoritmo: ");
+        if (algoritmo != 1 && algoritmo != 2) {
+            System.out.println("Opção inválida!");
+            return;
+        }
+        
+        String termo = lerString("Digite o termo a pesquisar: ");
+        if (termo == null || termo.trim().isEmpty()) {
+            System.out.println("Padrão vazio.");
+            return;
+        }
+        
+        long inicio = System.nanoTime();
+        int encontrados = 0;
+        
+        // Busca em Gastos
+        System.out.println("\n--- Resultados em Gastos ---");
+        List<Gasto> gastos = bancoDados.buscarGastosPorUsuario(usuarioLogado.getIdUsuario());
+        for (Gasto g : gastos) {
+            // Busca case-insensitive (convertendo tudo para minúsculo)
+            String texto = g.getDescricao().toLowerCase();
+            String padrao = termo.toLowerCase();
+            boolean match = false;
+            
+            if (algoritmo == 1) {
+                match = PatternMatching.searchKMP(texto, padrao);
+            } else {
+                match = PatternMatching.searchBoyerMoore(texto, padrao);
+            }
+            
+            if (match) {
+                System.out.println(g);
+                encontrados++;
+            }
+        }
+        
+        // Busca em Receitas
+        System.out.println("\n--- Resultados em Receitas ---");
+        List<Receita> receitas = bancoDados.buscarReceitasPorUsuario(usuarioLogado.getIdUsuario());
+        for (Receita r : receitas) {
+            String texto = r.getDescricao().toLowerCase();
+            String padrao = termo.toLowerCase();
+            boolean match = false;
+            
+            if (algoritmo == 1) {
+                match = PatternMatching.searchKMP(texto, padrao);
+            } else {
+                match = PatternMatching.searchBoyerMoore(texto, padrao);
+            }
+            
+            if (match) {
+                System.out.println(r);
+                encontrados++;
+            }
+        }
+        
+        long fim = System.nanoTime();
+        System.out.println("\n==================================");
+        System.out.println("Total de registros encontrados: " + encontrados);
+        System.out.println("Algoritmo utilizado: " + (algoritmo == 1 ? "KMP" : "Boyer-Moore"));
+        System.out.println("Tempo de execução: " + (fim - inicio) + " nanosegundos");
+        System.out.println("==================================");
+        
+        pausar();
     }
     
     // Métodos auxiliares
-    private int lerInteiro(String mensagem) {
+     private int lerInteiro(String mensagem) {
         System.out.print(mensagem);
-        return scanner.nextInt();
+        int valor = scanner.nextInt();
+        scanner.nextLine(); // Consome o \n restante imediatamente
+        return valor;
     }
     
     private String lerString(String mensagem) {
         System.out.print(mensagem);
-        scanner.nextLine(); // Limpa o buffer
         return scanner.nextLine();
     }
     
-    private double lerDouble(String mensagem) {
+  private double lerDouble(String mensagem) {
         System.out.print(mensagem);
-        return scanner.nextDouble();
+        double valor = scanner.nextDouble();
+        scanner.nextLine(); // Consome o \n restante imediatamente
+        return valor;
     }
-    
+  
     private LocalDate lerData(String mensagem) {
         System.out.print(mensagem);
-        scanner.nextLine(); // Limpa o buffer
+        // scanner.nextLine(); // REMOVER ESTA LINHA
         String dataStr = scanner.nextLine();
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
         return LocalDate.parse(dataStr, formatter);
+    }
+
+    private void pausar() {
+        System.out.println("\nPressione Enter para continuar...");
+        scanner.nextLine();
     }
 }
