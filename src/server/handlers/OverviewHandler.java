@@ -94,6 +94,7 @@ public class OverviewHandler implements HttpHandler {
                     // Calcula o valor da fatura a pagar para este cartão
                     LocalDate ultimoFechamento = LocalDate.parse((String) faturaInfo.get("ultimoFechamento"));
                     LocalDate proximoFechamento = LocalDate.parse((String) faturaInfo.get("proximoFechamento"));
+                    LocalDate proximoPagamento = LocalDate.parse((String) faturaInfo.get("proximoPagamento"));
                     
                     double valorFaturaAtual = expenseRepository.calcularValorFaturaAtual(
                         cartao.getIdConta(), 
@@ -101,11 +102,12 @@ public class OverviewHandler implements HttpHandler {
                         proximoFechamento
                     );
                     
+                    // Pagamentos são contados até a data de pagamento, não até o fechamento
                     double totalJaPago = incomeRepository.calcularTotalPagoFatura(
                         userId, 
                         cartao.getIdConta(), 
                         ultimoFechamento, 
-                        proximoFechamento,
+                        proximoPagamento,
                         expenseRepository
                     );
                     

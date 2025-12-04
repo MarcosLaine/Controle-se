@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Edit, Trash2, TrendingUp } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useLanguage } from '../../contexts/LanguageContext';
 import api from '../../services/api';
 import { formatCurrency } from '../../utils/formatters';
 import Modal from '../common/Modal';
@@ -9,6 +10,7 @@ import SkeletonSection from '../common/SkeletonSection';
 
 export default function Budgets() {
   const { user } = useAuth();
+  const { t } = useLanguage();
   const [budgets, setBudgets] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -32,7 +34,7 @@ export default function Budgets() {
       if (budgetsRes.success) setBudgets(budgetsRes.data || []);
       if (categoriesRes.success) setCategories(categoriesRes.data || []);
     } catch (error) {
-      toast.error('Erro ao carregar orçamentos');
+      toast.error(t('budgets.errorLoading'));
     } finally {
       setLoading(false);
     }
@@ -51,14 +53,14 @@ export default function Budgets() {
       if (editingBudget) {
         const response = await api.put(`/budgets/${editingBudget.idOrcamento}`, data);
         if (response.success) {
-          toast.success('Orçamento atualizado!');
+          toast.success(t('budgets.updatedSuccess'));
           loadData();
           handleCloseModal();
         }
       } else {
         const response = await api.post('/budgets', data);
         if (response.success) {
-          toast.success('Orçamento criado!');
+          toast.success(t('budgets.createdSuccess'));
           loadData();
           handleCloseModal();
         }
@@ -69,15 +71,15 @@ export default function Budgets() {
   };
 
   const handleDelete = async (id) => {
-    if (!confirm('Tem certeza que deseja excluir este orçamento?')) return;
+    if (!confirm(t('budgets.deleteConfirm'))) return;
     try {
       const response = await api.delete(`/budgets/${id}?userId=${user.id}`);
       if (response.success) {
-        toast.success('Orçamento excluído!');
+        toast.success(t('budgets.deletedSuccess'));
         loadData();
       }
     } catch (error) {
-      toast.error('Erro ao excluir orçamento');
+      toast.error(t('budgets.errorDeleting'));
     }
   };
 

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { FileText, Download, ArrowUp, ArrowDown, Scale, TrendingUp } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useLanguage } from '../../contexts/LanguageContext';
 import api from '../../services/api';
 import axios from 'axios';
 import { formatCurrency, formatDate } from '../../utils/formatters';
@@ -25,6 +26,7 @@ ChartJS.register(ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarEle
 
 export default function Reports() {
   const { user } = useAuth();
+  const { t } = useLanguage();
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState('month');
   const [startDate, setStartDate] = useState('');
@@ -66,7 +68,7 @@ export default function Reports() {
       if (response.success) {
         setReportData(response.data);
       } else {
-        toast.error('Erro ao carregar relatórios');
+        toast.error(t('reports.errorLoading'));
       }
     } catch (error) {
       // Ignora erros de cancelamento
@@ -112,7 +114,7 @@ export default function Reports() {
 
   const exportToPDF = () => {
     if (!reportData) {
-      toast.error('Nenhum dado disponível para exportar');
+      toast.error(t('reports.noData'));
       return;
     }
 
@@ -235,7 +237,7 @@ export default function Reports() {
       doc.setFontSize(24);
       doc.setFont(undefined, 'bold');
       doc.setTextColor(...palette.textPrimary);
-      doc.text('Relatório Financeiro', margin, yPos);
+      doc.text(t('reports.reportTitle'), margin, yPos);
       yPos += 8;
       
       doc.setFontSize(9);
@@ -245,12 +247,12 @@ export default function Reports() {
       const periodText = period === 'custom' && startDate && endDate
         ? `${formatDate(startDate)} a ${formatDate(endDate)}`
         : period === 'month'
-        ? 'Este Mês'
+        ? t('reports.thisMonth')
         : period === 'year'
-        ? 'Este Ano'
-        : 'Período selecionado';
+        ? t('reports.thisYear')
+        : t('reports.selectedPeriod');
       
-      doc.text(`Gerado em ${formatDate(new Date().toISOString())} • Período: ${periodText}`, margin, yPos);
+      doc.text(`${t('reports.generatedAt')} ${formatDate(new Date().toISOString())} • ${t('reports.period')}: ${periodText}`, margin, yPos);
       yPos += 16;
 
       // Summary cards estilo SummaryCard
@@ -258,9 +260,9 @@ export default function Reports() {
       const cardSpacing = 4;
       
       drawSummaryCard(
-        'Total Receitas',
+        t('reports.totalIncomes'),
         formatCurrency(reportData.totalIncomes || 0),
-        `${reportData.incomeCount || 0} transações`,
+        `${reportData.incomeCount || 0} ${t('reports.transactions')}`,
         margin,
         yPos,
         cardWidth,
@@ -270,9 +272,9 @@ export default function Reports() {
       );
       
       drawSummaryCard(
-        'Total Gastos',
+        t('reports.totalExpenses'),
         formatCurrency(reportData.totalExpenses || 0),
-        `${reportData.expenseCount || 0} transações`,
+        `${reportData.expenseCount || 0} ${t('reports.transactions')}`,
         margin + cardWidth + cardSpacing,
         yPos,
         cardWidth,
@@ -282,9 +284,9 @@ export default function Reports() {
       );
       
       drawSummaryCard(
-        'Saldo',
+        t('reports.balance'),
         formatCurrency(reportData.balance || 0),
-        'Receitas - Gastos',
+        `${t('reports.income')} - ${t('reports.expenses')}`,
         margin + (cardWidth + cardSpacing) * 2,
         yPos,
         cardWidth,
@@ -298,7 +300,7 @@ export default function Reports() {
       // Gastos por Categoria
       if (categoryData.length > 0) {
         ensureSpace(30);
-        drawSectionTitle('Gastos por Categoria');
+        drawSectionTitle(t('reports.expensesByCategory'));
         const categoryRows = categoryData
           .sort((a, b) => b.total - a.total)
           .slice(0, 15)
@@ -312,7 +314,7 @@ export default function Reports() {
         
         autoTable(doc, {
           startY: yPos,
-          head: [['Categoria', 'Valor', 'Participação']],
+          head: [[t('reports.category'), t('reports.value'), t('reports.participation')]],
           body: categoryRows,
           styles: { 
             fontSize: 9,
@@ -342,7 +344,7 @@ export default function Reports() {
       // Gastos por Conta
       if (reportData.accountAnalysis && Object.keys(reportData.accountAnalysis).length > 0) {
         ensureSpace(30);
-        drawSectionTitle('Gastos por Conta');
+        drawSectionTitle(t('reports.expensesByAccount'));
         const accountRows = Object.entries(reportData.accountAnalysis)
           .sort((a, b) => b[1] - a[1])
           .slice(0, 10)
@@ -402,7 +404,7 @@ export default function Reports() {
         
         autoTable(doc, {
           startY: yPos,
-          head: [['Mês', 'Receitas', 'Gastos', 'Saldo']],
+          head: [[t('reports.month'), t('reports.income'), t('reports.expenses'), t('reports.balance')]],
           body: monthlyRows,
           styles: { 
             fontSize: 9,
@@ -433,7 +435,7 @@ export default function Reports() {
       // Top Gastos
       if (reportData.topExpenses && reportData.topExpenses.length > 0) {
         ensureSpace(30);
-        drawSectionTitle('Maiores Gastos');
+        drawSectionTitle(t('reports.topExpenses'));
         const topExpensesRows = reportData.topExpenses
           .slice(0, 15)
           .map(expense => [
@@ -445,7 +447,7 @@ export default function Reports() {
         
         autoTable(doc, {
           startY: yPos,
-          head: [['Data', 'Descrição', 'Categoria', 'Valor']],
+          head: [[t('transactions.date'), t('transactions.description'), t('reports.category'), t('reports.value')]],
           body: topExpensesRows,
           styles: { 
             fontSize: 9,
@@ -475,17 +477,17 @@ export default function Reports() {
 
       // Detalhes Adicionais
       ensureSpace(20);
-      drawSectionTitle('Detalhes Adicionais');
+        drawSectionTitle(t('reports.additionalDetails'));
       doc.setFontSize(9);
       doc.setFont(undefined, 'normal');
       doc.setTextColor(...palette.textSecondary);
-      doc.text(`Total de transações: ${(reportData.incomeCount || 0) + (reportData.expenseCount || 0)}`, margin, yPos);
+      doc.text(`${t('reports.totalTransactions')}: ${(reportData.incomeCount || 0) + (reportData.expenseCount || 0)}`, margin, yPos);
       yPos += 6;
       if (reportData.startDate && reportData.endDate) {
-        doc.text(`Período: ${formatDate(reportData.startDate)} a ${formatDate(reportData.endDate)}`, margin, yPos);
+        doc.text(`${t('reports.period')}: ${formatDate(reportData.startDate)} ${t('common.to')} ${formatDate(reportData.endDate)}`, margin, yPos);
         yPos += 6;
       }
-      doc.text('Este relatório foi gerado automaticamente pelo Controle-se.', margin, yPos);
+      doc.text(t('reports.autoGenerated'), margin, yPos);
       yPos += 8;
 
       // Rodapé
@@ -495,7 +497,7 @@ export default function Reports() {
         doc.setFontSize(8);
         doc.setTextColor(...palette.gray);
         doc.text(
-          `Página ${i} de ${totalPages} - Controle-se - Relatório Financeiro`,
+          t('reports.reportPage', { current: i, total: totalPages }),
           pageWidth / 2,
           doc.internal.pageSize.getHeight() - 10,
           { align: 'center' }
@@ -507,10 +509,10 @@ export default function Reports() {
         : `relatorio_${period}_${new Date().toISOString().split('T')[0]}.pdf`;
       
       doc.save(fileName);
-      toast.success('Relatório exportado como PDF!');
+      toast.success(t('reports.exportSuccessPDF'));
     } catch (error) {
       console.error('Erro ao exportar PDF:', error);
-      toast.error('Erro ao exportar PDF');
+      toast.error(t('reports.errorExportingPDF'));
     }
   };
 
@@ -553,9 +555,9 @@ export default function Reports() {
         a.click();
         window.URL.revokeObjectURL(url);
         document.body.removeChild(a);
-        toast.success('Relatório exportado com sucesso!');
+        toast.success(t('reports.exportSuccess'));
       } else {
-        toast.error('Erro ao exportar relatório');
+        toast.error(t('reports.errorExportingReport'));
       }
     } catch (error) {
       console.error('Erro ao exportar:', error);
@@ -579,8 +581,8 @@ export default function Reports() {
     <div className="space-y-6 animate-fade-in">
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-bold text-gray-900 dark:text-white">Relatórios</h2>
-          <p className="text-gray-600 dark:text-gray-400 mt-1">Análise detalhada das suas finanças</p>
+          <h2 className="text-3xl font-bold text-gray-900 dark:text-white">{t('reports.title')}</h2>
+          <p className="text-gray-600 dark:text-gray-400 mt-1">{t('reports.subtitle')}</p>
         </div>
         <div className="flex flex-col sm:flex-row gap-2">
           <select
@@ -588,9 +590,9 @@ export default function Reports() {
             onChange={(e) => setPeriod(e.target.value)}
             className="input w-full sm:w-auto"
           >
-            <option value="month">Este Mês</option>
-            <option value="year">Este Ano</option>
-            <option value="custom">Período Personalizado</option>
+            <option value="month">{t('reports.thisMonth')}</option>
+            <option value="year">{t('reports.thisYear')}</option>
+            <option value="custom">{t('reports.customPeriod')}</option>
           </select>
           {period === 'custom' && (
             <>
@@ -622,7 +624,7 @@ export default function Reports() {
             </select>
             <button onClick={handleExport} className="btn-primary flex-1 sm:flex-none justify-center">
               <Download className="w-4 h-4" />
-              Exportar
+              {t('reports.export')}
             </button>
           </div>
         </div>
@@ -632,27 +634,27 @@ export default function Reports() {
         <>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <SummaryCard
-              title="Total de Receitas"
+              title={t('reports.totalIncomes')}
               amount={formatCurrency(reportData.totalIncomes || 0)}
               icon={ArrowUp}
               type="income"
               subtitle={`${reportData.incomeCount || 0} transações`}
             />
             <SummaryCard
-              title="Total de Gastos"
+              title={t('reports.totalExpenses')}
               amount={formatCurrency(reportData.totalExpenses || 0)}
               icon={ArrowDown}
               type="expense"
               subtitle={`${reportData.expenseCount || 0} transações`}
             />
             <SummaryCard
-              title="Saldo do Período"
+              title={t('reports.balancePeriod')}
               amount={formatCurrency(reportData.balance || 0)}
               icon={Scale}
               type="balance"
               subtitle={reportData.startDate && reportData.endDate 
                 ? `${formatDate(reportData.startDate)} a ${formatDate(reportData.endDate)}`
-                : 'Período selecionado'}
+                : t('reports.selectedPeriod')}
             />
           </div>
 
@@ -661,7 +663,7 @@ export default function Reports() {
             {categoryData.length > 0 && (
               <div className="card">
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                  Gastos por Categoria
+                  {t('reports.expensesByCategory')}
                 </h3>
                 <div className="h-64">
                   <Doughnut
@@ -848,7 +850,7 @@ export default function Reports() {
       ) : (
         <div className="card text-center py-12">
           <FileText className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-          <p className="text-gray-600 dark:text-gray-400">Nenhum dado disponível para o período selecionado</p>
+          <p className="text-gray-600 dark:text-gray-400">{t('reports.noData')}</p>
         </div>
       )}
     </div>

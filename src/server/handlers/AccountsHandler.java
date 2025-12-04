@@ -84,6 +84,7 @@ public class AccountsHandler implements HttpHandler {
                         
                         java.time.LocalDate ultimoFechamento = java.time.LocalDate.parse((String) faturaInfo.get("ultimoFechamento"));
                         java.time.LocalDate proximoFechamento = java.time.LocalDate.parse((String) faturaInfo.get("proximoFechamento"));
+                        java.time.LocalDate proximoPagamento = java.time.LocalDate.parse((String) faturaInfo.get("proximoPagamento"));
                         
                         double valorFaturaAtual = expenseRepository.calcularValorFaturaAtual(
                             conta.getIdConta(), 
@@ -91,11 +92,12 @@ public class AccountsHandler implements HttpHandler {
                             proximoFechamento
                         );
                         
+                        // Pagamentos são contados até a data de pagamento, não até o fechamento
                         double totalJaPago = incomeRepository.calcularTotalPagoFatura(
                             userId, 
                             conta.getIdConta(), 
                             ultimoFechamento, 
-                            proximoFechamento,
+                            proximoPagamento,
                             expenseRepository
                         );
                         
@@ -170,6 +172,7 @@ public class AccountsHandler implements HttpHandler {
             
             java.time.LocalDate ultimoFechamento = java.time.LocalDate.parse((String) faturaInfo.get("ultimoFechamento"));
             java.time.LocalDate proximoFechamento = java.time.LocalDate.parse((String) faturaInfo.get("proximoFechamento"));
+            java.time.LocalDate proximoPagamento = java.time.LocalDate.parse((String) faturaInfo.get("proximoPagamento"));
             
             double valorFaturaAtual = expenseRepository.calcularValorFaturaAtual(
                 conta.getIdConta(), 
@@ -177,11 +180,12 @@ public class AccountsHandler implements HttpHandler {
                 proximoFechamento
             );
             
+            // Pagamentos são contados até a data de pagamento, não até o fechamento
             double totalJaPago = incomeRepository.calcularTotalPagoFatura(
                 userId, 
                 conta.getIdConta(), 
                 ultimoFechamento, 
-                proximoFechamento,
+                proximoPagamento,
                 expenseRepository
             );
             
@@ -306,6 +310,21 @@ public class AccountsHandler implements HttpHandler {
             
             // Sanitiza e converte valores
             name = InputValidator.sanitizeInput(name);
+            
+            // Normaliza o tipo: se for cartão de crédito, converte para CARTAO_CREDITO
+            if (type != null) {
+                String typeUpper = type.toUpperCase();
+                String typeNormalized = typeUpper.replace("É", "E").replace("À", "A").replace(" ", "_").replace("-", "_");
+                if (typeNormalized.contains("CARTAO") || typeNormalized.contains("CARTÃO") || 
+                    (typeNormalized.contains("CREDITO") && typeNormalized.contains("CARTAO")) ||
+                    (typeNormalized.contains("CRÉDITO") && typeNormalized.contains("CARTAO"))) {
+                    type = "CARTAO_CREDITO";
+                } else {
+                    // Garante que o tipo seja sempre em maiúsculas para consistência
+                    type = typeUpper;
+                }
+            }
+            
             double balance;
             try {
                 // Se já veio como Number, usa diretamente
@@ -505,6 +524,21 @@ public class AccountsHandler implements HttpHandler {
             
             // Sanitiza e converte valores
             name = InputValidator.sanitizeInput(name);
+            
+            // Normaliza o tipo: se for cartão de crédito, converte para CARTAO_CREDITO
+            if (type != null) {
+                String typeUpper = type.toUpperCase();
+                String typeNormalized = typeUpper.replace("É", "E").replace("À", "A").replace(" ", "_").replace("-", "_");
+                if (typeNormalized.contains("CARTAO") || typeNormalized.contains("CARTÃO") || 
+                    (typeNormalized.contains("CREDITO") && typeNormalized.contains("CARTAO")) ||
+                    (typeNormalized.contains("CRÉDITO") && typeNormalized.contains("CARTAO"))) {
+                    type = "CARTAO_CREDITO";
+                } else {
+                    // Garante que o tipo seja sempre em maiúsculas para consistência
+                    type = typeUpper;
+                }
+            }
+            
             double balance;
             try {
                 // Se já veio como Number, usa diretamente

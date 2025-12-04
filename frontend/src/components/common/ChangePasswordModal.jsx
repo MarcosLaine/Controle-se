@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
 import Modal from './Modal';
 import { useAuth } from '../../contexts/AuthContext';
+import { useLanguage } from '../../contexts/LanguageContext';
 import toast from 'react-hot-toast';
 import Spinner from './Spinner';
 
 export default function ChangePasswordModal({ isOpen, onClose }) {
   const { changePassword } = useAuth();
+  const { t } = useLanguage();
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -22,11 +24,11 @@ export default function ChangePasswordModal({ isOpen, onClose }) {
   const handleSubmit = async (event) => {
     event.preventDefault();
     if (newPassword.length < 8) {
-      toast.error('A nova senha deve ter pelo menos 8 caracteres');
+      toast.error(t('auth.passwordMinLength'));
       return;
     }
     if (newPassword !== confirmPassword) {
-      toast.error('As senhas não conferem');
+      toast.error(t('auth.passwordsDontMatch'));
       return;
     }
     setIsSubmitting(true);
@@ -38,16 +40,16 @@ export default function ChangePasswordModal({ isOpen, onClose }) {
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={handleClose} title="Alterar senha" size="sm">
+    <Modal isOpen={isOpen} onClose={handleClose} title={t('common.changePassword')} size="sm">
       <form className="space-y-6" onSubmit={handleSubmit}>
         <div className="space-y-2">
           <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
-            Senha atual
+            {t('auth.currentPassword')}
           </label>
           <input
             type="password"
             className="input"
-            placeholder="Digite sua senha atual"
+            placeholder={t('auth.currentPasswordPlaceholder')}
             value={currentPassword}
             onChange={(e) => setCurrentPassword(e.target.value)}
             required
@@ -56,12 +58,12 @@ export default function ChangePasswordModal({ isOpen, onClose }) {
 
         <div className="space-y-2">
           <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
-            Nova senha
+            {t('auth.newPassword')}
           </label>
           <input
             type="password"
             className="input"
-            placeholder="Mínimo 8 caracteres"
+            placeholder={t('auth.newPasswordPlaceholder')}
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
             required
@@ -71,12 +73,12 @@ export default function ChangePasswordModal({ isOpen, onClose }) {
 
         <div className="space-y-2">
           <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
-            Confirmar nova senha
+            {t('auth.confirmPassword')}
           </label>
           <input
             type="password"
             className="input"
-            placeholder="Repita a nova senha"
+            placeholder={t('auth.confirmPasswordPlaceholder')}
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
             required
@@ -90,16 +92,16 @@ export default function ChangePasswordModal({ isOpen, onClose }) {
             className="btn-secondary"
             disabled={isSubmitting}
           >
-            Cancelar
+            {t('common.cancel')}
           </button>
           <button type="submit" className="btn-primary" disabled={isSubmitting}>
             {isSubmitting ? (
               <>
                 <Spinner size={16} className="text-white mr-2" />
-                Salvando...
+                {t('common.saving')}
               </>
             ) : (
-              'Atualizar senha'
+              t('auth.updatePassword')
             )}
           </button>
         </div>

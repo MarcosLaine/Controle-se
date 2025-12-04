@@ -166,11 +166,35 @@ public class InvestmentRepository {
     }
 
     public List<Investimento> buscarInvestimentosPorUsuario(int idUsuario) {
-        String sql = "SELECT * FROM investimentos WHERE id_usuario = ? AND ativo = TRUE ORDER BY data_aporte DESC";
+        return buscarInvestimentosPorUsuario(idUsuario, Integer.MAX_VALUE, 0, null, null);
+    }
+    
+    public List<Investimento> buscarInvestimentosPorUsuario(int idUsuario, int limit, int offset, String category, String assetName) {
+        StringBuilder sql = new StringBuilder("SELECT * FROM investimentos WHERE id_usuario = ? AND ativo = TRUE");
+        
+        if (category != null && !category.isEmpty()) {
+            sql.append(" AND categoria = ?");
+        }
+        if (assetName != null && !assetName.isEmpty()) {
+            sql.append(" AND nome = ?");
+        }
+        
+        sql.append(" ORDER BY data_aporte DESC LIMIT ? OFFSET ?");
+        
         List<Investimento> investimentos = new ArrayList<>();
         try (Connection conn = getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            pstmt.setInt(1, idUsuario);
+             PreparedStatement pstmt = conn.prepareStatement(sql.toString())) {
+            int paramIndex = 1;
+            pstmt.setInt(paramIndex++, idUsuario);
+            if (category != null && !category.isEmpty()) {
+                pstmt.setString(paramIndex++, category);
+            }
+            if (assetName != null && !assetName.isEmpty()) {
+                pstmt.setString(paramIndex++, assetName);
+            }
+            pstmt.setInt(paramIndex++, limit);
+            pstmt.setInt(paramIndex++, offset);
+            
             ResultSet rs = pstmt.executeQuery();
             while (rs.next()) investimentos.add(mapInvestimento(rs));
         } catch (SQLException e) {

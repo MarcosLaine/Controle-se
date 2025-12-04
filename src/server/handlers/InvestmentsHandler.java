@@ -40,9 +40,18 @@ public class InvestmentsHandler implements HttpHandler {
     private void handleGetInvestments(HttpExchange exchange) throws IOException {
         try {
             String userIdParam = RequestUtil.getQueryParam(exchange, "userId");
+            String limitParam = RequestUtil.getQueryParam(exchange, "limit");
+            String offsetParam = RequestUtil.getQueryParam(exchange, "offset");
+            String categoryParam = RequestUtil.getQueryParam(exchange, "category");
+            String assetNameParam = RequestUtil.getQueryParam(exchange, "assetName");
+            
             int userId = userIdParam != null ? Integer.parseInt(userIdParam) : 1;
             
-            List<Investimento> investments = investmentRepository.buscarInvestimentosPorUsuario(userId);
+            // Paginação: padrão 12 itens, offset 0
+            int limit = (limitParam != null && !limitParam.isEmpty()) ? Integer.parseInt(limitParam) : 12;
+            int offset = (offsetParam != null && !offsetParam.isEmpty()) ? Integer.parseInt(offsetParam) : 0;
+            
+            List<Investimento> investments = investmentRepository.buscarInvestimentosPorUsuario(userId, limit, offset, categoryParam, assetNameParam);
             QuoteService quoteService = QuoteService.getInstance();
             
             List<Map<String, Object>> investmentList = new ArrayList<>();
@@ -141,10 +150,16 @@ public class InvestmentsHandler implements HttpHandler {
             summary.put("totalReturn", totalCurrent - totalInvested);
             summary.put("totalReturnPercent", totalInvested > 0 ? ((totalCurrent - totalInvested) / totalInvested) * 100 : 0);
             
+            // Verifica se há mais investimentos para carregar
+            boolean hasMore = investmentList.size() == limit;
+            
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);
             response.put("data", investmentList);
             response.put("summary", summary);
+            response.put("hasMore", hasMore);
+            response.put("limit", limit);
+            response.put("offset", offset);
             
             ResponseUtil.sendJsonResponse(exchange, 200, response);
         } catch (Exception e) {

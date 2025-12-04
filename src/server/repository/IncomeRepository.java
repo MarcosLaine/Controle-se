@@ -214,6 +214,11 @@ public class IncomeRepository {
     }
 
     public List<Receita> buscarReceitasComFiltros(int idUsuario, LocalDate data, String type) {
+        // Para compatibilidade: se data não for null, usa como dateStart e dateEnd (filtro exato)
+        return buscarReceitasComFiltros(idUsuario, data, data, type, Integer.MAX_VALUE, 0);
+    }
+    
+    public List<Receita> buscarReceitasComFiltros(int idUsuario, LocalDate dateStart, LocalDate dateEnd, String type, int limit, int offset) {
         StringBuilder sql = new StringBuilder(
             "SELECT id_receita, descricao, valor, data, frequencia, id_usuario, id_conta, " +
             "proxima_recorrencia, id_receita_original, ativo, id_grupo_parcela, numero_parcela, total_parcelas " +
@@ -221,7 +226,13 @@ public class IncomeRepository {
             "WHERE id_usuario = ? AND ativo = TRUE " +
             "AND descricao NOT LIKE '[SISTEMA]%'"
         );
-        if (data != null) sql.append(" AND data = ?");
+        if (dateStart != null && dateEnd != null) {
+            sql.append(" AND data >= ? AND data <= ?");
+        } else if (dateStart != null) {
+            sql.append(" AND data >= ?");
+        } else if (dateEnd != null) {
+            sql.append(" AND data <= ?");
+        }
         if (type != null && !type.isEmpty()) {
             if ("parceladas".equals(type)) {
                 sql.append(" AND id_grupo_parcela IS NOT NULL");
@@ -230,12 +241,23 @@ public class IncomeRepository {
             }
         }
         sql.append(" ORDER BY data DESC");
+        sql.append(" LIMIT ? OFFSET ?");
         
         List<Receita> receitas = new ArrayList<>();
         try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql.toString())) {
-            pstmt.setInt(1, idUsuario);
-            if (data != null) pstmt.setDate(2, java.sql.Date.valueOf(data));
+            int paramIndex = 1;
+            pstmt.setInt(paramIndex++, idUsuario);
+            if (dateStart != null && dateEnd != null) {
+                pstmt.setDate(paramIndex++, java.sql.Date.valueOf(dateStart));
+                pstmt.setDate(paramIndex++, java.sql.Date.valueOf(dateEnd));
+            } else if (dateStart != null) {
+                pstmt.setDate(paramIndex++, java.sql.Date.valueOf(dateStart));
+            } else if (dateEnd != null) {
+                pstmt.setDate(paramIndex++, java.sql.Date.valueOf(dateEnd));
+            }
+            pstmt.setInt(paramIndex++, limit);
+            pstmt.setInt(paramIndex++, offset);
             ResultSet rs = pstmt.executeQuery();
             while (rs.next()) {
                 Receita receita = mapReceita(rs);

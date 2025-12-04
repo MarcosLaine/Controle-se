@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Plus, Minus, Trash2, ArrowUp, ArrowDown, Filter, CreditCard, Search } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useData } from '../../contexts/DataContext';
+import { useLanguage } from '../../contexts/LanguageContext';
 import api from '../../services/api';
 import axios from 'axios';
 import { formatCurrency, formatDate } from '../../utils/formatters';
@@ -13,6 +14,7 @@ import Spinner from '../common/Spinner';
 export default function Transactions() {
   const { user } = useAuth();
   const { invalidateCache } = useData();
+  const { t } = useLanguage();
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showExpenseModal, setShowExpenseModal] = useState(false);
@@ -20,9 +22,12 @@ export default function Transactions() {
   const [categories, setCategories] = useState([]);
   const [accounts, setAccounts] = useState([]);
   const [tags, setTags] = useState([]);
-  const [filters, setFilters] = useState({ category: '', tag: '', date: '', type: '', search: '' });
+  const [filters, setFilters] = useState({ category: '', tag: '', dateStart: '', dateEnd: '', type: '', search: '' });
   const [showPayInstallmentModal, setShowPayInstallmentModal] = useState(false);
   const [selectedInstallment, setSelectedInstallment] = useState(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [offset, setOffset] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
   
   // Ref para armazenar o AbortController da requisição atual
   const abortControllerRef = useRef(null);
@@ -36,7 +41,7 @@ export default function Transactions() {
       .replace(/[\u0300-\u036f]/g, '');
   };
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (resetOffset = true) => {
     if (!user) return;
     
     // Cancela a requisição anterior se ainda estiver em andamento
@@ -48,15 +53,32 @@ export default function Transactions() {
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
 
-    setLoading(true);
+    let currentOffset = 0;
+    if (resetOffset) {
+      setLoading(true);
+      setOffset(0);
+      currentOffset = 0;
+    } else {
+      setLoadingMore(true);
+      // Usa o offset atual do estado através de uma função
+      setOffset(prevOffset => {
+        currentOffset = prevOffset;
+        return prevOffset;
+      });
+    }
+    
     try {
+      
       // Constrói URL com parâmetros de filtro
-      let transactionsUrl = `/transactions?userId=${user.id}`;
+      let transactionsUrl = `/transactions?userId=${user.id}&limit=12&offset=${currentOffset}`;
       if (filters.category) {
         transactionsUrl += `&categoryId=${filters.category}`;
       }
-      if (filters.date) {
-        transactionsUrl += `&date=${filters.date}`;
+      if (filters.dateStart) {
+        transactionsUrl += `&dateStart=${filters.dateStart}`;
+      }
+      if (filters.dateEnd) {
+        transactionsUrl += `&dateEnd=${filters.dateEnd}`;
       }
       // Se o filtro for "parceladas" ou "unicas", envia para o backend
       // Se for "expense" ou "income", filtra no frontend
@@ -101,7 +123,17 @@ export default function Transactions() {
           });
         }
         // O filtro por tipo (parceladas/únicas) já é feito no backend quando aplicável
-        setTransactions(filtered);
+        if (resetOffset) {
+          setTransactions(filtered);
+        } else {
+          setTransactions(prev => [...prev, ...filtered]);
+        }
+        setHasMore(transRes.hasMore || false);
+        if (resetOffset) {
+          setOffset(12);
+        } else {
+          setOffset(prev => prev + 12);
+        }
       }
       if (catRes.success) setCategories(catRes.data || []);
       if (accRes.success) setAccounts(accRes.data || []);
@@ -120,11 +152,12 @@ export default function Transactions() {
         return;
       }
       
-      toast.error('Erro ao carregar transações');
+      toast.error(t('transactions.errorLoading'));
     } finally {
       // Só atualiza o loading se a requisição não foi cancelada
       if (!abortController.signal.aborted) {
         setLoading(false);
+        setLoadingMore(false);
       }
       // Limpa a referência se esta ainda é a requisição atual
       if (abortControllerRef.current === abortController) {
@@ -132,10 +165,66 @@ export default function Transactions() {
       }
     }
   }, [user, filters]);
+  
+  // Função separada para carregar mais
+  const loadMore = useCallback(async () => {
+    if (!user || loadingMore) return;
+    
+    setLoadingMore(true);
+    try {
+      const currentOffset = offset;
+      let transactionsUrl = `/transactions?userId=${user.id}&limit=12&offset=${currentOffset}`;
+      if (filters.category) {
+        transactionsUrl += `&categoryId=${filters.category}`;
+      }
+      if (filters.dateStart) {
+        transactionsUrl += `&dateStart=${filters.dateStart}`;
+      }
+      if (filters.dateEnd) {
+        transactionsUrl += `&dateEnd=${filters.dateEnd}`;
+      }
+      if (filters.type && (filters.type === 'parceladas' || filters.type === 'unicas')) {
+        transactionsUrl += `&type=${filters.type}`;
+      }
+
+      const transRes = await api.get(transactionsUrl);
+
+      if (transRes.success) {
+        let filtered = transRes.data || [];
+        if (filters.tag) {
+          filtered = filtered.filter((t) =>
+            t.tags?.some((tag) => tag.idTag === parseInt(filters.tag))
+          );
+        }
+        if (filters.type === 'expense') {
+          filtered = filtered.filter((t) => t.type === 'expense');
+        } else if (filters.type === 'income') {
+          filtered = filtered.filter((t) => t.type === 'income');
+        }
+        if (filters.search) {
+          const searchNormalized = normalizeString(filters.search);
+          filtered = filtered.filter((t) => {
+            const descriptionNormalized = normalizeString(t.description || '');
+            return descriptionNormalized.includes(searchNormalized);
+          });
+        }
+        setTransactions(prev => [...prev, ...filtered]);
+        setHasMore(transRes.hasMore || false);
+        setOffset(prev => prev + 12);
+      }
+    } catch (error) {
+      toast.error(t('transactions.errorLoadingMore'));
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [user, filters, offset, loadingMore]);
 
   useEffect(() => {
     if (user) {
-      loadData();
+      // Reseta offset quando os filtros mudarem
+      setOffset(0);
+      setHasMore(false);
+      loadData(true);
     }
     
     // Cleanup: cancela requisições quando o componente é desmontado ou quando os filtros mudam
@@ -145,7 +234,8 @@ export default function Transactions() {
         abortControllerRef.current = null;
       }
     };
-  }, [loadData]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, filters.category, filters.dateStart, filters.dateEnd, filters.type]);
 
   // Verifica se uma parcela está paga
   const isParcelaPaga = (transaction) => {
@@ -213,14 +303,14 @@ export default function Transactions() {
   const [deletingIds, setDeletingIds] = useState(new Set());
 
   const handleDelete = async (id, type) => {
-    if (!confirm('Tem certeza que deseja excluir esta transação?')) return;
+    if (!confirm(t('common.deleteTransactionConfirm'))) return;
 
     setDeletingIds(prev => new Set(prev).add(id));
     try {
       const endpoint = type === 'income' ? '/incomes' : '/expenses';
       const response = await api.delete(`${endpoint}?id=${id}`);
       if (response.success) {
-        toast.success('Transação excluída!');
+        toast.success(t('transactions.deletedSuccess'));
         
         // Invalidate cache for overview and recent transactions
         invalidateCache(`overview-${user.id}-month`);
@@ -231,7 +321,7 @@ export default function Transactions() {
         loadData();
       }
     } catch (error) {
-      toast.error('Erro ao excluir transação');
+      toast.error(t('transactions.errorDeleting'));
     } finally {
       setDeletingIds(prev => {
         const next = new Set(prev);
@@ -250,20 +340,20 @@ export default function Transactions() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-3xl font-bold text-gray-900 dark:text-white">
-            Transações
+            {t('transactions.title')}
           </h2>
           <p className="text-gray-600 dark:text-gray-400 mt-1">
-            Gerencie suas receitas e gastos
+            {t('transactions.subtitle')}
           </p>
         </div>
         <div className="flex gap-2 w-full sm:w-auto">
           <button onClick={() => setShowExpenseModal(true)} className="flex-1 sm:flex-none btn-secondary justify-center">
             <Minus className="w-4 h-4" />
-            Novo Gasto
+            {t('transactions.newExpense')}
           </button>
           <button onClick={() => setShowIncomeModal(true)} className="flex-1 sm:flex-none btn-primary justify-center">
             <Plus className="w-4 h-4" />
-            Nova Receita
+            {t('transactions.newIncome')}
           </button>
         </div>
       </div>
@@ -272,33 +362,30 @@ export default function Transactions() {
       <div className="card">
         <div className="flex items-center gap-2 mb-4">
           <Filter className="w-5 h-5 text-gray-500" />
-          <h3 className="font-semibold text-gray-900 dark:text-white">Filtros</h3>
+          <h3 className="font-semibold text-gray-900 dark:text-white">{t('transactions.filters')}</h3>
         </div>
         <div className="mb-4">
-          <label className="label">Buscar por palavra na descrição</label>
+          <label className="label text-sm">{t('transactions.searchByDescription')}</label>
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               type="text"
               value={filters.search}
               onChange={(e) => setFilters({ ...filters, search: e.target.value })}
-              className="input pl-10"
+              className="input pl-8 text-sm py-2"
               // placeholder="Ex: Farm, farma, Farmácia..."
             />
           </div>
-          {/* <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-            A busca não diferencia maiúsculas/minúsculas e ignora acentos
-          </p> */}
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 lg:grid-cols-6 gap-3">
           <div>
-            <label className="label">Categoria</label>
+            <label className="label text-xs mb-1">{t('transactions.category')}</label>
             <select
               value={filters.category}
               onChange={(e) => setFilters({ ...filters, category: e.target.value })}
-              className="input"
+              className="input text-sm py-2"
             >
-              <option value="">Todas as Categorias</option>
+              <option value="">{t('transactions.allCategories')}</option>
               {categories.map((cat) => (
                 <option key={cat.idCategoria} value={cat.idCategoria}>
                   {cat.nome}
@@ -307,13 +394,13 @@ export default function Transactions() {
             </select>
           </div>
           <div>
-            <label className="label">Tag</label>
+            <label className="label text-xs mb-1">{t('transactions.tags')}</label>
             <select
               value={filters.tag}
               onChange={(e) => setFilters({ ...filters, tag: e.target.value })}
-              className="input"
+              className="input text-sm py-2"
             >
-              <option value="">Todas as Tags</option>
+              <option value="">{t('transactions.allTags')}</option>
               {tags.map((tag) => (
                 <option key={tag.idTag} value={tag.idTag}>
                   {tag.nome}
@@ -322,42 +409,53 @@ export default function Transactions() {
             </select>
           </div>
           <div>
-            <label className="label">Data</label>
+            <label className="label text-xs mb-1">{t('transactions.startDate')}</label>
             <input
               type="date"
-              value={filters.date}
-              onChange={(e) => setFilters({ ...filters, date: e.target.value })}
-              className="input"
+              value={filters.dateStart}
+              onChange={(e) => setFilters({ ...filters, dateStart: e.target.value })}
+              className="input text-sm py-2"
             />
           </div>
           <div>
-            <label className="label">Tipo</label>
+            <label className="label text-xs mb-1">{t('transactions.endDate')}</label>
+            <input
+              type="date"
+              value={filters.dateEnd}
+              onChange={(e) => setFilters({ ...filters, dateEnd: e.target.value })}
+              className="input text-sm py-2"
+            />
+          </div>
+          <div>
+            <label className="label text-xs mb-1">{t('transactions.type')}</label>
             <select
               value={filters.type}
               onChange={(e) => setFilters({ ...filters, type: e.target.value })}
-              className="input"
+              className="input text-sm py-2"
             >
-              <option value="">Todas as Transações</option>
-              <option value="expense">Gastos</option>
-              <option value="income">Receitas</option>
-              <option value="parceladas">Compras Parceladas</option>
-              <option value="unicas">Transações Únicas</option>
+              <option value="">{t('transactions.allTransactions')}</option>
+              <option value="expense">{t('transactions.expenses')}</option>
+              <option value="income">{t('transactions.incomes')}</option>
+              <option value="parceladas">{t('transactions.installmentPurchases')}</option>
+              <option value="unicas">{t('transactions.uniqueTransactions')}</option>
             </select>
           </div>
+          <div className="flex items-end">
+            <button
+              onClick={() => setFilters({ category: '', tag: '', dateStart: '', dateEnd: '', type: '', search: '' })}
+              className="btn-secondary text-sm py-2 w-full"
+            >
+              {t('transactions.clearFilters')}
+            </button>
+          </div>
         </div>
-        <button
-          onClick={() => setFilters({ category: '', tag: '', date: '', type: '', search: '' })}
-          className="btn-secondary mt-4"
-        >
-          Limpar Filtros
-        </button>
       </div>
 
       {/* Transactions List */}
       {transactions.length === 0 ? (
         <div className="card text-center py-12">
           <p className="text-gray-600 dark:text-gray-400">
-            Nenhuma transação encontrada
+            {t('transactions.noTransactions')}
           </p>
         </div>
       ) : (
@@ -433,7 +531,7 @@ export default function Transactions() {
                   )}
                   {transaction.observacoes && transaction.observacoes.length > 0 && (
                     <div className="mt-2">
-                      <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">Observações:</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">{t('transactions.notes')}</p>
                       <ul className="text-xs text-gray-600 dark:text-gray-300 list-disc list-inside mt-1">
                         {Array.isArray(transaction.observacoes) 
                           ? transaction.observacoes.map((obs, idx) => (
@@ -472,7 +570,7 @@ export default function Transactions() {
                         setShowPayInstallmentModal(true);
                       }}
                       className="btn-secondary shrink-0 flex items-center gap-1 px-2 py-1.5 relative z-10"
-                      title="Registrar pagamento antecipado (apenas no sistema)"
+                      title={t('transactions.registerAdvancePayment')}
                       type="button"
                       style={{ pointerEvents: 'auto' }}
                     >
@@ -501,6 +599,28 @@ export default function Transactions() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+      
+      {/* Load More Button */}
+      {hasMore && transactions.length > 0 && (
+        <div className="flex justify-center mt-6">
+          <button
+            onClick={loadMore}
+            disabled={loadingMore}
+            className="btn-secondary flex items-center gap-2"
+          >
+            {loadingMore ? (
+              <>
+                <Spinner size={16} className="text-gray-600 dark:text-gray-400" />
+                {t('common.loading')}
+              </>
+            ) : (
+              <>
+                Carregar mais 12 transações
+              </>
+            )}
+          </button>
         </div>
       )}
 
@@ -567,6 +687,7 @@ export default function Transactions() {
 }
 
 function TransactionModal({ isOpen, onClose, type, categories, accounts, tags, onSuccess, user }) {
+  const { t } = useLanguage();
   const [formData, setFormData] = useState({
     description: '',
     value: '',
@@ -605,19 +726,19 @@ function TransactionModal({ isOpen, onClose, type, categories, accounts, tags, o
     if (!tipo) return '';
     const tipoLower = tipo.toLowerCase();
     if (tipoLower.includes('cartão') || tipoLower.includes('cartao') || tipoLower.includes('cartao_credito') || tipoLower.includes('credito') || tipoLower.includes('crédito')) {
-      return 'Cartão de Crédito';
+      return t('accounts.creditCard');
     }
     if (tipoLower.includes('investimento')) {
-      return 'Investimento';
+      return t('accounts.investment');
     }
     if (tipoLower.includes('corrente')) {
-      return 'Conta Corrente';
+      return t('accounts.current');
     }
     if (tipoLower.includes('poupança') || tipoLower.includes('poupanca')) {
-      return 'Poupança';
+      return t('accounts.savings');
     }
     if (tipoLower.includes('dinheiro')) {
-      return 'Dinheiro';
+      return t('accounts.cash');
     }
     // Retorna o tipo original formatado (primeira letra maiúscula, resto minúscula)
     return tipo.split('_').map(word => 
@@ -631,7 +752,7 @@ function TransactionModal({ isOpen, onClose, type, categories, accounts, tags, o
     // Validação: compra parcelada deve ter pelo menos 2 parcelas
     if (type === 'expense' && formData.isParcelado) {
       if (formData.numeroParcelas < 2) {
-        toast.error('O número de parcelas deve ser no mínimo 2 para compras parceladas.');
+        toast.error(t('transactions.minInstallmentsError'));
         return;
       }
     }
@@ -644,11 +765,17 @@ function TransactionModal({ isOpen, onClose, type, categories, accounts, tags, o
       if (valorInformado > valorDisponivel + 0.01) {
         let mensagem = '';
         if (invoiceInfo.valorFatura <= 0) {
-          mensagem = `Não há fatura pendente para pagar. A fatura atual está em ${formatCurrency(invoiceInfo.valorFatura)}.`;
+          mensagem = t('transactions.noPendingInvoice', { invoiceValue: formatCurrency(invoiceInfo.valorFatura) });
         } else if (invoiceInfo.valorJaPago >= invoiceInfo.valorFatura) {
-          mensagem = `A fatura já foi totalmente paga. Valor da fatura: ${formatCurrency(invoiceInfo.valorFatura)}. Valor já pago: ${formatCurrency(invoiceInfo.valorJaPago)}.`;
+          mensagem = t('transactions.invoiceFullyPaid', { 
+            invoiceAmount: formatCurrency(invoiceInfo.valorFatura), 
+            paidAmount: formatCurrency(invoiceInfo.valorJaPago) 
+          });
         } else {
-          mensagem = `O valor informado (${formatCurrency(valorInformado)}) excede o valor disponível para pagamento (${formatCurrency(valorDisponivel)}).`;
+          mensagem = t('transactions.valueExceedsAvailableDetailed', { 
+            informedValue: formatCurrency(valorInformado), 
+            availableValue: formatCurrency(valorDisponivel) 
+          });
         }
         toast.error(mensagem);
         return;
@@ -691,7 +818,7 @@ function TransactionModal({ isOpen, onClose, type, categories, accounts, tags, o
       if (type === 'expense' && formData.isParcelado) {
         const numParcelas = parseInt(formData.numeroParcelas);
         if (isNaN(numParcelas) || numParcelas < 2) {
-          toast.error('O número de parcelas deve ser no mínimo 2 para compras parceladas.');
+          toast.error(t('transactions.minInstallmentsError'));
           return;
         }
         data.numeroParcelas = numParcelas;
@@ -703,7 +830,7 @@ function TransactionModal({ isOpen, onClose, type, categories, accounts, tags, o
       const endpoint = type === 'expense' ? '/expenses' : '/incomes';
       const response = await api.post(endpoint, data);
       if (response.success) {
-        toast.success(`${type === 'expense' ? 'Gasto Adicionado' : 'Receita Adicionada'}!`);
+        toast.success(t(`transactions.${type === 'expense' ? 'expenseAdded' : 'incomeAdded'}`) + '!');
         onSuccess();
         onClose();
         setFormData({
@@ -722,7 +849,7 @@ function TransactionModal({ isOpen, onClose, type, categories, accounts, tags, o
         });
       }
     } catch (error) {
-      toast.error(error.message || 'Erro ao salvar transação');
+      toast.error(error.message || t('transactions.errorSaving'));
     } finally {
       setLoading(false);
     }
@@ -732,11 +859,11 @@ function TransactionModal({ isOpen, onClose, type, categories, accounts, tags, o
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={type === 'expense' ? 'Novo Gasto' : 'Nova Receita'}
+      title={type === 'expense' ? t('transactions.newExpense') : t('transactions.newIncome')}
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className="label">Descrição</label>
+          <label className="label">{t('transactions.description')}</label>
           <input
             type="text"
             value={formData.description}
@@ -747,7 +874,7 @@ function TransactionModal({ isOpen, onClose, type, categories, accounts, tags, o
         </div>
         <div>
           <label className="label">
-            {formData.isParcelado && type === 'expense' ? 'Valor Total' : 'Valor'}
+            {formData.isParcelado && type === 'expense' ? t('transactions.totalValue') : t('transactions.value')}
           </label>
           <input
             type="number"
@@ -759,13 +886,13 @@ function TransactionModal({ isOpen, onClose, type, categories, accounts, tags, o
           />
           {formData.isParcelado && type === 'expense' && formData.value && formData.numeroParcelas > 1 && (
             <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-              Valor por parcela: {formatCurrency(parseFloat(formData.value || 0) / formData.numeroParcelas)}
+              {t('transactions.valuePerInstallment', { value: formatCurrency(parseFloat(formData.value || 0) / formData.numeroParcelas) })}
             </p>
           )}
         </div>
         <div>
           <label className="label">
-            {formData.isParcelado && type === 'expense' ? 'Data da Primeira Parcela' : 'Data'}
+            {formData.isParcelado && type === 'expense' ? t('transactions.firstInstallmentDate') : t('transactions.date')}
           </label>
           <input
             type="date"
@@ -797,12 +924,12 @@ function TransactionModal({ isOpen, onClose, type, categories, accounts, tags, o
                 }}
                 className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
               />
-              <span className="label">Compra parcelada</span>
+              <span className="label">{t('transactions.installmentPurchase')}</span>
             </label>
             {formData.isParcelado && (
               <div className="mt-3 space-y-3 pl-6 border-l-2 border-primary-200 dark:border-primary-800">
                 <div>
-                  <label className="label">Número de Parcelas</label>
+                  <label className="label">{t('transactions.numberOfInstallments')}</label>
                   <input
                     type="number"
                     min="0"
@@ -829,28 +956,28 @@ function TransactionModal({ isOpen, onClose, type, categories, accounts, tags, o
                   />
                   {formData.numeroParcelas !== '' && formData.numeroParcelas < 2 && (
                     <p className="text-xs text-red-600 dark:text-red-400 mt-1">
-                      O número de parcelas deve ser no mínimo 2 para compras parceladas.
+                      {t('transactions.minInstallmentsError')}
                     </p>
                   )}
                 </div>
                 <div>
-                  <label className="label">Intervalo entre Parcelas (dias)</label>
+                  <label className="label">{t('transactions.installmentInterval')}</label>
                   <select
                     value={formData.intervaloDias}
                     onChange={(e) => setFormData({ ...formData, intervaloDias: parseInt(e.target.value) })}
                     className="input"
                   >
-                    <option value="7">Semanal (7 dias)</option>
-                    <option value="15">Quinzenal (15 dias)</option>
-                    <option value="30">Mensal (30 dias)</option>
-                    <option value="60">Bimestral (60 dias)</option>
-                    <option value="90">Trimestral (90 dias)</option>
+                    <option value="7">{t('transactions.weekly')}</option>
+                    <option value="15">{t('transactions.biweekly')}</option>
+                    <option value="30">{t('transactions.monthly')}</option>
+                    <option value="60">{t('transactions.bimonthly')}</option>
+                    <option value="90">{t('transactions.quarterly')}</option>
                   </select>
                 </div>
                 {formData.value && formData.numeroParcelas !== '' && parseInt(formData.numeroParcelas) >= 2 && formData.date && (
                   <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
                     <p className="text-sm font-medium text-blue-800 dark:text-blue-200 mb-2">
-                      Preview das Parcelas:
+                      {t('transactions.installmentPreview')}
                     </p>
                     <div className="space-y-1 text-xs text-blue-700 dark:text-blue-300 max-h-32 overflow-y-auto">
                       {Array.from({ length: Math.min(parseInt(formData.numeroParcelas), 10) }, (_, i) => {
@@ -859,7 +986,7 @@ function TransactionModal({ isOpen, onClose, type, categories, accounts, tags, o
                         const valorParcela = parseFloat(formData.value || 0) / numParcelas;
                         return (
                           <div key={parcelaNum} className="flex justify-between">
-                            <span>Parcela {parcelaNum}/{numParcelas}:</span>
+                            <span>{t('transactions.installment', { num: parcelaNum, total: numParcelas })}</span>
                             <span className="font-semibold">
                               {formatCurrency(valorParcela)}
                             </span>
@@ -868,7 +995,7 @@ function TransactionModal({ isOpen, onClose, type, categories, accounts, tags, o
                       })}
                       {parseInt(formData.numeroParcelas) > 10 && (
                         <p className="text-blue-600 dark:text-blue-400 italic">
-                          ... e mais {parseInt(formData.numeroParcelas) - 10} parcelas
+                          {t('transactions.andMore', { count: parseInt(formData.numeroParcelas) - 10 })}
                         </p>
                       )}
                     </div>
@@ -880,7 +1007,7 @@ function TransactionModal({ isOpen, onClose, type, categories, accounts, tags, o
         )}
         {type === 'expense' && (
           <div>
-            <label className="label">Categorias</label>
+            <label className="label">{t('transactions.categories')}</label>
             <div className="space-y-2 max-h-32 overflow-y-auto">
               {categories.map((cat) => (
                 <label key={cat.idCategoria} className="flex items-center gap-2">
@@ -908,7 +1035,7 @@ function TransactionModal({ isOpen, onClose, type, categories, accounts, tags, o
           </div>
         )}
         <div className="relative">
-          <label className="label">Conta</label>
+          <label className="label">{t('transactions.account')}</label>
           <select
             value={formData.accountId}
             onChange={async (e) => {
@@ -1000,37 +1127,37 @@ function TransactionModal({ isOpen, onClose, type, categories, accounts, tags, o
                             });
                           }
                         } catch (error) {
-                          console.error('Erro ao carregar informações da fatura:', error);
+                          console.error(t('transactions.errorLoadingInvoice'), error);
                         }
                       }
                     }}
                     className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
                     required
                   />
-                  <span className="label">Esta receita é um pagamento de fatura de cartão de crédito</span>
+                  <span className="label">{t('transactions.invoicePaymentCheckbox')}</span>
                 </label>
                 {!formData.pagamentoFatura && (
                   <p className="text-sm text-red-600 dark:text-red-400 mt-1">
-                    Você deve marcar esta opção para cadastrar receitas em cartão de crédito
+                    {t('transactions.invoicePaymentRequired')}
                   </p>
                 )}
                 {formData.pagamentoFatura && invoiceInfo && (
                   <>
                     <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 mt-2">
                       <p className="text-sm text-blue-800 dark:text-blue-200 font-medium mb-2">
-                        Informações da Fatura:
+                        {t('transactions.invoiceInfo')}
                       </p>
                       <div className="text-xs text-blue-700 dark:text-blue-300 space-y-1">
                         <div className="flex justify-between">
-                          <span>Valor da fatura:</span>
+                          <span>{t('transactions.invoiceValue')}</span>
                           <span className="font-semibold">{formatCurrency(invoiceInfo.valorFatura || 0)}</span>
                         </div>
                         <div className="flex justify-between">
-                          <span>Valor já pago:</span>
+                          <span>{t('transactions.alreadyPaid')}</span>
                           <span className="font-semibold">{formatCurrency(invoiceInfo.valorJaPago || 0)}</span>
                         </div>
                         <div className="flex justify-between pt-1 border-t border-blue-200 dark:border-blue-700">
-                          <span className="font-medium">Disponível para pagamento:</span>
+                          <span className="font-medium">{t('transactions.availableForPayment')}</span>
                           <span className={`font-bold ${
                             (invoiceInfo.valorDisponivel || 0) <= 0 
                               ? 'text-red-600 dark:text-red-400' 
@@ -1042,21 +1169,21 @@ function TransactionModal({ isOpen, onClose, type, categories, accounts, tags, o
                       </div>
                       {formData.value && parseFloat(formData.value) > (invoiceInfo.valorDisponivel || 0) + 0.01 && (
                         <p className="text-xs text-red-600 dark:text-red-400 mt-2 font-medium">
-                          ⚠️ O valor informado excede o valor disponível!
+                          {t('transactions.valueExceedsAvailable')}
                         </p>
                       )}
                     </div>
                     <div className="mt-3">
-                      <label className="label">Conta de Origem (Opcional)</label>
+                      <label className="label">{t('transactions.sourceAccountOptional')}</label>
                       <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
-                        Selecione a conta corrente de onde o dinheiro sairá para pagar esta fatura
+                        {t('transactions.sourceAccountHelp')}
                       </p>
                       <select
                         value={formData.contaOrigemId}
                         onChange={(e) => setFormData({ ...formData, contaOrigemId: e.target.value })}
                         className="input"
                       >
-                        <option value="">Nenhuma (apenas registro da receita)</option>
+                        <option value="">{t('transactions.none')}</option>
                         {accounts
                           .filter((acc) => {
                             const tipo = acc.tipo?.toLowerCase() || '';
@@ -1125,16 +1252,16 @@ function TransactionModal({ isOpen, onClose, type, categories, accounts, tags, o
         </div>
         <div className="flex gap-2 justify-end">
           <button type="button" onClick={onClose} className="btn-secondary">
-            Cancelar
+            {t('common.cancel')}
           </button>
           <button type="submit" className="btn-primary" disabled={loading}>
             {loading ? (
               <>
                 <Spinner size={16} className="text-white mr-2" />
-                Salvando...
+                {t('common.saving')}
               </>
             ) : (
-              'Salvar'
+              t('common.save')
             )}
           </button>
         </div>
@@ -1144,6 +1271,7 @@ function TransactionModal({ isOpen, onClose, type, categories, accounts, tags, o
 }
 
 function PayInstallmentModal({ isOpen, onClose, installment, accounts, onSuccess, user }) {
+  const { t } = useLanguage();
   const [contaOrigemId, setContaOrigemId] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -1151,19 +1279,19 @@ function PayInstallmentModal({ isOpen, onClose, installment, accounts, onSuccess
     if (!tipo) return '';
     const tipoLower = tipo.toLowerCase();
     if (tipoLower.includes('cartão') || tipoLower.includes('cartao') || tipoLower.includes('cartao_credito') || tipoLower.includes('credito') || tipoLower.includes('crédito')) {
-      return 'Cartão de Crédito';
+      return t('accounts.creditCard');
     }
     if (tipoLower.includes('investimento')) {
-      return 'Investimento';
+      return t('accounts.investment');
     }
     if (tipoLower.includes('corrente')) {
-      return 'Conta Corrente';
+      return t('accounts.current');
     }
     if (tipoLower.includes('poupança') || tipoLower.includes('poupanca')) {
-      return 'Poupança';
+      return t('accounts.savings');
     }
     if (tipoLower.includes('dinheiro')) {
-      return 'Dinheiro';
+      return t('accounts.cash');
     }
     return tipo.split('_').map(word => 
       word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
@@ -1174,7 +1302,7 @@ function PayInstallmentModal({ isOpen, onClose, installment, accounts, onSuccess
     e.preventDefault();
     
     if (!contaOrigemId) {
-      toast.error('Selecione a conta de origem para o pagamento');
+      toast.error(t('transactions.selectOriginAccount'));
       return;
     }
 
@@ -1187,15 +1315,15 @@ function PayInstallmentModal({ isOpen, onClose, installment, accounts, onSuccess
       });
 
       if (response.success) {
-        toast.success('Pagamento registrado com sucesso no sistema!');
+        toast.success(t('transactions.paymentRegisteredSuccess'));
         onSuccess();
         onClose();
         setContaOrigemId('');
       } else {
-        toast.error(response.message || 'Erro ao registrar pagamento');
+        toast.error(response.message || t('transactions.errorRegisteringPayment'));
       }
     } catch (error) {
-      toast.error(error.message || 'Erro ao registrar pagamento');
+      toast.error(error.message || t('transactions.errorRegisteringPayment'));
     } finally {
       setLoading(false);
     }
@@ -1237,9 +1365,9 @@ function PayInstallmentModal({ isOpen, onClose, installment, accounts, onSuccess
         </div>
 
         <div>
-          <label className="label">Conta de Origem *</label>
+          <label className="label">{t('transactions.sourceAccountOptional')} *</label>
           <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
-            Selecione a conta de onde o dinheiro sairá (apenas para registro no sistema)
+            {t('transactions.sourceAccountHelp')}
           </p>
           <select
             value={contaOrigemId}
@@ -1275,7 +1403,7 @@ function PayInstallmentModal({ isOpen, onClose, installment, accounts, onSuccess
 
         <div className="flex gap-2 justify-end">
           <button type="button" onClick={onClose} className="btn-secondary" disabled={loading}>
-            Cancelar
+            {t('common.cancel')}
           </button>
           <button type="submit" className="btn-primary" disabled={loading}>
             {loading ? 'Registrando...' : 'Registrar Pagamento'}
@@ -1285,4 +1413,5 @@ function PayInstallmentModal({ isOpen, onClose, installment, accounts, onSuccess
     </Modal>
   );
 }
+
 

@@ -31,6 +31,7 @@ import toast from 'react-hot-toast';
 import Spinner from '../common/Spinner';
 import * as XLSX from 'xlsx';
 import { useAuth } from '../../contexts/AuthContext';
+import { useLanguage } from '../../contexts/LanguageContext';
 import api from '../../services/api';
 import { formatCurrency, formatDate, parseFloatBrazilian } from '../../utils/formatters';
 import Modal from '../common/Modal';
@@ -153,7 +154,7 @@ const eachTwoHoursOfInterval = (interval) => {
   return dates;
 };
 
-const buildEvolutionSeries = (transactions, startDate, endDate) => {
+const buildEvolutionSeries = (transactions, startDate, endDate, t) => {
   if (!transactions.length) return null;
 
   const sorted = [...transactions].sort((a, b) => getTradeDate(a) - getTradeDate(b));
@@ -233,7 +234,7 @@ const buildEvolutionSeries = (transactions, startDate, endDate) => {
     labels,
     datasets: [
       {
-        label: 'Valor Patrimonial',
+        label: t('investments.patrimonialValue'),
         data: currentPoints,
         borderColor: '#3b82f6',
         backgroundColor: 'rgba(59, 130, 246, 0.1)',
@@ -243,7 +244,7 @@ const buildEvolutionSeries = (transactions, startDate, endDate) => {
         pointHoverRadius: 4,
       },
       {
-        label: 'Valor Investido',
+        label: t('investments.investedValue'),
         data: investedPoints,
         borderColor: '#9ca3af',
         borderDash: [5, 5],
@@ -257,18 +258,18 @@ const buildEvolutionSeries = (transactions, startDate, endDate) => {
   };
 };
 
-const buildChartDataFromSeries = (series) => {
+const buildChartDataFromSeries = (series, t) => {
   if (!series || !series.labels || !series.current || !series.current.length) {
     return null;
   }
 
   const categoryNames = {
-    'ACAO': 'Ações (B3)',
-    'STOCK': 'Stocks (Ações Internacionais)',
-    'CRYPTO': 'Criptomoedas',
-    'FII': 'Fundos Imobiliários',
-    'RENDA_FIXA': 'Renda Fixa',
-    'OUTROS': 'Outros'
+    'ACAO': t('investments.categories.ACAO'),
+    'STOCK': t('investments.categories.STOCK'),
+    'CRYPTO': t('investments.categories.CRYPTO'),
+    'FII': t('investments.categories.FII'),
+    'RENDA_FIXA': t('investments.categories.RENDA_FIXA'),
+    'OUTROS': t('investments.categories.OUTROS')
   };
 
   // Cores para cada categoria
@@ -283,7 +284,7 @@ const buildChartDataFromSeries = (series) => {
 
   const datasets = [
     {
-      label: 'Valor Patrimonial',
+      label: t('investments.patrimonialValue'),
       data: series.current,
       borderColor: '#3b82f6',
       backgroundColor: 'rgba(59, 130, 246, 0.1)',
@@ -293,7 +294,7 @@ const buildChartDataFromSeries = (series) => {
       pointHoverRadius: 4,
     },
     {
-      label: 'Valor Investido',
+      label: t('investments.investedValue'),
       data: series.invested || [],
       borderColor: '#9ca3af',
       borderDash: [5, 5],
@@ -341,6 +342,7 @@ const buildChartDataFromSeries = (series) => {
 
 export default function Investments() {
   const { user } = useAuth();
+  const { t } = useLanguage();
   const [investments, setInvestments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [summary, setSummary] = useState({ totalInvested: 0, totalCurrent: 0, totalReturn: 0, totalReturnPercent: 0 });
@@ -356,6 +358,8 @@ export default function Investments() {
   const [evolutionError, setEvolutionError] = useState(null);
   const [showReturnInfo, setShowReturnInfo] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const [assetsLimitPerCategory, setAssetsLimitPerCategory] = useState({}); // Quantos ativos mostrar por categoria
+  const [transactionsLimitPerAsset, setTransactionsLimitPerAsset] = useState({}); // Quantas transações mostrar por ativo
   
   // Ref para armazenar o AbortController da requisição atual
   const abortControllerRef = useRef(null);
@@ -401,7 +405,7 @@ export default function Investments() {
         setEvolutionSeries(response.data || null);
       } else {
         setEvolutionSeries(null);
-        setEvolutionError(response.message || 'Não foi possível atualizar o gráfico.');
+        setEvolutionError(response.message || t('investments.cannotUpdateChart'));
       }
     } catch (error) {
       // Ignora erros de cancelamento - não atualiza o estado se foi cancelado
@@ -418,7 +422,7 @@ export default function Investments() {
       }
       
       setEvolutionSeries(null);
-      setEvolutionError(error.message || 'Não foi possível atualizar o gráfico.');
+      setEvolutionError(error.message || t('investments.cannotUpdateChart'));
     } finally {
       // Só atualiza o loading se a requisição não foi cancelada
       if (!abortController.signal.aborted) {
@@ -436,6 +440,22 @@ export default function Investments() {
       loadInvestments();
       loadAccounts();
     }
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    
+    // Listener para recarregar investimentos quando uma conta for excluída
+    const handleAccountDeleted = () => {
+      loadInvestments();
+    };
+    
+    window.addEventListener('accountDeleted', handleAccountDeleted);
+    
+    return () => {
+      window.removeEventListener('accountDeleted', handleAccountDeleted);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   useEffect(() => {
@@ -478,7 +498,7 @@ export default function Investments() {
       }
     } catch (error) {
       console.error('Erro ao carregar investimentos:', error);
-      toast.error('Erro ao carregar investimentos');
+      toast.error(t('investments.errorLoading'));
     } finally {
       setLoading(false);
     }
@@ -498,17 +518,17 @@ export default function Investments() {
   const [deletingIds, setDeletingIds] = useState(new Set());
 
   const handleDelete = async (id) => {
-    if (!confirm('Tem certeza que deseja excluir este investimento?')) return;
+    if (!confirm(t('investments.deleteConfirm'))) return;
     
     setDeletingIds(prev => new Set(prev).add(id));
     try {
       const response = await api.delete(`/investments?id=${id}`);
       if (response.success) {
-        toast.success('Investimento excluído com sucesso');
+        toast.success(t('investments.deletedSuccess'));
         loadInvestments();
       }
     } catch (error) {
-      toast.error('Erro ao excluir investimento');
+      toast.error(t('investments.errorDeleting'));
     } finally {
       setDeletingIds(prev => {
         const next = new Set(prev);
@@ -549,7 +569,7 @@ export default function Investments() {
   // Chart Data Generation
   const evolutionChartData = useMemo(() => {
     if (evolutionSeries?.labels?.length && evolutionSeries?.current?.length) {
-      return buildChartDataFromSeries(evolutionSeries);
+      return buildChartDataFromSeries(evolutionSeries, t);
     }
 
     if (!investments.length) return null;
@@ -578,8 +598,8 @@ export default function Investments() {
 
     if (startDate > today) startDate = today;
 
-    return buildEvolutionSeries(investments, startDate, today);
-  }, [evolutionSeries, investments, chartPeriod]);
+    return buildEvolutionSeries(investments, startDate, today, t);
+  }, [evolutionSeries, investments, chartPeriod, t]);
 
   const usingServerSeries = useMemo(() => (
     Boolean(evolutionSeries?.labels?.length && evolutionSeries?.current?.length)
@@ -680,12 +700,12 @@ const {
   }, [investments]);
 
   const categoryNames = {
-    'ACAO': 'Ações (B3)',
-    'STOCK': 'Stocks (Ações Internacionais)',
-    'CRYPTO': 'Criptomoedas',
-    'FII': 'Fundos Imobiliários',
-    'RENDA_FIXA': 'Renda Fixa',
-    'OUTROS': 'Outros'
+    'ACAO': t('investments.categories.ACAO'),
+    'STOCK': t('investments.categories.STOCK'),
+    'CRYPTO': t('investments.categories.CRYPTO'),
+    'FII': t('investments.categories.FII'),
+    'RENDA_FIXA': t('investments.categories.RENDA_FIXA'),
+    'OUTROS': t('investments.categories.OUTROS')
   };
 
   // Calculate allocation for chart (only include investments with quantity > 0)
@@ -863,13 +883,13 @@ const {
         doc.setFontSize(24);
         doc.setFont(undefined, 'bold');
         doc.setTextColor(...palette.textPrimary);
-        doc.text('Relatório de Investimentos', margin, yPos);
+        doc.text(t('investments.reportTitle'), margin, yPos);
         yPos += 8;
         
         doc.setFontSize(9);
         doc.setFont(undefined, 'normal');
         doc.setTextColor(...palette.textSecondary);
-        doc.text(`Gerado em ${formatDate(new Date().toISOString())}`, margin, yPos);
+        doc.text(`${t('investments.generatedAt')} ${formatDate(new Date().toISOString())}`, margin, yPos);
         yPos += 16;
 
         // Summary cards estilo SummaryCard
@@ -877,9 +897,9 @@ const {
         const cardSpacing = 4;
         
         drawSummaryCard(
-          'Total Investido',
+          t('investments.totalInvested'),
           formatCurrency(displaySummary.totalInvested),
-          'Capital ainda aplicado',
+          t('investments.capitalStillInvested'),
           margin,
           yPos,
           cardWidth,
@@ -889,9 +909,9 @@ const {
         );
         
         drawSummaryCard(
-          'Valor Atual',
+          t('investments.currentValue'),
           formatCurrency(displaySummary.totalCurrent),
-          'Posições vivas no dia',
+          t('investments.livePositions'),
           margin + cardWidth + cardSpacing,
           yPos,
           cardWidth,
@@ -901,9 +921,9 @@ const {
         );
         
         drawSummaryCard(
-          'Retorno Total',
+          t('investments.totalReturn'),
           formatCurrency(displaySummary.totalReturn),
-          `${displaySummary.totalReturnPercent.toFixed(2)}% (inclui valores realizados)`,
+          `${displaySummary.totalReturnPercent.toFixed(2)}% (${t('investments.includesRealized')})`,
           margin + (cardWidth + cardSpacing) * 2,
           yPos,
           cardWidth,
@@ -915,7 +935,7 @@ const {
         yPos += 40;
 
         // Seções principais
-        drawSectionTitle('Posições Ativas');
+        drawSectionTitle(t('investments.activePositions'));
         const positions = [];
         Object.keys(groupedInvestments).forEach(cat => {
           Object.values(groupedInvestments[cat]).forEach(group => {
@@ -935,7 +955,7 @@ const {
         if (positions.length > 0) {
           autoTable(doc, {
             startY: yPos,
-            head: [['Categoria', 'Ativo', 'Qtd.', 'Preço Médio', 'Valor Atual', 'Valor Investido', 'Retorno %']],
+            head: [[t('investments.category'), t('investments.asset'), t('investments.qty'), t('investments.averagePrice'), t('investments.currentValue'), t('investments.totalInvested'), t('investments.returnPercent')]],
             body: positions.sort((a, b) => {
               // Remove caracteres não numéricos exceto vírgula e ponto, depois normaliza
               const valB = b[4].replace(/[^\d,-]/g, '');
@@ -1018,7 +1038,7 @@ const {
         } else {
           doc.setFontSize(10);
           doc.setTextColor(...palette.textSecondary);
-          doc.text('Não há distribuição para exibir.', margin, yPos);
+          doc.text(t('investments.noDistributionToDisplay'), margin, yPos);
           yPos += 10;
         }
 
@@ -1074,7 +1094,7 @@ const {
           yPos += 10;
         }
 
-        drawSectionTitle('Detalhes Adicionais');
+        drawSectionTitle(t('investments.additionalDetails'));
         doc.setFontSize(9);
         doc.setFont(undefined, 'normal');
         doc.setTextColor(...palette.textSecondary);
@@ -1092,7 +1112,7 @@ const {
           doc.setFontSize(8);
           doc.setTextColor(...palette.gray);
           doc.text(
-            `Página ${i} de ${totalPages} - Controle-se - Relatório de Investimentos`,
+            t('investments.reportPage', { current: i, total: totalPages }),
             pageWidth / 2,
             doc.internal.pageSize.getHeight() - 10,
             { align: 'center' }
@@ -1101,7 +1121,7 @@ const {
 
         console.log('PDF gerado com sucesso, salvando...');
         doc.save(`relatorio_investimentos_${new Date().toISOString().split('T')[0]}.pdf`);
-        toast.success('Relatório exportado como PDF!');
+        toast.success(t('investments.exportSuccessPDF'));
       } else if (format === 'xlsx') {
         console.log('Iniciando exportação XLSX...');
         // Export as XLSX
@@ -1134,10 +1154,10 @@ const {
                 'Nome do Ativo': group.nomeAtivo || '-',
                 'Quantidade': group.quantidadeTotal,
                 'Preço Médio': group.precoMedio,
-                'Valor Atual': group.valorAtualTotal,
-                'Valor Investido': group.valorAporteTotal,
-                'Retorno': group.retornoTotal,
-                'Retorno %': `${group.retornoPercent.toFixed(2)}%`
+                [t('investments.currentValue')]: group.valorAtualTotal,
+                [t('investments.totalInvested')]: group.valorAporteTotal,
+                [t('investments.return')]: group.retornoTotal,
+                [t('investments.returnPercent')]: `${group.retornoPercent.toFixed(2)}%`
               });
             }
           });
@@ -1162,7 +1182,7 @@ const {
 
         console.log('XLSX gerado com sucesso, salvando...');
         XLSX.writeFile(wb, `relatorio_investimentos_${new Date().toISOString().split('T')[0]}.xlsx`);
-        toast.success('Relatório exportado como XLSX!');
+        toast.success(t('investments.exportSuccessXLSX'));
       } else if (format === 'csv') {
         console.log('Iniciando exportação CSV...');
         // Export as CSV
@@ -1171,13 +1191,13 @@ const {
           Object.values(groupedInvestments[cat]).forEach(group => {
             if (group.quantidadeTotal > 0) {
               data.push({
-                'Categoria': categoryNames[cat] || cat,
-                'Ativo': group.nome,
-                'Quantidade': group.quantidadeTotal,
-                'Preço Médio': group.precoMedio,
-                'Valor Atual': group.valorAtualTotal,
-                'Retorno': group.retornoTotal,
-                'Retorno %': `${group.retornoPercent.toFixed(2)}%`
+                [t('investments.category')]: categoryNames[cat] || cat,
+                [t('investments.asset')]: group.nome,
+                [t('investments.quantity')]: group.quantidadeTotal,
+                [t('investments.averagePrice')]: group.precoMedio,
+                [t('investments.currentValue')]: group.valorAtualTotal,
+                [t('investments.return')]: group.retornoTotal,
+                [t('investments.returnPercent')]: `${group.retornoPercent.toFixed(2)}%`
               });
             }
           });
@@ -1194,7 +1214,7 @@ const {
         link.download = `relatorio_investimentos_${new Date().toISOString().split('T')[0]}.csv`;
         link.click();
         console.log('CSV gerado com sucesso');
-        toast.success('Relatório exportado como CSV!');
+        toast.success(t('investments.exportSuccessCSV'));
       }
     } catch (error) {
       console.error('Erro ao exportar relatório:', error);
@@ -1207,7 +1227,7 @@ const {
         calculatedSummary: calculatedSummary,
         groupedInvestments: groupedInvestments
       });
-      toast.error(`Erro ao exportar relatório: ${error.message || 'Erro desconhecido'}`);
+      toast.error(`${t('investments.exportError')}: ${error.message || t('investments.exportErrorUnknown')}`);
     }
   };
 
@@ -1219,8 +1239,8 @@ const {
     <div className="space-y-6 animate-fade-in">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">Investimentos</h2>
-          <p className="text-sm sm:text-base text-gray-600 dark:text-gray-400 mt-1">Acompanhe seus investimentos</p>
+          <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">{t('investments.title')}</h2>
+          <p className="text-sm sm:text-base text-gray-600 dark:text-gray-400 mt-1">{t('investments.subtitle')}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button 
@@ -1228,7 +1248,7 @@ const {
             className="btn-secondary flex items-center gap-2 text-sm sm:text-base px-3 sm:px-4 py-2"
           >
             <FileText className="w-4 h-4" />
-            <span className="hidden sm:inline">Extrato</span>
+            <span className="hidden sm:inline">{t('investments.statement')}</span>
           </button>
           <div className="relative group">
             <button 
@@ -1244,8 +1264,8 @@ const {
               }}
             >
               <Download className="w-4 h-4" />
-              <span className="hidden sm:inline">Exportar Relatório</span>
-              <span className="sm:hidden">Exportar</span>
+              <span className="hidden sm:inline">{t('investments.exportReport')}</span>
+              <span className="sm:hidden">{t('investments.export')}</span>
             </button>
             <div 
               className={`absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 transition-all z-50 ${
@@ -1264,7 +1284,7 @@ const {
                 className="w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-t-lg flex items-center gap-2"
               >
                 <FileText size={16} />
-                PDF
+                {t('investments.exportPDF')}
               </button>
               <button
                 onClick={(e) => {
@@ -1276,7 +1296,7 @@ const {
                 className="w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
               >
                 <FileSpreadsheet size={16} />
-                XLSX
+                {t('investments.exportExcel')}
               </button>
               <button
                 onClick={(e) => {
@@ -1288,7 +1308,7 @@ const {
                 className="w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-b-lg flex items-center gap-2"
               >
                 <File size={16} />
-                CSV
+                {t('investments.exportCSV')}
               </button>
             </div>
           </div>
@@ -1297,27 +1317,27 @@ const {
             className="btn-primary flex items-center gap-2 text-sm sm:text-base px-3 sm:px-4 py-2"
           >
             <Plus className="w-4 h-4" />
-            <span className="hidden sm:inline">Novo Investimento</span>
-            <span className="sm:hidden">Novo</span>
+            <span className="hidden sm:inline">{t('investments.addInvestment')}</span>
+            <span className="sm:hidden">{t('common.new')}</span>
           </button>
         </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <SummaryCard
-          title="Total Investido"
+          title={t('investments.totalInvested')}
           amount={formatCurrency(displaySummary.totalInvested)}
           icon={Wallet}
           type="default"
         />
         <SummaryCard
-          title="Valor Atual"
+          title={t('investments.currentValue')}
           amount={formatCurrency(displaySummary.totalCurrent)}
           icon={TrendingUp}
           type="balance"
         />
         <SummaryCard
-          title="Retorno Total"
+          title={t('investments.totalReturn')}
           amount={formatCurrency(displaySummary.totalReturn)}
           icon={PieChart}
           type={displaySummary.totalReturn >= 0 ? 'income' : 'expense'}
@@ -1330,10 +1350,10 @@ const {
                 setShowReturnInfo(true);
               }}
               className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
-              aria-label="Informações sobre o retorno total"
+              aria-label={t('investments.returnInfo')}
             >
               <Info className="w-4 h-4" />
-              <span>Entenda</span>
+              <span>{t('common.understand')}</span>
             </button>
           }
         />
@@ -1343,7 +1363,7 @@ const {
         {/* Evolution Chart */}
         <div className="lg:col-span-2 card">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
-            <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white">Evolução Patrimonial Dos Seus Investimentos</h3>
+            <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white">{t('investments.evolutionTitle')}</h3>
             <div className="flex flex-wrap gap-2">
               {chartPeriods.map(period => (
                 <button
@@ -1363,7 +1383,7 @@ const {
           <div className="h-64 w-full">
             {evolutionLoading ? (
               <div className="h-full flex items-center justify-center text-gray-500 dark:text-gray-400 text-sm">
-                Obtendo informações. Isso pode demorar um pouco...
+                {t('investments.loadingEvolution')}
               </div>
             ) : evolutionChartData ? (
               <>
@@ -1423,13 +1443,13 @@ const {
                 )}
                 {!usingServerSeries && !evolutionError && (
                   <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                    Dados calculados apenas com base nos aportes registrados.
+                    {t('investments.calculatedFromContributions')}
                   </p>
                 )}
               </>
             ) : (
               <div className="h-full flex items-center justify-center text-gray-500 dark:text-gray-400 text-sm">
-                Cadastre seus investimentos para visualizar o gráfico.
+                {t('investments.registerToViewChart')}
               </div>
             )}
           </div>
@@ -1437,7 +1457,7 @@ const {
 
         {/* Assets Allocation Chart */}
         <div className="lg:col-span-1 card">
-          <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white mb-4">Alocação de Ativos</h3>
+          <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white mb-4">{t('investments.assetAllocation')}</h3>
           {allocationData.length > 0 ? (
             <div className="h-64">
               <Doughnut
@@ -1461,7 +1481,7 @@ const {
               />
             </div>
           ) : (
-            <p className="text-center text-gray-500 py-8">Sem dados para exibir</p>
+            <p className="text-center text-gray-500 py-8">{t('common.noData')}</p>
           )}
         </div>
       </div>
@@ -1470,7 +1490,7 @@ const {
       <div className="space-y-6">
         {Object.keys(groupedInvestments).length === 0 ? (
            <div className="card text-center py-12">
-             <p className="text-gray-600 dark:text-gray-400">Nenhum investimento cadastrado</p>
+             <p className="text-gray-600 dark:text-gray-400">{t('investments.noInvestments')}</p>
            </div>
         ) : (
           Object.entries(groupedInvestments).map(([category, assetsMap]) => {
@@ -1479,7 +1499,9 @@ const {
             if (assets.length === 0) return null;
             
             const isExpanded = expandedCategories[category];
-            const displayAssets = isExpanded ? assets : assets.slice(0, 5);
+            const limit = assetsLimitPerCategory[category] || 12;
+            const displayAssets = isExpanded ? assets.slice(0, limit) : assets.slice(0, 5);
+            const hasMoreAssets = assets.length > limit;
             const totalValue = assets.reduce((sum, a) => sum + a.valorAtualTotal, 0);
             const totalInvested = assets.reduce((sum, a) => sum + a.valorAporteTotal, 0);
             const totalReturn = totalValue - totalInvested;
@@ -1513,7 +1535,7 @@ const {
 
                 {isExpanded && (
                   <div className="space-y-3 mt-6">
-                    {assets.map(asset => {
+                    {displayAssets.map(asset => {
                         const isPositive = asset.retornoTotal >= 0;
                         return (
                             <div 
@@ -1531,12 +1553,12 @@ const {
                                         </span>
                                         {asset.quantidadeTotal > 0 && (
                                             <span className="text-xs text-gray-500 dark:text-gray-400 flex-shrink-0">
-                                                {asset.quantidadeTotal} {asset.categoria === 'RENDA_FIXA' ? 'un' : 'cotas'}
+                                                {asset.quantidadeTotal} {asset.categoria === 'RENDA_FIXA' ? t('investments.units') : t('investments.shares')}
                                             </span>
                                         )}
                                     </div>
                                     <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                                        Preço Médio: {formatCurrency(asset.precoMedio)}
+                                        {t('investments.averagePrice')}: {formatCurrency(asset.precoMedio)}
                                     </div>
                                 </div>
                                 
@@ -1553,6 +1575,22 @@ const {
                             </div>
                         );
                     })}
+                    {hasMoreAssets && (
+                      <div className="flex justify-center pt-2">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setAssetsLimitPerCategory(prev => ({
+                              ...prev,
+                              [category]: (prev[category] || 12) + 12
+                            }));
+                          }}
+                          className="btn-secondary text-sm"
+                        >
+                          {t('investments.loadMoreAssets')}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -1587,18 +1625,17 @@ const {
       <Modal
         isOpen={showReturnInfo}
         onClose={() => setShowReturnInfo(false)}
-        title="Como calculamos o retorno?"
+        title={t('investments.howWeCalculateReturn')}
       >
         <div className="space-y-3 text-sm text-gray-600 dark:text-gray-300">
           <p>
-            O <strong>Retorno Total</strong> considera tanto o que ainda está aplicado quanto tudo o que já foi vendido.
+            {t('investments.returnExplanation1')}
           </p>
           <p>
-            Por isso, ele soma os ganhos e perdas realizados às variações dos investimentos atuais. Assim, ele pode ser diferente de um cálculo simples de
-            <em> valor atual - total investido</em>.
+            {t('investments.returnExplanation2')}
           </p>
           <p>
-            Em resumo: se você já resgatou parte dos investimentos, o retorno continua exibindo esse histórico para que você saiba exatamente quanto acumulou.
+            {t('investments.returnExplanation3')}
           </p>
         </div>
       </Modal>

@@ -31,19 +31,28 @@ public class TransactionsHandler implements HttpHandler {
         try {
             String userIdParam = RequestUtil.getQueryParam(exchange, "userId");
             String categoryIdParam = RequestUtil.getQueryParam(exchange, "categoryId");
-            String dateParam = RequestUtil.getQueryParam(exchange, "date");
+            String dateStartParam = RequestUtil.getQueryParam(exchange, "dateStart");
+            String dateEndParam = RequestUtil.getQueryParam(exchange, "dateEnd");
             String typeParam = RequestUtil.getQueryParam(exchange, "type");
+            String limitParam = RequestUtil.getQueryParam(exchange, "limit");
+            String offsetParam = RequestUtil.getQueryParam(exchange, "offset");
             
             int userId = userIdParam != null ? Integer.parseInt(userIdParam) : 1;
             Integer categoryId = (categoryIdParam != null && !categoryIdParam.isEmpty()) 
                 ? Integer.parseInt(categoryIdParam) : null;
-            LocalDate date = (dateParam != null && !dateParam.isEmpty()) 
-                ? LocalDate.parse(dateParam) : null;
+            LocalDate dateStart = (dateStartParam != null && !dateStartParam.isEmpty()) 
+                ? LocalDate.parse(dateStartParam) : null;
+            LocalDate dateEnd = (dateEndParam != null && !dateEndParam.isEmpty()) 
+                ? LocalDate.parse(dateEndParam) : null;
             String type = (typeParam != null && !typeParam.isEmpty()) ? typeParam : null;
             
-            List<Gasto> expenses = expenseRepository.buscarGastosComFiltros(userId, categoryId, date, type);
+            // Paginação: padrão 12 itens, offset 0
+            int limit = (limitParam != null && !limitParam.isEmpty()) ? Integer.parseInt(limitParam) : 12;
+            int offset = (offsetParam != null && !offsetParam.isEmpty()) ? Integer.parseInt(offsetParam) : 0;
+            
+            List<Gasto> expenses = expenseRepository.buscarGastosComFiltros(userId, categoryId, dateStart, dateEnd, type, limit, offset);
             List<Receita> incomes = (categoryId == null) 
-                ? incomeRepository.buscarReceitasComFiltros(userId, date, type) 
+                ? incomeRepository.buscarReceitasComFiltros(userId, dateStart, dateEnd, type, limit, offset) 
                 : new ArrayList<>();
             
             List<Integer> idsGastos = new ArrayList<>();
@@ -157,9 +166,15 @@ public class TransactionsHandler implements HttpHandler {
             
             transactions.sort((a, b) -> ((String) b.get("date")).compareTo((String) a.get("date")));
             
+            // Verifica se há mais transações para carregar
+            boolean hasMore = transactions.size() == limit;
+            
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);
             response.put("data", transactions);
+            response.put("hasMore", hasMore);
+            response.put("limit", limit);
+            response.put("offset", offset);
             
             ResponseUtil.sendJsonResponse(exchange, 200, response);
         } catch (Exception e) {

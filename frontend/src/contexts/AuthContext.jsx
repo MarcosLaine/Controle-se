@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import api from '../services/api';
 import toast from 'react-hot-toast';
+import { useLanguage } from './LanguageContext';
 
 const AuthContext = createContext(null);
 
@@ -13,6 +14,7 @@ export const useAuth = () => {
 };
 
 export const AuthProvider = ({ children }) => {
+  const { t } = useLanguage();
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -41,7 +43,7 @@ export const AuthProvider = ({ children }) => {
       if (response.success) {
         setUser(response.user);
         localStorage.setItem('controle-se-user', JSON.stringify(response.user));
-        toast.success('Login realizado com sucesso!');
+        toast.success(t('auth.loginSuccess'));
         return { success: true };
       } else {
         // Verifica se precisa de CAPTCHA
@@ -54,7 +56,7 @@ export const AuthProvider = ({ children }) => {
             failedAttempts: response.failedAttempts 
           };
         }
-        toast.error(response.message || 'Erro no login');
+        toast.error(response.message || t('common.errorLogin'));
         return { success: false, message: response.message, requiresCaptcha: response.requiresCaptcha };
       }
     } catch (error) {
@@ -68,7 +70,7 @@ export const AuthProvider = ({ children }) => {
           failedAttempts: error.failedAttempts
         };
       }
-      toast.error(error.message || 'Erro ao fazer login');
+      toast.error(error.message || t('common.errorDoingLogin'));
       return { success: false, message: error.message };
     }
   };
@@ -82,14 +84,14 @@ export const AuthProvider = ({ children }) => {
           setUser(response.user);
           localStorage.setItem('controle-se-user', JSON.stringify(response.user));
         }
-        toast.success('Cadastro realizado com sucesso!');
+        toast.success(t('auth.registerSuccess'));
         return { success: true };
       } else {
-        toast.error(response.message || 'Erro no cadastro');
+        toast.error(response.message || t('common.errorRegister'));
         return { success: false, message: response.message };
       }
     } catch (error) {
-      toast.error(error.message || 'Erro ao fazer cadastro');
+      toast.error(error.message || t('common.errorDoingRegister'));
       return { success: false, message: error.message };
     }
   };
@@ -97,16 +99,16 @@ export const AuthProvider = ({ children }) => {
   const logout = () => {
     setUser(null);
     localStorage.removeItem('controle-se-user');
-    toast.success('Logout realizado com sucesso!');
+    toast.success(t('auth.logoutSuccess'));
   };
 
   const changePassword = async (currentPassword, newPassword) => {
     try {
       const response = await api.post('/auth/change-password', { currentPassword, newPassword });
-      toast.success(response.message || 'Senha atualizada com sucesso!');
+      toast.success(response.message || t('common.passwordUpdated'));
       return { success: true };
     } catch (error) {
-      toast.error(error.message || 'Erro ao atualizar senha');
+      toast.error(error.message || t('common.errorUpdatingPassword'));
       return { success: false, message: error.message };
     }
   };

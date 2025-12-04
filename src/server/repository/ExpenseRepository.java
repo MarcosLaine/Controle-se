@@ -4,6 +4,7 @@ import server.database.DatabaseConnection;
 import server.model.Categoria;
 import server.model.Conta;
 import server.model.Gasto;
+import server.utils.CreditCardUtil;
 import server.validation.InputValidator;
 import server.validation.ValidationResult;
 import java.sql.*;
@@ -411,6 +412,11 @@ public class ExpenseRepository {
     }
 
     public List<Gasto> buscarGastosComFiltros(int idUsuario, Integer idCategoria, LocalDate data, String type) {
+        // Para compatibilidade: se data não for null, usa como dateStart e dateEnd (filtro exato)
+        return buscarGastosComFiltros(idUsuario, idCategoria, data, data, type, Integer.MAX_VALUE, 0);
+    }
+    
+    public List<Gasto> buscarGastosComFiltros(int idUsuario, Integer idCategoria, LocalDate dateStart, LocalDate dateEnd, String type, int limit, int offset) {
         StringBuilder sql = new StringBuilder(
             "SELECT DISTINCT g.id_gasto, g.descricao, g.valor, g.data, g.frequencia, " +
             "g.id_usuario, g.id_conta, g.proxima_recorrencia, g.id_gasto_original, g.ativo, " +
@@ -452,23 +458,36 @@ public class ExpenseRepository {
             sql.append(" AND cg.id_categoria = ?");
             params.add(idCategoria);
         }
-        if (data != null) {
-            sql.append(" AND g.data = ?");
-            params.add(data);
+        if (dateStart != null && dateEnd != null) {
+            sql.append(" AND g.data >= ? AND g.data <= ?");
+            params.add(dateStart);
+            params.add(dateEnd);
+        } else if (dateStart != null) {
+            sql.append(" AND g.data >= ?");
+            params.add(dateStart);
+        } else if (dateEnd != null) {
+            sql.append(" AND g.data <= ?");
+            params.add(dateEnd);
         }
         sql.append(" ORDER BY g.data DESC");
+        
+        // Adiciona LIMIT e OFFSET para paginação
+        sql.append(" LIMIT ? OFFSET ?");
+        params.add(limit);
+        params.add(offset);
         
         List<Gasto> gastos = new ArrayList<>();
         try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql.toString())) {
-            for (int i = 0; i < params.size(); i++) {
-                Object param = params.get(i);
+            int paramIndex = 1;
+            for (Object param : params) {
                 if (param instanceof Integer) {
-                    pstmt.setInt(i + 1, (Integer) param);
+                    pstmt.setInt(paramIndex++, (Integer) param);
                 } else if (param instanceof LocalDate) {
-                    pstmt.setDate(i + 1, java.sql.Date.valueOf((LocalDate) param));
+                    pstmt.setDate(paramIndex++, java.sql.Date.valueOf((LocalDate) param));
                 }
             }
+            // Os últimos dois parâmetros são sempre limit e offset (já adicionados na lista params)
             ResultSet rs = pstmt.executeQuery();
             while (rs.next()) {
                 Gasto gasto = mapGasto(rs);
@@ -670,20 +689,77 @@ public class ExpenseRepository {
     /**
      * Calcula o valor total da fatura atual de um cartão de crédito
      * Soma todos os gastos no período entre o último fechamento e o próximo fechamento
+     * Para parcelas, calcula a data de fechamento da fatura correspondente à data da compra original
+     * e usa essa data para determinar se a parcela pertence à fatura
      */
     public double calcularValorFaturaAtual(int idConta, LocalDate dataInicio, LocalDate dataFim) {
-        String sql = "SELECT COALESCE(SUM(valor), 0) as total " +
-                    "FROM gastos " +
-                    "WHERE id_conta = ? AND ativo = TRUE " +
-                    "AND data >= ? AND data < ?";
+        // Busca informações da conta para calcular a data de fechamento da fatura
+        AccountRepository accountRepository = new AccountRepository();
+        Conta conta = accountRepository.buscarConta(idConta);
+        
+        if (conta == null || !conta.isCartaoCredito() || conta.getDiaFechamento() == null || conta.getDiaPagamento() == null) {
+            // Se não for cartão de crédito ou não tiver informações de fatura, usa a lógica normal
+            String sql = "SELECT COALESCE(SUM(valor), 0) as total " +
+                        "FROM gastos " +
+                        "WHERE id_conta = ? AND ativo = TRUE " +
+                        "AND data >= ? AND data < ?";
+            try (Connection conn = getConnection();
+                 PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                pstmt.setInt(1, idConta);
+                pstmt.setDate(2, java.sql.Date.valueOf(dataInicio));
+                pstmt.setDate(3, java.sql.Date.valueOf(dataFim));
+                ResultSet rs = pstmt.executeQuery();
+                if (rs.next()) return rs.getDouble("total");
+                return 0.0;
+            } catch (SQLException e) {
+                throw new RuntimeException("Erro ao calcular valor da fatura: " + e.getMessage(), e);
+            }
+        }
+        
+        // Para cartão de crédito, precisa calcular a data de fechamento da fatura para cada parcela
+        // Busca todas as parcelas e calcula manualmente
+        String sql = "SELECT g.id_gasto, g.valor, g.data, g.id_grupo_parcela, ig.data_primeira_parcela " +
+                    "FROM gastos g " +
+                    "LEFT JOIN installment_groups ig ON g.id_grupo_parcela = ig.id_grupo " +
+                    "WHERE g.id_conta = ? AND g.ativo = TRUE " +
+                    "AND (g.id_grupo_parcela IS NULL OR ig.data_primeira_parcela IS NOT NULL)";
+        
+        double total = 0.0;
         try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setInt(1, idConta);
-            pstmt.setDate(2, java.sql.Date.valueOf(dataInicio));
-            pstmt.setDate(3, java.sql.Date.valueOf(dataFim));
             ResultSet rs = pstmt.executeQuery();
-            if (rs.next()) return rs.getDouble("total");
-            return 0.0;
+            
+            while (rs.next()) {
+                LocalDate dataGasto = rs.getDate("data").toLocalDate();
+                Integer idGrupoParcela = (Integer) rs.getObject("id_grupo_parcela");
+                
+                LocalDate dataParaComparacao;
+                if (idGrupoParcela != null) {
+                    // É uma parcela: calcula a data de fechamento da fatura correspondente à data da compra original
+                    LocalDate dataCompraOriginal = rs.getDate("data_primeira_parcela").toLocalDate();
+                    dataParaComparacao = CreditCardUtil.calcularDataPrimeiraParcela(
+                        dataCompraOriginal,
+                        conta.getDiaFechamento(),
+                        conta.getDiaPagamento()
+                    );
+                } else {
+                    // É um gasto normal (não parcelado): calcula a data de fechamento da fatura correspondente à data do gasto
+                    // A fatura é identificada pela data de pagamento, então calcula qual fatura essa compra pertence
+                    dataParaComparacao = CreditCardUtil.calcularDataPrimeiraParcela(
+                        dataGasto,
+                        conta.getDiaFechamento(),
+                        conta.getDiaPagamento()
+                    );
+                }
+                
+                // Verifica se a data está no período da fatura
+                if (dataParaComparacao.compareTo(dataInicio) >= 0 && dataParaComparacao.compareTo(dataFim) < 0) {
+                    total += rs.getDouble("valor");
+                }
+            }
+            
+            return total;
         } catch (SQLException e) {
             throw new RuntimeException("Erro ao calcular valor da fatura: " + e.getMessage(), e);
         }

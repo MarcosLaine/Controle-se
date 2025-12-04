@@ -305,10 +305,10 @@ public class ControleSeServer {
             @Override
             public void run() {
                 try {
-                    LOGGER.info("=== ATUALIZAÇÃO DE COTAÇÕES ===");
+                    // LOGGER.info("=== ATUALIZAÇÃO DE COTAÇÕES ===");
                     QuoteService quoteService = QuoteService.getInstance();
                     quoteService.cleanExpiredCache();
-                    LOGGER.info("Cache de cotações limpo e atualizado");
+                    // LOGGER.info("Cache de cotações limpo e atualizado");
                 } catch (Exception e) {
                     System.err.println("Erro ao atualizar cotações: " + e.getMessage());
                     e.printStackTrace();
@@ -316,7 +316,7 @@ public class ControleSeServer {
             }
         }, 0, periodo);
         
-        LOGGER.info("[INICIALIZAÇÃO] Scheduler de cotações iniciado (atualiza a cada 30 minutos)");
+        // LOGGER.info("[INICIALIZAÇÃO] Scheduler de cotações iniciado (atualiza a cada 30 minutos)");
     }
     
     /**

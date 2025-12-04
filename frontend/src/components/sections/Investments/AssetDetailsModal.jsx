@@ -1,14 +1,29 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { X, Edit2, Trash2, Calendar, DollarSign, TrendingUp } from 'lucide-react';
+import { useLanguage } from '../../../contexts/LanguageContext';
 import Modal from '../../common/Modal';
 import { formatCurrency, formatDate } from '../../../utils/formatters';
 import Spinner from '../../common/Spinner';
 
 export default function AssetDetailsModal({ isOpen, onClose, assetGroup, onEdit, onDelete, deletingIds = new Set() }) {
+  const { t } = useLanguage();
+  const [transactionsLimit, setTransactionsLimit] = useState(12);
+  
+  // Reseta o limite quando o modal for fechado
+  React.useEffect(() => {
+    if (!isOpen) {
+      setTransactionsLimit(12);
+    }
+  }, [isOpen]);
+  
   if (!assetGroup) return null;
 
   const isPositive = (assetGroup.retornoTotal || 0) >= 0;
   const isFixedIncome = assetGroup.categoria === 'RENDA_FIXA';
+  
+  // Limita as transações exibidas
+  const displayTransactions = assetGroup.aportes ? assetGroup.aportes.slice(0, transactionsLimit) : [];
+  const hasMoreTransactions = assetGroup.aportes ? assetGroup.aportes.length > transactionsLimit : false;
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={`${assetGroup.nome} ${assetGroup.nomeAtivo && assetGroup.nomeAtivo !== assetGroup.nome ? ` - ${assetGroup.nomeAtivo}` : ''}`} size="lg">
@@ -47,7 +62,7 @@ export default function AssetDetailsModal({ isOpen, onClose, assetGroup, onEdit,
             Aportes Realizados
           </h4>
           <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
-            {assetGroup.aportes.map((aporte) => {
+            {displayTransactions.map((aporte) => {
               const isSell = aporte.quantidade < 0;
               // For Sells: Return is (Sell Price - Avg Price) * Qty ? Or just show transaction details.
               // Let's simplify: Show transaction value.
@@ -109,7 +124,7 @@ export default function AssetDetailsModal({ isOpen, onClose, assetGroup, onEdit,
                             onClose();
                         }}
                         className="p-1.5 text-gray-400 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/20 rounded transition-colors"
-                        title="Editar"
+                        title={t('common.edit')}
                       >
                         <Edit2 size={14} />
                       </button>
@@ -119,7 +134,7 @@ export default function AssetDetailsModal({ isOpen, onClose, assetGroup, onEdit,
                             onClose();
                         }}
                         className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                        title="Excluir"
+                        title={t('common.delete')}
                         disabled={deletingIds.has(aporte.idInvestimento)}
                       >
                         {deletingIds.has(aporte.idInvestimento) ? (
@@ -134,6 +149,16 @@ export default function AssetDetailsModal({ isOpen, onClose, assetGroup, onEdit,
               );
             })}
           </div>
+          {hasMoreTransactions && (
+            <div className="flex justify-center pt-4 mt-4 border-t border-gray-100 dark:border-gray-700">
+              <button
+                onClick={() => setTransactionsLimit(prev => prev + 12)}
+                className="btn-secondary text-sm"
+              >
+                Carregar mais 12 transações
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </Modal>

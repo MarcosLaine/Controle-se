@@ -2,6 +2,7 @@ import { Building2, Edit, Plus, Trash2 } from 'lucide-react';
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../contexts/AuthContext';
+import { useLanguage } from '../../contexts/LanguageContext';
 import api from '../../services/api';
 import axios from 'axios';
 import { formatCurrency, parseFloatBrazilian, formatDate } from '../../utils/formatters';
@@ -11,6 +12,7 @@ import Spinner from '../common/Spinner';
 
 export default function Accounts() {
   const { user } = useAuth();
+  const { t } = useLanguage();
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -32,19 +34,19 @@ export default function Accounts() {
     if (!tipo) return '';
     const tipoLower = tipo.toLowerCase();
     if (tipoLower.includes('cartão') || tipoLower.includes('cartao') || tipoLower.includes('cartao_credito')) {
-      return 'Cartão de Crédito';
+      return t('accounts.creditCard');
     }
     if (tipoLower.includes('investimento')) {
-      return 'Investimento';
+      return t('accounts.investment');
     }
     if (tipoLower.includes('corrente')) {
-      return 'Conta Corrente';
+      return t('accounts.current');
     }
     if (tipoLower.includes('poupança') || tipoLower.includes('poupanca')) {
-      return 'Poupança';
+      return t('accounts.savings');
     }
     if (tipoLower.includes('dinheiro')) {
-      return 'Dinheiro';
+      return t('accounts.cash');
     }
     // Retorna o tipo original com primeira letra maiúscula
     return tipo.charAt(0).toUpperCase() + tipo.slice(1).toLowerCase();
@@ -90,7 +92,7 @@ export default function Accounts() {
         return;
       }
       
-      toast.error('Erro ao carregar contas');
+      toast.error(t('accounts.errorLoading'));
     } finally {
       // Só atualiza o loading se a requisição não foi cancelada
       if (!abortController.signal.aborted) {
@@ -128,7 +130,7 @@ export default function Accounts() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.nome.trim()) {
-      toast.error('Nome da conta é obrigatório');
+      toast.error(t('accounts.nameRequired'));
       return;
     }
 
@@ -139,6 +141,10 @@ export default function Accounts() {
       if (tipo && tipo.toLowerCase().includes('investimento')) {
         tipo = 'Investimento';
       }
+      // Normaliza cartão de crédito: se contém "cartão" ou "cartao", salva como "Cartão de Crédito"
+      if (tipo && (tipo.toLowerCase().includes('cartão') || tipo.toLowerCase().includes('cartao'))) {
+        tipo = 'Cartão de Crédito';
+      }
       
       const data = {
         nome: formData.nome,
@@ -148,12 +154,17 @@ export default function Accounts() {
       };
       
       // Adiciona campos de cartão de crédito se for cartão
+      // Sempre envia os campos, mesmo que vazios, para que o backend possa preservar valores existentes
       if (tipo && (tipo.toLowerCase().includes('cartão') || tipo.toLowerCase().includes('cartao'))) {
-        if (formData.diaFechamento) {
+        if (formData.diaFechamento && formData.diaFechamento.trim() !== '') {
           data.diaFechamento = parseInt(formData.diaFechamento);
+        } else {
+          data.diaFechamento = null;
         }
-        if (formData.diaPagamento) {
+        if (formData.diaPagamento && formData.diaPagamento.trim() !== '') {
           data.diaPagamento = parseInt(formData.diaPagamento);
+        } else {
+          data.diaPagamento = null;
         }
       }
 
@@ -161,20 +172,20 @@ export default function Accounts() {
       if (editingAccount) {
         const response = await api.put(`/accounts/${editingAccount.idConta}`, data);
         if (response.success) {
-          toast.success('Conta atualizada!');
+          toast.success(t('accounts.updatedSuccess'));
           loadAccounts();
           handleCloseModal();
         }
       } else {
         const response = await api.post('/accounts', data);
         if (response.success) {
-          toast.success('Conta criada!');
+          toast.success(t('accounts.createdSuccess'));
           loadAccounts();
           handleCloseModal();
         }
       }
     } catch (error) {
-      toast.error(error.message || 'Erro ao salvar conta');
+      toast.error(error.message || t('accounts.errorSaving'));
     } finally {
       setSubmitting(false);
     }
@@ -187,6 +198,10 @@ export default function Accounts() {
     if (accountType && accountType.toLowerCase().includes('investimento')) {
       accountType = 'Investimento';
     }
+    // Normaliza cartão de crédito: se contém "cartão" ou "cartao", mostra como "Cartão de Crédito"
+    if (accountType && (accountType.toLowerCase().includes('cartão') || accountType.toLowerCase().includes('cartao') || accountType.toLowerCase().includes('cartao_credito'))) {
+      accountType = 'Cartão de Crédito';
+    }
     setFormData({
       nome: account.nome,
       tipo: accountType,
@@ -198,18 +213,19 @@ export default function Accounts() {
   };
 
   const handleDelete = async (id) => {
-    if (!confirm('Tem certeza que deseja excluir esta conta?')) return;
+    if (!confirm(t('accounts.deleteConfirm'))) return;
 
     setDeletingIds(prev => new Set(prev).add(id));
     try {
       const response = await api.delete(`/accounts/${id}?userId=${user.id}`);
       if (response.success) {
-        toast.success('Conta excluída!');
+        toast.success(t('accounts.deletedSuccess'));
         loadAccounts();
-        loadInvestments();
+        // Dispara evento para recarregar investimentos se necessário
+        window.dispatchEvent(new CustomEvent('accountDeleted'));
       }
     } catch (error) {
-      toast.error(error.message || 'Erro ao excluir conta');
+      toast.error(error.message || t('accounts.errorDeleting'));
     } finally {
       setDeletingIds(prev => {
         const next = new Set(prev);
@@ -234,15 +250,15 @@ export default function Accounts() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-bold text-gray-900 dark:text-white">
-            Contas
+            {t('accounts.title')}
           </h2>
           <p className="text-gray-600 dark:text-gray-400 mt-1">
-            Gerencie suas contas bancárias
+            {t('accounts.subtitle')}
           </p>
         </div>
         <button onClick={() => setShowModal(true)} className="btn-primary">
           <Plus className="w-4 h-4" />
-          Nova Conta
+          {t('accounts.newAccount')}
         </button>
       </div>
 
@@ -250,7 +266,7 @@ export default function Accounts() {
         <div className="card text-center py-12">
           <Building2 className="w-16 h-16 text-gray-400 mx-auto mb-4" />
           <p className="text-gray-600 dark:text-gray-400">
-            Nenhuma conta cadastrada
+            {t('accounts.noAccountsRegistered')}
           </p>
         </div>
       ) : (
@@ -271,7 +287,7 @@ export default function Accounts() {
                   </div>
                   {isCartao && (
                     <p className="text-xs text-gray-500 dark:text-gray-500 mb-1">
-                      Crédito Disponível
+                      {t('accounts.creditAvailable')}
                     </p>
                   )}
                   <p className={`text-2xl font-bold mb-2 ${isCartao ? 'text-orange-600 dark:text-orange-400' : 'text-primary-600 dark:text-primary-400'}`}>
@@ -281,15 +297,15 @@ export default function Accounts() {
                     <div className="text-sm text-gray-600 dark:text-gray-400 mb-2 space-y-2">
                       {account.diaFechamento && account.diaPagamento && (
                         <div className="flex items-center gap-2 text-xs">
-                          <span className="text-gray-500 dark:text-gray-500">Fechamento: dia {account.diaFechamento}</span>
+                          <span className="text-gray-500 dark:text-gray-500">{t('accounts.closingDay', { day: account.diaFechamento })}</span>
                           <span className="text-gray-400">•</span>
-                          <span className="text-gray-500 dark:text-gray-500">Pagamento: dia {account.diaPagamento}</span>
+                          <span className="text-gray-500 dark:text-gray-500">{t('accounts.paymentDay', { day: account.diaPagamento })}</span>
                         </div>
                       )}
                       {account.faturaInfo && (
                         <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700 space-y-2">
                           <div className="text-xs">
-                            <span className="text-gray-500 dark:text-gray-500">Próximo Fechamento:</span>{' '}
+                            <span className="text-gray-500 dark:text-gray-500">{t('accounts.nextClosing')}</span>{' '}
                             <span className="text-gray-700 dark:text-gray-300 font-medium">
                               {formatDate(account.faturaInfo.proximoFechamento)}
                             </span>
@@ -301,7 +317,7 @@ export default function Accounts() {
                               ? 'text-yellow-600 dark:text-yellow-400'
                               : 'text-gray-700 dark:text-gray-300'
                           }`}>
-                            <span className="text-gray-500 dark:text-gray-500">Próximo Pagamento:</span>{' '}
+                            <span className="text-gray-500 dark:text-gray-500">{t('accounts.nextPayment')}</span>{' '}
                             <span className="font-medium">
                               {formatDate(account.faturaInfo.proximoPagamento)}
                             </span>
@@ -309,7 +325,7 @@ export default function Accounts() {
                           {account.faturaInfo.faturaAberta && (
                             <div className="flex items-center gap-1 text-green-600 dark:text-green-400 font-medium text-xs">
                               <span>✓</span>
-                              <span>Fatura Aberta</span>
+                              <span>{t('accounts.openInvoice')}</span>
                             </div>
                           )}
                         </div>
@@ -323,7 +339,7 @@ export default function Accounts() {
                     className="btn-secondary flex-1"
                   >
                     <Edit className="w-4 h-4" />
-                    Editar
+                    {t('common.edit')}
                   </button>
                 <button
                   onClick={() => handleDelete(account.idConta)}
@@ -335,7 +351,7 @@ export default function Accounts() {
                   ) : (
                     <>
                       <Trash2 className="w-4 h-4" />
-                      Excluir
+                      {t('common.delete')}
                     </>
                   )}
                 </button>
@@ -349,11 +365,11 @@ export default function Accounts() {
       <Modal
         isOpen={showModal}
         onClose={handleCloseModal}
-        title={editingAccount ? 'Editar Conta' : 'Nova Conta'}
+        title={editingAccount ? t('accounts.editAccount') : t('accounts.addAccount')}
       >
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="label">Nome da Conta</label>
+            <label className="label">{t('accounts.accountName')}</label>
             <input
               type="text"
               value={formData.nome}
@@ -364,21 +380,21 @@ export default function Accounts() {
             />
           </div>
           <div>
-            <label className="label">Tipo</label>
+            <label className="label">{t('accounts.accountType')}</label>
             <select
               value={formData.tipo}
               onChange={(e) => setFormData({ ...formData, tipo: e.target.value })}
               className="input"
             >
-              <option value="Corrente">Corrente</option>
-              <option value="Poupança">Poupança</option>
-              <option value="Investimento">Investimento (Corretora)</option>
-              <option value="Dinheiro">Dinheiro</option>
-              <option value="Cartão de Crédito">Cartão de Crédito</option>
+              <option value="Corrente">{t('accounts.current')}</option>
+              <option value="Poupança">{t('accounts.savings')}</option>
+              <option value="Investimento">{t('accounts.investmentBrokerage')}</option>
+              <option value="Dinheiro">{t('accounts.cash')}</option>
+              <option value="Cartão de Crédito">{t('accounts.creditCard')}</option>
             </select>
           </div>
           <div>
-            <label className="label">Saldo Inicial</label>
+            <label className="label">{t('accounts.initialBalance')}</label>
             <input
               type="text"
               value={formData.saldoInicial}
@@ -396,14 +412,14 @@ export default function Accounts() {
             />
             {(formData.tipo && (formData.tipo.toLowerCase().includes('cartão') || formData.tipo.toLowerCase().includes('cartao'))) && (
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                Para cartões de crédito, este valor representa o limite de crédito disponível
+                {t('accounts.creditLimitInfo')}
               </p>
             )}
           </div>
           {(formData.tipo && (formData.tipo.toLowerCase().includes('cartão') || formData.tipo.toLowerCase().includes('cartao'))) && (
             <>
               <div>
-                <label className="label">Dia de Fechamento (1-31)</label>
+                <label className="label">{t('accounts.closingDayLabel')}</label>
                 <input
                   type="number"
                   min="1"
@@ -415,7 +431,7 @@ export default function Accounts() {
                 />
               </div>
               <div>
-                <label className="label">Dia de Pagamento (1-31)</label>
+                <label className="label">{t('accounts.paymentDayLabel')}</label>
                 <input
                   type="number"
                   min="1"
@@ -434,16 +450,16 @@ export default function Accounts() {
               onClick={handleCloseModal}
               className="btn-secondary"
             >
-              Cancelar
+              {t('common.cancel')}
             </button>
             <button type="submit" className="btn-primary" disabled={submitting}>
               {submitting ? (
                 <>
                   <Spinner size={16} className="text-white mr-2" />
-                  {editingAccount ? 'Atualizando...' : 'Criando...'}
+                  {editingAccount ? t('accounts.updating') : t('accounts.creating')}
                 </>
               ) : (
-                editingAccount ? 'Atualizar' : 'Criar'
+                editingAccount ? t('accounts.update') : t('accounts.create')
               )}
             </button>
           </div>

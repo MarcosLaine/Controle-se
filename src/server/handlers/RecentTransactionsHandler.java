@@ -34,8 +34,8 @@ public class RecentTransactionsHandler implements HttpHandler {
             int userId = userIdParam != null ? Integer.parseInt(userIdParam) : 1;
             int limit = limitParam != null ? Integer.parseInt(limitParam) : 10;
             
-            List<Gasto> expenses = expenseRepository.buscarGastosComFiltros(userId, null, null, null);
-            List<Receita> incomes = incomeRepository.buscarReceitasComFiltros(userId, null, null);
+            List<Gasto> expenses = expenseRepository.buscarGastosComFiltros(userId, null, null, null, null, Integer.MAX_VALUE, 0);
+            List<Receita> incomes = incomeRepository.buscarReceitasComFiltros(userId, null, null, null, Integer.MAX_VALUE, 0);
             
             List<Map<String, Object>> transactions = new ArrayList<>();
             

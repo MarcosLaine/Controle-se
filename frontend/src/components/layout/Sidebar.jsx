@@ -9,18 +9,21 @@ import {
   X
 } from 'lucide-react';
 import React from 'react';
+import { useLanguage } from '../../contexts/LanguageContext';
 
 const menuItems = [
-  { id: 'overview', label: 'Visão Geral', icon: LayoutDashboard },
-  { id: 'transactions', label: 'Transações', icon: ArrowLeftRight },
-  { id: 'investments', label: 'Investimentos', icon: PieChart },
-  { id: 'categories', label: 'Categorias e Tags', icon: Tag },
-  { id: 'accounts', label: 'Contas', icon: Building2 },
-  { id: 'reports', label: 'Relatórios', icon: FileText },
-  { id: 'tools', label: 'Ferramentas', icon: Calculator },
+  { id: 'overview', key: 'sidebar.overview', icon: LayoutDashboard },
+  { id: 'transactions', key: 'sidebar.transactions', icon: ArrowLeftRight },
+  { id: 'investments', key: 'sidebar.investments', icon: PieChart },
+  { id: 'categories', key: 'sidebar.categories', icon: Tag },
+  { id: 'accounts', key: 'sidebar.accounts', icon: Building2 },
+  { id: 'reports', key: 'sidebar.reports', icon: FileText },
+  { id: 'tools', key: 'sidebar.tools', icon: Calculator },
 ];
 
 export default function Sidebar({ activeSection, onSectionChange, onSectionHover, isOpen, onClose }) {
+  const { t } = useLanguage();
+  
   const handleClick = (sectionId) => {
     onSectionChange(sectionId);
   };
@@ -44,7 +47,7 @@ export default function Sidebar({ activeSection, onSectionChange, onSectionHover
         ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
       `}>
         <div className="flex items-center justify-between p-4 lg:hidden border-b border-gray-200 dark:border-gray-700">
-          <span className="font-bold text-lg text-gray-900 dark:text-white">Menu</span>
+          <span className="font-bold text-lg text-gray-900 dark:text-white">{t('common.menu')}</span>
           <button 
             onClick={onClose}
             className="p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
@@ -70,7 +73,7 @@ export default function Sidebar({ activeSection, onSectionChange, onSectionHover
                 }`}
               >
                 <Icon className="w-5 h-5" />
-                <span className="font-medium">{item.label}</span>
+                <span className="font-medium">{t(item.key)}</span>
               </button>
             );
           })}

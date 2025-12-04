@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Plus, Edit, Trash2, Tag, TrendingUp, Info } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useLanguage } from '../../contexts/LanguageContext';
 import api from '../../services/api';
 import axios from 'axios';
 import { formatCurrency } from '../../utils/formatters';
@@ -11,6 +12,7 @@ import Spinner from '../common/Spinner';
 
 export default function CategoriesAndTags() {
   const { user } = useAuth();
+  const { t } = useLanguage();
   const [categories, setCategories] = useState([]);
   const [tags, setTags] = useState([]);
   const [budgets, setBudgets] = useState([]);
@@ -84,7 +86,7 @@ export default function CategoriesAndTags() {
         return;
       }
       
-      toast.error('Erro ao carregar dados');
+      toast.error(t('categories.errorLoading'));
     } finally {
       // Só atualiza o loading se a requisição não foi cancelada
       if (!abortController.signal.aborted) {
@@ -120,7 +122,7 @@ export default function CategoriesAndTags() {
   const handleCategorySubmit = async (e) => {
     e.preventDefault();
     if (!categoryFormData.nome.trim()) {
-      toast.error('Nome da categoria é obrigatório');
+      toast.error(t('categories.nameRequired'));
       return;
     }
 
@@ -132,7 +134,7 @@ export default function CategoriesAndTags() {
           userId: user.id,
         });
         if (response.success) {
-          toast.success('Categoria atualizada!');
+          toast.success(t('categories.updatedSuccess'));
           loadData();
           handleCloseCategoryModal();
         }
@@ -143,13 +145,13 @@ export default function CategoriesAndTags() {
           budget: categoryFormData.budget ? parseFloat(categoryFormData.budget) : null
         });
         if (response.success) {
-          toast.success('Categoria criada!');
+          toast.success(t('categories.createdSuccess'));
           loadData();
           handleCloseCategoryModal();
         }
       }
     } catch (error) {
-      toast.error(error.message || 'Erro ao salvar categoria');
+      toast.error(error.message || t('categories.errorSaving'));
     } finally {
       setCategoryLoading(false);
     }
@@ -162,16 +164,16 @@ export default function CategoriesAndTags() {
   };
 
   const handleDeleteCategory = async (id) => {
-    if (!confirm('Tem certeza que deseja excluir esta categoria?')) return;
+    if (!confirm(t('categories.deleteConfirm'))) return;
     setDeletingCategoryIds(prev => new Set(prev).add(id));
     try {
       const response = await api.delete(`/categories/${id}?userId=${user.id}`);
       if (response.success) {
-        toast.success('Categoria excluída!');
+        toast.success(t('categories.deletedSuccess'));
         loadData();
       }
     } catch (error) {
-      toast.error(error.message || 'Erro ao excluir categoria');
+      toast.error(error.message || t('categories.errorDeleting'));
     } finally {
       setDeletingCategoryIds(prev => {
         const next = new Set(prev);
@@ -196,20 +198,20 @@ export default function CategoriesAndTags() {
       if (editingTag) {
         const response = await api.put(`/tags/${editingTag.idTag}`, { ...data, id: editingTag.idTag });
         if (response.success) {
-          toast.success('Tag atualizada!');
+          toast.success(t('categories.tagUpdatedSuccess'));
           loadData();
           handleCloseTagModal();
         }
       } else {
         const response = await api.post('/tags', data);
         if (response.success) {
-          toast.success('Tag criada!');
+          toast.success(t('categories.tagCreatedSuccess'));
           loadData();
           handleCloseTagModal();
         }
       }
     } catch (error) {
-      toast.error(error.message || 'Erro ao salvar tag');
+      toast.error(error.message || t('categories.tagErrorSaving'));
     } finally {
       setTagLoading(false);
     }
@@ -222,16 +224,16 @@ export default function CategoriesAndTags() {
   };
 
   const handleDeleteTag = async (id) => {
-    if (!confirm('Tem certeza que deseja excluir esta tag?')) return;
+    if (!confirm(t('categories.tagDeleteConfirm'))) return;
     setDeletingTagIds(prev => new Set(prev).add(id));
     try {
       const response = await api.delete(`/tags/${id}`);
       if (response.success) {
-        toast.success('Tag excluída!');
+        toast.success(t('categories.tagDeletedSuccess'));
         loadData();
       }
     } catch (error) {
-      toast.error('Erro ao excluir tag');
+      toast.error(t('categories.tagErrorDeleting'));
     } finally {
       setDeletingTagIds(prev => {
         const next = new Set(prev);
@@ -262,20 +264,20 @@ export default function CategoriesAndTags() {
       if (editingBudget) {
         const response = await api.put(`/budgets/${editingBudget.idOrcamento}`, data);
         if (response.success) {
-          toast.success('Orçamento atualizado!');
+          toast.success(t('categories.budgetUpdatedSuccess'));
           loadData();
           handleCloseBudgetModal();
         }
       } else {
         const response = await api.post('/budgets', data);
         if (response.success) {
-          toast.success('Orçamento criado!');
+          toast.success(t('categories.budgetCreatedSuccess'));
           loadData();
           handleCloseBudgetModal();
         }
       }
     } catch (error) {
-      toast.error(error.message || 'Erro ao salvar orçamento');
+      toast.error(error.message || t('categories.budgetErrorSaving'));
     } finally {
       setBudgetLoading(false);
     }
@@ -292,16 +294,16 @@ export default function CategoriesAndTags() {
   };
 
   const handleDeleteBudget = async (id) => {
-    if (!confirm('Tem certeza que deseja excluir este orçamento?')) return;
+    if (!confirm(t('categories.budgetDeleteConfirm'))) return;
     setDeletingBudgetIds(prev => new Set(prev).add(id));
     try {
       const response = await api.delete(`/budgets/${id}?userId=${user.id}`);
       if (response.success) {
-        toast.success('Orçamento excluído!');
+        toast.success(t('categories.budgetDeletedSuccess'));
         loadData();
       }
     } catch (error) {
-      toast.error('Erro ao excluir orçamento');
+      toast.error(t('categories.budgetErrorDeleting'));
     } finally {
       setDeletingBudgetIds(prev => {
         const next = new Set(prev);
@@ -330,19 +332,19 @@ export default function CategoriesAndTags() {
             <div className="flex items-center gap-3 mb-2">
               <Tag className="w-6 h-6 text-primary-600 dark:text-primary-400" />
               <h2 className="text-3xl font-bold text-gray-900 dark:text-white">
-                Categorias
+                {t('categories.categories')}
               </h2>
             </div>
             <div className="flex items-start gap-2 text-sm text-gray-600 dark:text-gray-400">
               <Info className="w-4 h-4 mt-0.5 flex-shrink-0" />
               <p>
-                Organize suas transações por categorias. Cada categoria pode ter um orçamento mensal para controlar seus gastos.
+                {t('categories.categoriesDescription')}
               </p>
             </div>
           </div>
           <button onClick={() => setShowCategoryModal(true)} className="btn-primary">
             <Plus className="w-4 h-4" />
-            Nova Categoria
+            {t('categories.addCategory')}
           </button>
         </div>
 
@@ -353,7 +355,7 @@ export default function CategoriesAndTags() {
           <div className="card text-center py-12">
             <Tag className="w-16 h-16 text-gray-400 mx-auto mb-4" />
             <p className="text-gray-600 dark:text-gray-400">
-              Nenhuma categoria cadastrada
+              {t('categories.noCategories')}
             </p>
           </div>
         ) : (
@@ -379,7 +381,7 @@ export default function CategoriesAndTags() {
                     <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-xs font-medium text-blue-800 dark:text-blue-200">
-                          Orçamento {budget.periodo}
+                          {t('categories.budget')} {budget.periodo === 'MENSAL' ? t('categories.monthly') : t('categories.yearly')}
                         </span>
                         <span className="text-xs font-semibold text-blue-900 dark:text-blue-100">
                           {percentage.toFixed(1)}%
@@ -403,7 +405,7 @@ export default function CategoriesAndTags() {
                           onClick={() => handleEditBudget(budget)}
                           className="text-xs px-2 py-1 bg-blue-100 dark:bg-blue-800 text-blue-700 dark:text-blue-300 rounded hover:bg-blue-200 dark:hover:bg-blue-700 transition-colors"
                         >
-                          Editar Orçamento
+                          {t('categories.editBudget')}
                         </button>
                         <button
                           onClick={() => handleDeleteBudget(budget.idOrcamento)}
@@ -413,7 +415,7 @@ export default function CategoriesAndTags() {
                           {deletingBudgetIds.has(budget.idOrcamento) ? (
                             <Spinner size={12} className="text-red-700 dark:text-red-300" />
                           ) : (
-                            'Remover'
+                            t('categories.remove')
                           )}
                         </button>
                       </div>
@@ -435,7 +437,7 @@ export default function CategoriesAndTags() {
                         className="w-full text-sm px-3 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex items-center justify-center gap-2"
                       >
                         <TrendingUp className="w-4 h-4" />
-                        Adicionar Orçamento
+                        {t('categories.addBudget')}
                       </button>
                     </div>
                   )}
@@ -446,7 +448,7 @@ export default function CategoriesAndTags() {
                       className="btn-secondary flex-1"
                     >
                       <Edit className="w-4 h-4" />
-                      Editar
+                      {t('common.edit')}
                     </button>
                     <button
                       onClick={() => handleDeleteCategory(category.idCategoria)}
@@ -458,7 +460,7 @@ export default function CategoriesAndTags() {
                       ) : (
                         <>
                           <Trash2 className="w-4 h-4" />
-                          Excluir
+                          {t('common.delete')}
                         </>
                       )}
                     </button>
@@ -480,26 +482,26 @@ export default function CategoriesAndTags() {
             <div className="flex items-center gap-3 mb-2">
               <Tag className="w-6 h-6 text-purple-600 dark:text-purple-400" />
               <h2 className="text-3xl font-bold text-gray-900 dark:text-white">
-                Tags
+                {t('categories.tags')}
               </h2>
             </div>
             <div className="flex items-start gap-2 text-sm text-gray-600 dark:text-gray-400">
               <Info className="w-4 h-4 mt-0.5 flex-shrink-0" />
               <p>
-                Use tags coloridas para marcar e filtrar suas transações de forma personalizada. Tags ajudam a identificar características específicas como "Urgente", "Pessoal", "Trabalho", etc.
+                {t('categories.tagsDescription')}
               </p>
             </div>
           </div>
           <button onClick={() => setShowTagModal(true)} className="btn-primary">
             <Plus className="w-4 h-4" />
-            Nova Tag
+            {t('categories.addTag')}
           </button>
         </div>
 
         {tags.length === 0 ? (
           <div className="card text-center py-12">
             <Tag className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-            <p className="text-gray-600 dark:text-gray-400">Nenhuma tag criada</p>
+            <p className="text-gray-600 dark:text-gray-400">{t('categories.noTagsCreated')}</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -547,11 +549,11 @@ export default function CategoriesAndTags() {
       <Modal
         isOpen={showCategoryModal}
         onClose={handleCloseCategoryModal}
-        title={editingCategory ? 'Editar Categoria' : 'Nova Categoria'}
+        title={editingCategory ? t('categories.editCategory') : t('categories.addCategory')}
       >
         <form onSubmit={handleCategorySubmit} className="space-y-4">
           <div>
-            <label className="label">Nome da Categoria</label>
+            <label className="label">{t('categories.categoryName')}</label>
             <input
               type="text"
               value={categoryFormData.nome}
@@ -564,7 +566,7 @@ export default function CategoriesAndTags() {
 
           {!editingCategory && (
             <div>
-              <label className="label">Orçamento Mensal (Opcional)</label>
+              <label className="label">{t('categories.budgetMonthly')}</label>
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">
                   R$
@@ -580,7 +582,7 @@ export default function CategoriesAndTags() {
                 />
               </div>
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                Você pode adicionar ou editar o orçamento depois de criar a categoria
+                {t('categories.budgetCanEditLater')}
               </p>
             </div>
           )}
@@ -597,10 +599,10 @@ export default function CategoriesAndTags() {
               {categoryLoading ? (
                 <>
                   <Spinner size={16} className="text-white mr-2" />
-                  {editingCategory ? 'Atualizando...' : 'Criando...'}
+                  {editingCategory ? t('categories.updating') : t('categories.creating')}
                 </>
               ) : (
-                editingCategory ? 'Atualizar' : 'Criar'
+                editingCategory ? t('categories.update') : t('categories.create')
               )}
             </button>
           </div>
@@ -611,11 +613,11 @@ export default function CategoriesAndTags() {
       <Modal
         isOpen={showTagModal}
         onClose={handleCloseTagModal}
-        title={editingTag ? 'Editar Tag' : 'Nova Tag'}
+        title={editingTag ? t('categories.editTag') : t('categories.addTag')}
       >
         <form onSubmit={handleTagSubmit} className="space-y-4">
           <div>
-            <label className="label">Nome da Tag</label>
+            <label className="label">{t('categories.tagName')}</label>
             <input
               type="text"
               value={tagFormData.nome}
@@ -626,7 +628,7 @@ export default function CategoriesAndTags() {
             />
           </div>
           <div>
-            <label className="label">Cor</label>
+            <label className="label">{t('categories.tagColor')}</label>
             <div className="flex items-center gap-4">
               <input
                 type="color"
@@ -638,7 +640,7 @@ export default function CategoriesAndTags() {
                 className="px-4 py-2 rounded-lg text-white font-medium"
                 style={{ backgroundColor: tagFormData.cor }}
               >
-                Preview
+                {t('categories.preview')}
               </div>
             </div>
           </div>
@@ -650,10 +652,10 @@ export default function CategoriesAndTags() {
               {tagLoading ? (
                 <>
                   <Spinner size={16} className="text-white mr-2" />
-                  {editingTag ? 'Atualizando...' : 'Criando...'}
+                  {editingTag ? t('categories.updating') : t('categories.creating')}
                 </>
               ) : (
-                editingTag ? 'Atualizar' : 'Criar'
+                editingTag ? t('categories.update') : t('categories.create')
               )}
             </button>
           </div>
@@ -664,11 +666,11 @@ export default function CategoriesAndTags() {
       <Modal
         isOpen={showBudgetModal}
         onClose={handleCloseBudgetModal}
-        title={editingBudget ? 'Editar Orçamento' : 'Novo Orçamento'}
+        title={editingBudget ? t('categories.editBudget') : t('categories.addBudget')}
       >
         <form onSubmit={handleBudgetSubmit} className="space-y-4">
           <div>
-            <label className="label">Categoria</label>
+            <label className="label">{t('categories.categoryName')}</label>
             <select
               value={budgetFormData.categoryId}
               onChange={(e) => setBudgetFormData({ ...budgetFormData, categoryId: e.target.value })}
@@ -676,7 +678,7 @@ export default function CategoriesAndTags() {
               required
               disabled={!!editingBudget}
             >
-              <option value="">Selecione a categoria</option>
+              <option value="">{t('categories.selectCategory')}</option>
               {categories.map((cat) => (
                 <option key={cat.idCategoria} value={cat.idCategoria}>
                   {cat.nome}
@@ -685,7 +687,7 @@ export default function CategoriesAndTags() {
             </select>
           </div>
           <div>
-            <label className="label">Valor Planejado (R$)</label>
+            <label className="label">{t('categories.plannedValue')}</label>
             <input
               type="number"
               step="0.01"
@@ -697,15 +699,15 @@ export default function CategoriesAndTags() {
             />
           </div>
           <div>
-            <label className="label">Período</label>
+            <label className="label">{t('categories.budgetPeriod')}</label>
             <select
               value={budgetFormData.period}
               onChange={(e) => setBudgetFormData({ ...budgetFormData, period: e.target.value })}
               className="input"
               required
             >
-              <option value="MENSAL">Mensal</option>
-              <option value="ANUAL">Anual</option>
+              <option value="MENSAL">{t('categories.monthly')}</option>
+              <option value="ANUAL">{t('categories.yearly')}</option>
             </select>
           </div>
           <div className="flex gap-2 justify-end">
@@ -716,10 +718,10 @@ export default function CategoriesAndTags() {
               {budgetLoading ? (
                 <>
                   <Spinner size={16} className="text-white mr-2" />
-                  {editingBudget ? 'Atualizando...' : 'Criando...'}
+                  {editingBudget ? t('categories.updating') : t('categories.creating')}
                 </>
               ) : (
-                editingBudget ? 'Atualizar' : 'Criar'
+                editingBudget ? t('categories.update') : t('categories.create')
               )}
             </button>
           </div>

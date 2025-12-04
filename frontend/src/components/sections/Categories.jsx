@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Edit, Trash2, Tag } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useLanguage } from '../../contexts/LanguageContext';
 import api from '../../services/api';
 import Modal from '../common/Modal';
 import toast from 'react-hot-toast';
@@ -8,6 +9,7 @@ import SkeletonSection from '../common/SkeletonSection';
 
 export default function Categories() {
   const { user } = useAuth();
+  const { t } = useLanguage();
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -27,7 +29,7 @@ export default function Categories() {
         setCategories(response.data || []);
       }
     } catch (error) {
-      toast.error('Erro ao carregar categorias');
+      toast.error(t('categories.errorLoading'));
     } finally {
       setLoading(false);
     }
@@ -36,7 +38,7 @@ export default function Categories() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.nome.trim()) {
-      toast.error('Nome da categoria é obrigatório');
+      toast.error(t('categories.nameRequired'));
       return;
     }
 
@@ -47,7 +49,7 @@ export default function Categories() {
           userId: user.id,
         });
         if (response.success) {
-          toast.success('Categoria atualizada!');
+          toast.success(t('categories.updatedSuccess'));
           loadCategories();
           handleCloseModal();
         }
@@ -58,7 +60,7 @@ export default function Categories() {
           budget: formData.budget ? parseFloat(formData.budget) : null
         });
         if (response.success) {
-          toast.success('Categoria criada!');
+          toast.success(t('categories.createdSuccess'));
           loadCategories();
           handleCloseModal();
         }
@@ -75,12 +77,12 @@ export default function Categories() {
   };
 
   const handleDelete = async (id) => {
-    if (!confirm('Tem certeza que deseja excluir esta categoria?')) return;
+    if (!confirm(t('categories.deleteConfirm'))) return;
 
     try {
       const response = await api.delete(`/categories/${id}?userId=${user.id}`);
       if (response.success) {
-        toast.success('Categoria excluída!');
+        toast.success(t('categories.deletedSuccess'));
         loadCategories();
       }
     } catch (error) {

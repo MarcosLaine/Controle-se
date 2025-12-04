@@ -7,11 +7,15 @@ import java.util.Map;
 
 /**
  * Utilitários para cálculos relacionados a cartões de crédito
+ * A fatura é identificada pela data de pagamento, não pela data de fechamento.
+ * Exemplo: se fecha dia 29/04 e paga dia 01/05, essa é a fatura de maio.
  */
 public class CreditCardUtil {
     
     /**
-     * Calcula informações da fatura de cartão de crédito baseado nos dias de fechamento e pagamento
+     * Calcula informações da fatura de cartão de crédito baseado nos dias de fechamento e pagamento.
+     * A fatura é identificada pela data de pagamento, não pela data de fechamento.
+     * Exemplo: se fecha dia 29/04 e paga dia 01/05, essa é a fatura de maio.
      * @param diaFechamento Dia do mês em que a fatura fecha (1-31)
      * @param diaPagamento Dia do mês em que a fatura deve ser paga (1-31)
      * @return Map com informações da fatura (próximo fechamento, próximo pagamento, status, etc.)
@@ -20,86 +24,76 @@ public class CreditCardUtil {
         Map<String, Object> info = new HashMap<>();
         LocalDate hoje = LocalDate.now();
         
-        // Calcula a próxima data de fechamento
-        LocalDate proximoFechamento;
-        
-        // Tenta criar a data de fechamento no mês atual
+        // Calcula a próxima data de pagamento (baseado na data de pagamento)
+        LocalDate proximoPagamento;
         try {
-            LocalDate fechamentoEsteMes = LocalDate.of(hoje.getYear(), hoje.getMonthValue(), diaFechamento);
-            if (hoje.isBefore(fechamentoEsteMes) || hoje.isEqual(fechamentoEsteMes)) {
-                // Ainda não fechou este mês (ou fecha hoje)
-                proximoFechamento = fechamentoEsteMes;
+            LocalDate pagamentoEsteMes = LocalDate.of(hoje.getYear(), hoje.getMonthValue(), diaPagamento);
+            if (hoje.isBefore(pagamentoEsteMes) || hoje.isEqual(pagamentoEsteMes)) {
+                // Ainda não passou o pagamento deste mês (ou é hoje)
+                proximoPagamento = pagamentoEsteMes;
             } else {
-                // Já fechou este mês, próximo fechamento é no próximo mês
+                // Já passou o pagamento deste mês, próximo pagamento é no próximo mês
                 LocalDate proximoMes = LocalDate.of(hoje.getYear(), hoje.getMonthValue(), 1).plusMonths(1);
                 try {
-                    proximoFechamento = proximoMes.withDayOfMonth(diaFechamento);
+                    proximoPagamento = proximoMes.withDayOfMonth(diaPagamento);
                 } catch (java.time.DateTimeException e) {
                     // Se o dia não existe no próximo mês (ex: 31 de fevereiro), usa o último dia do mês
-                    proximoFechamento = proximoMes.withDayOfMonth(proximoMes.lengthOfMonth());
+                    proximoPagamento = proximoMes.withDayOfMonth(proximoMes.lengthOfMonth());
                 }
             }
         } catch (java.time.DateTimeException e) {
             // Se o dia não existe no mês atual (ex: 31 de fevereiro), usa o último dia do mês
             int ultimoDia = LocalDate.of(hoje.getYear(), hoje.getMonthValue(), 1).lengthOfMonth();
-            LocalDate fechamentoEsteMes = LocalDate.of(hoje.getYear(), hoje.getMonthValue(), ultimoDia);
-            if (hoje.isBefore(fechamentoEsteMes) || hoje.isEqual(fechamentoEsteMes)) {
-                proximoFechamento = fechamentoEsteMes;
+            LocalDate pagamentoEsteMes = LocalDate.of(hoje.getYear(), hoje.getMonthValue(), ultimoDia);
+            if (hoje.isBefore(pagamentoEsteMes) || hoje.isEqual(pagamentoEsteMes)) {
+                proximoPagamento = pagamentoEsteMes;
             } else {
                 // Próximo mês
                 LocalDate proximoMes = LocalDate.of(hoje.getYear(), hoje.getMonthValue(), 1).plusMonths(1);
                 try {
-                    proximoFechamento = proximoMes.withDayOfMonth(diaFechamento);
+                    proximoPagamento = proximoMes.withDayOfMonth(diaPagamento);
                 } catch (java.time.DateTimeException e2) {
-                    proximoFechamento = proximoMes.withDayOfMonth(proximoMes.lengthOfMonth());
+                    proximoPagamento = proximoMes.withDayOfMonth(proximoMes.lengthOfMonth());
                 }
             }
         }
         
-        // Calcula a próxima data de pagamento
-        // Regra: o pagamento sempre acontece APÓS o fechamento
-        LocalDate proximoPagamento;
-        if (diaPagamento < diaFechamento) {
-            // Pagamento é no mês seguinte ao fechamento
-            LocalDate mesPagamento = proximoFechamento.plusMonths(1);
-            try {
-                proximoPagamento = mesPagamento.withDayOfMonth(diaPagamento);
-            } catch (java.time.DateTimeException e) {
-                // Se o dia não existe no mês (ex: 31 de fevereiro), usa o último dia do mês
-                proximoPagamento = mesPagamento.withDayOfMonth(mesPagamento.lengthOfMonth());
-            }
-        } else {
-            // Pagamento é no mesmo mês do fechamento, mas sempre depois do fechamento
-            try {
-                proximoPagamento = proximoFechamento.withDayOfMonth(diaPagamento);
-                // Se o pagamento calculado é antes ou igual ao fechamento, ajusta para o mês seguinte
-                if (proximoPagamento.isBefore(proximoFechamento) || proximoPagamento.equals(proximoFechamento)) {
-                    LocalDate mesPagamento = proximoFechamento.plusMonths(1);
-                    try {
-                        proximoPagamento = mesPagamento.withDayOfMonth(diaPagamento);
-                    } catch (java.time.DateTimeException e) {
-                        proximoPagamento = mesPagamento.withDayOfMonth(mesPagamento.lengthOfMonth());
-                    }
-                }
-            } catch (java.time.DateTimeException e) {
-                // Se o dia não existe no mês, vai para o próximo mês
-                LocalDate mesPagamento = proximoFechamento.plusMonths(1);
-                try {
-                    proximoPagamento = mesPagamento.withDayOfMonth(diaPagamento);
-                } catch (java.time.DateTimeException e2) {
-                    proximoPagamento = mesPagamento.withDayOfMonth(mesPagamento.lengthOfMonth());
-                }
-            }
-        }
-        
-        // Calcula a data do último fechamento (fechamento anterior)
-        LocalDate ultimoFechamento;
-        LocalDate mesAnterior = proximoFechamento.minusMonths(1);
+        // Para a fatura que será paga no próximo pagamento, encontra o fechamento correspondente
+        // O fechamento é o último fechamento que acontece ANTES do pagamento
+        LocalDate proximoFechamento;
         try {
-            ultimoFechamento = mesAnterior.withDayOfMonth(diaFechamento);
+            // Tenta encontrar o fechamento no mesmo mês do pagamento
+            LocalDate fechamentoMesPagamento = LocalDate.of(proximoPagamento.getYear(), proximoPagamento.getMonthValue(), diaFechamento);
+            if (fechamentoMesPagamento.isBefore(proximoPagamento) || fechamentoMesPagamento.equals(proximoPagamento)) {
+                // O fechamento no mesmo mês do pagamento é antes ou igual ao pagamento
+                proximoFechamento = fechamentoMesPagamento;
+            } else {
+                // O fechamento no mesmo mês do pagamento é depois do pagamento, então o fechamento correto é no mês anterior
+                LocalDate mesAnterior = proximoPagamento.minusMonths(1);
+                try {
+                    proximoFechamento = mesAnterior.withDayOfMonth(diaFechamento);
+                } catch (java.time.DateTimeException e) {
+                    proximoFechamento = mesAnterior.withDayOfMonth(mesAnterior.lengthOfMonth());
+                }
+            }
+        } catch (java.time.DateTimeException e) {
+            // Se o dia não existe no mês do pagamento, tenta o mês anterior
+            LocalDate mesAnterior = proximoPagamento.minusMonths(1);
+            try {
+                proximoFechamento = mesAnterior.withDayOfMonth(diaFechamento);
+            } catch (java.time.DateTimeException e2) {
+                proximoFechamento = mesAnterior.withDayOfMonth(mesAnterior.lengthOfMonth());
+            }
+        }
+        
+        // Calcula a data do último fechamento (fechamento anterior ao próximo fechamento)
+        LocalDate ultimoFechamento;
+        LocalDate mesAnteriorFechamento = proximoFechamento.minusMonths(1);
+        try {
+            ultimoFechamento = mesAnteriorFechamento.withDayOfMonth(diaFechamento);
         } catch (java.time.DateTimeException e) {
             // Se o dia não existe no mês (ex: 31 de fevereiro), usa o último dia do mês
-            ultimoFechamento = mesAnterior.withDayOfMonth(mesAnterior.lengthOfMonth());
+            ultimoFechamento = mesAnteriorFechamento.withDayOfMonth(mesAnteriorFechamento.lengthOfMonth());
         }
         
         // Determina se a fatura atual está aberta ou fechada
@@ -118,6 +112,87 @@ public class CreditCardUtil {
         info.put("diasAtePagamento", diasAtePagamento);
         
         return info;
+    }
+    
+    /**
+     * Calcula a data correta da primeira parcela para uma compra parcelada em cartão de crédito.
+     * A primeira parcela deve cair na fatura que corresponde à data da compra.
+     * A fatura é identificada pela data de pagamento, não pela data de fechamento.
+     * 
+     * Exemplo: 
+     * - Compra em 09/10/2025
+     * - Fechamento: dia 29, Pagamento: dia 1
+     * - A compra pertence à fatura que fecha em 29/10 e paga em 01/11 (fatura de novembro)
+     * - A primeira parcela deve ser em 29/10/2025 (data de fechamento dessa fatura)
+     * 
+     * @param dataCompra Data em que a compra foi feita
+     * @param diaFechamento Dia do mês em que a fatura fecha (1-31)
+     * @param diaPagamento Dia do mês em que a fatura deve ser paga (1-31)
+     * @return Data correta da primeira parcela (data de fechamento da fatura correspondente)
+     */
+    public static LocalDate calcularDataPrimeiraParcela(LocalDate dataCompra, int diaFechamento, int diaPagamento) {
+        // Calcula qual é o próximo pagamento a partir da data da compra
+        LocalDate proximoPagamento;
+        try {
+            LocalDate pagamentoEsteMes = LocalDate.of(dataCompra.getYear(), dataCompra.getMonthValue(), diaPagamento);
+            if (dataCompra.isBefore(pagamentoEsteMes) || dataCompra.isEqual(pagamentoEsteMes)) {
+                // Ainda não passou o pagamento deste mês (ou é hoje)
+                proximoPagamento = pagamentoEsteMes;
+            } else {
+                // Já passou o pagamento deste mês, próximo pagamento é no próximo mês
+                LocalDate proximoMes = LocalDate.of(dataCompra.getYear(), dataCompra.getMonthValue(), 1).plusMonths(1);
+                try {
+                    proximoPagamento = proximoMes.withDayOfMonth(diaPagamento);
+                } catch (java.time.DateTimeException e) {
+                    proximoPagamento = proximoMes.withDayOfMonth(proximoMes.lengthOfMonth());
+                }
+            }
+        } catch (java.time.DateTimeException e) {
+            // Se o dia não existe no mês atual, usa o último dia do mês
+            int ultimoDia = LocalDate.of(dataCompra.getYear(), dataCompra.getMonthValue(), 1).lengthOfMonth();
+            LocalDate pagamentoEsteMes = LocalDate.of(dataCompra.getYear(), dataCompra.getMonthValue(), ultimoDia);
+            if (dataCompra.isBefore(pagamentoEsteMes) || dataCompra.isEqual(pagamentoEsteMes)) {
+                proximoPagamento = pagamentoEsteMes;
+            } else {
+                LocalDate proximoMes = LocalDate.of(dataCompra.getYear(), dataCompra.getMonthValue(), 1).plusMonths(1);
+                try {
+                    proximoPagamento = proximoMes.withDayOfMonth(diaPagamento);
+                } catch (java.time.DateTimeException e2) {
+                    proximoPagamento = proximoMes.withDayOfMonth(proximoMes.lengthOfMonth());
+                }
+            }
+        }
+        
+        // Para a fatura que será paga no próximo pagamento, encontra o fechamento correspondente
+        // O fechamento é o último fechamento que acontece ANTES do pagamento
+        LocalDate fechamentoFatura;
+        try {
+            // Tenta encontrar o fechamento no mesmo mês do pagamento
+            LocalDate fechamentoMesPagamento = LocalDate.of(proximoPagamento.getYear(), proximoPagamento.getMonthValue(), diaFechamento);
+            if (fechamentoMesPagamento.isBefore(proximoPagamento) || fechamentoMesPagamento.equals(proximoPagamento)) {
+                // O fechamento no mesmo mês do pagamento é antes ou igual ao pagamento
+                fechamentoFatura = fechamentoMesPagamento;
+            } else {
+                // O fechamento no mesmo mês do pagamento é depois do pagamento, então o fechamento correto é no mês anterior
+                LocalDate mesAnterior = proximoPagamento.minusMonths(1);
+                try {
+                    fechamentoFatura = mesAnterior.withDayOfMonth(diaFechamento);
+                } catch (java.time.DateTimeException e) {
+                    fechamentoFatura = mesAnterior.withDayOfMonth(mesAnterior.lengthOfMonth());
+                }
+            }
+        } catch (java.time.DateTimeException e) {
+            // Se o dia não existe no mês do pagamento, tenta o mês anterior
+            LocalDate mesAnterior = proximoPagamento.minusMonths(1);
+            try {
+                fechamentoFatura = mesAnterior.withDayOfMonth(diaFechamento);
+            } catch (java.time.DateTimeException e2) {
+                fechamentoFatura = mesAnterior.withDayOfMonth(mesAnterior.lengthOfMonth());
+            }
+        }
+        
+        // A primeira parcela deve ser na data de fechamento da fatura
+        return fechamentoFatura;
     }
 }
 

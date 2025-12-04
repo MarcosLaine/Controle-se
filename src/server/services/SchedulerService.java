@@ -41,10 +41,10 @@ public class SchedulerService {
             @Override
             public void run() {
                 try {
-                    LOGGER.info("=== SCHEDULER DE RECORRÊNCIAS === Executando processamento automático...");
+                    // LOGGER.info("=== SCHEDULER DE RECORRÊNCIAS === Executando processamento automático...");
                     RecurrenceService recurrenceService = new RecurrenceService();
                     int criados = recurrenceService.processarRecorrencias();
-                    LOGGER.info("Total de transações recorrentes criadas: " + criados);
+                    // LOGGER.info("Total de transações recorrentes criadas: " + criados);
                 } catch (Exception e) {
                     System.err.println("Erro ao processar recorrências: " + e.getMessage());
                     e.printStackTrace();
@@ -53,19 +53,19 @@ public class SchedulerService {
         }, delay, periodo);
         
         // Para fins de DEBUG/TESTE: executa imediatamente na inicialização também
-        LOGGER.info("[INICIALIZAÇÃO] Processando recorrências pendentes...");
+        // LOGGER.info("[INICIALIZAÇÃO] Processando recorrências pendentes...");
         try {
             RecurrenceService recurrenceService = new RecurrenceService();
             int criados = recurrenceService.processarRecorrencias();
             if (criados > 0) {
-                LOGGER.info("[INICIALIZAÇÃO] " + criados + " transações recorrentes criadas");
+                // LOGGER.info("[INICIALIZAÇÃO] " + criados + " transações recorrentes criadas");
             } else {
-                LOGGER.info("[INICIALIZAÇÃO] Nenhuma recorrência pendente");
+                // LOGGER.info("[INICIALIZAÇÃO] Nenhuma recorrência pendente");
             }
         } catch (Exception e) {
             System.err.println("[INICIALIZAÇÃO] Erro ao processar recorrências: " + e.getMessage());
         }
-        LOGGER.fine("Scheduler de recorrências inicializado");
+        // LOGGER.fine("Scheduler de recorrências inicializado");
     }
     
     /**
@@ -82,10 +82,10 @@ public class SchedulerService {
             @Override
             public void run() {
                 try {
-                    LOGGER.info("=== ATUALIZAÇÃO DE COTAÇÕES ===");
+                    // LOGGER.info("=== ATUALIZAÇÃO DE COTAÇÕES ===");
                     QuoteService quoteService = QuoteService.getInstance();
                     quoteService.cleanExpiredCache();
-                    LOGGER.info("Cache de cotações limpo e atualizado");
+                    // LOGGER.info("Cache de cotações limpo e atualizado");
                 } catch (Exception e) {
                     System.err.println("Erro ao atualizar cotações: " + e.getMessage());
                     e.printStackTrace();
@@ -93,7 +93,7 @@ public class SchedulerService {
             }
         }, 0, periodo);
         
-        LOGGER.info("[INICIALIZAÇÃO] Scheduler de cotações iniciado (atualiza a cada 30 minutos)");
+        // LOGGER.info("[INICIALIZAÇÃO] Scheduler de cotações iniciado (atualiza a cada 30 minutos)");
     }
 }
 

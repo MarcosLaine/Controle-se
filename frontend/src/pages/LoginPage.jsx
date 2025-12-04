@@ -1,9 +1,10 @@
 import React, { useState, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Wallet, Mail, Lock, User, Moon, Sun, Calculator, TrendingUp } from 'lucide-react';
+import { Wallet, Mail, Lock, User, Moon, Sun, Calculator, TrendingUp, Globe } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useTheme } from '../contexts/ThemeContext';
+import { useLanguage } from '../contexts/LanguageContext';
 import ReCaptcha from '../components/common/ReCaptcha';
 
 // Site key do reCAPTCHA
@@ -19,7 +20,9 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { theme, toggleTheme } = useTheme();
+  const { language, changeLanguage, t } = useLanguage();
   const redirectTo = searchParams.get('redirect') || '/dashboard';
+  const [isLanguageMenuOpen, setIsLanguageMenuOpen] = useState(false);
 
   // Login form state
   const [loginEmail, setLoginEmail] = useState('');
@@ -86,11 +89,54 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-50 via-white to-primary-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 p-4">
-      <div className="absolute top-4 right-4">
+      <div className="absolute top-4 right-4 flex items-center gap-2">
+        <div className="relative">
+          <button
+            onClick={() => setIsLanguageMenuOpen(!isLanguageMenuOpen)}
+            className="p-2 rounded-lg bg-white dark:bg-gray-800 shadow-md hover:shadow-lg transition-all"
+            aria-label={t('language.select')}
+            title={t('language.select')}
+          >
+            <Globe className="w-5 h-5 text-gray-700 dark:text-gray-300" />
+          </button>
+          {isLanguageMenuOpen && (
+            <>
+              <div 
+                className="fixed inset-0 z-10" 
+                onClick={() => setIsLanguageMenuOpen(false)}
+              />
+              <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-20">
+                <button
+                  onClick={() => {
+                    changeLanguage('pt-BR');
+                    setIsLanguageMenuOpen(false);
+                  }}
+                  className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 first:rounded-t-lg last:rounded-b-lg ${
+                    language === 'pt-BR' ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400' : 'text-gray-700 dark:text-gray-300'
+                  }`}
+                >
+                  🇧🇷 {t('language.portuguese')}
+                </button>
+                <button
+                  onClick={() => {
+                    changeLanguage('en-US');
+                    setIsLanguageMenuOpen(false);
+                  }}
+                  className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 first:rounded-t-lg last:rounded-b-lg ${
+                    language === 'en-US' ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400' : 'text-gray-700 dark:text-gray-300'
+                  }`}
+                >
+                  🇺🇸 {t('language.english')}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
         <button
           onClick={toggleTheme}
           className="p-2 rounded-lg bg-white dark:bg-gray-800 shadow-md hover:shadow-lg transition-all"
-          aria-label="Alternar tema"
+          aria-label={t('common.toggleTheme')}
+          title={t('common.toggleTheme')}
         >
           {theme === 'dark' ? (
             <Sun className="w-5 h-5 text-yellow-500" />
@@ -107,10 +153,10 @@ export default function LoginPage() {
             <Wallet className="w-8 h-8 text-white" />
           </div>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
-            Controle-se
+            {t('app.name')}
           </h1>
           <p className="text-gray-600 dark:text-gray-400">
-            Sistema de Controle Financeiro Pessoal
+            {t('app.subtitle')}
           </p>
         </div>
 
@@ -126,7 +172,7 @@ export default function LoginPage() {
                   : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
               }`}
             >
-              Entrar
+              {t('auth.login')}
             </button>
             <button
               onClick={() => setActiveTab('register')}
@@ -136,7 +182,7 @@ export default function LoginPage() {
                   : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
               }`}
             >
-              Cadastrar
+              {t('auth.register')}
             </button>
           </div>
 
@@ -146,28 +192,28 @@ export default function LoginPage() {
               <div>
                 <label className="label">
                   <Mail className="inline w-4 h-4 mr-2" />
-                  Email
+                  {t('auth.email')}
                 </label>
                 <input
                   type="email"
                   value={loginEmail}
                   onChange={(e) => setLoginEmail(e.target.value)}
                   className="input"
-                  placeholder="seu@email.com"
+                  placeholder={t('auth.emailPlaceholder')}
                   required
                 />
               </div>
               <div>
                 <label className="label">
                   <Lock className="inline w-4 h-4 mr-2" />
-                  Senha
+                  {t('auth.password')}
                 </label>
                 <input
                   type="password"
                   value={loginPassword}
                   onChange={(e) => setLoginPassword(e.target.value)}
                   className="input"
-                  placeholder="••••••••"
+                  placeholder={t('auth.passwordPlaceholder')}
                   required
                 />
               </div>
@@ -176,7 +222,7 @@ export default function LoginPage() {
               {requiresCaptcha && (
                 <div className="py-2">
                   <div className="text-sm text-gray-600 dark:text-gray-400 mb-2 text-center">
-                    Por segurança, complete o CAPTCHA abaixo:
+                    {t('auth.captchaRequired')}
                   </div>
                   <ReCaptcha
                     key={`captcha-${requiresCaptcha}`} // Force re-render quando requiresCaptcha muda
@@ -197,10 +243,10 @@ export default function LoginPage() {
                 {loading ? (
                   <>
                     <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
-                    Entrando...
+                    {t('auth.loggingIn')}
                   </>
                 ) : (
-                  'Entrar'
+                  t('auth.login')
                 )}
               </button>
             </form>
@@ -212,42 +258,42 @@ export default function LoginPage() {
               <div>
                 <label className="label">
                   <User className="inline w-4 h-4 mr-2" />
-                  Nome
+                  {t('auth.name')}
                 </label>
                 <input
                   type="text"
                   value={registerName}
                   onChange={(e) => setRegisterName(e.target.value)}
                   className="input"
-                  placeholder="Seu nome completo"
+                  placeholder={t('auth.namePlaceholder')}
                   required
                 />
               </div>
               <div>
                 <label className="label">
                   <Mail className="inline w-4 h-4 mr-2" />
-                  Email
+                  {t('auth.email')}
                 </label>
                 <input
                   type="email"
                   value={registerEmail}
                   onChange={(e) => setRegisterEmail(e.target.value)}
                   className="input"
-                  placeholder="seu@email.com"
+                  placeholder={t('auth.emailPlaceholder')}
                   required
                 />
               </div>
               <div>
                 <label className="label">
                   <Lock className="inline w-4 h-4 mr-2" />
-                  Senha
+                  {t('auth.password')}
                 </label>
                 <input
                   type="password"
                   value={registerPassword}
                   onChange={(e) => setRegisterPassword(e.target.value)}
                   className="input"
-                  placeholder="••••••••"
+                  placeholder={t('auth.passwordPlaceholder')}
                   required
                 />
               </div>
@@ -259,10 +305,10 @@ export default function LoginPage() {
                 {loading ? (
                   <>
                     <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
-                    Cadastrando...
+                    {t('auth.registering')}
                   </>
                 ) : (
-                  'Cadastrar'
+                  t('auth.register')
                 )}
               </button>
             </form>
@@ -272,14 +318,14 @@ export default function LoginPage() {
           <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
             <div className="text-center">
               <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-                Ou acesse nossas ferramentas gratuitas
+                {t('auth.freeTools')}
               </p>
               <Link
                 to="/calculadora-juros-compostos"
                 className="inline-flex items-center gap-2 text-sm text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 font-medium transition-colors"
               >
                 <Calculator className="w-4 h-4" />
-                Calculadora de Juros Compostos
+                {t('auth.compoundInterestCalculator')}
                 <TrendingUp className="w-3 h-3" />
               </Link>
             </div>

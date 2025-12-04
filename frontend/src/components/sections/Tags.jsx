@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Edit, Trash2, Tag } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useLanguage } from '../../contexts/LanguageContext';
 import api from '../../services/api';
 import Modal from '../common/Modal';
 import toast from 'react-hot-toast';
@@ -8,6 +9,7 @@ import SkeletonSection from '../common/SkeletonSection';
 
 export default function Tags() {
   const { user } = useAuth();
+  const { t } = useLanguage();
   const [tags, setTags] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -24,7 +26,7 @@ export default function Tags() {
       const response = await api.get(`/tags?userId=${user.id}`);
       if (response.success) setTags(response.data || []);
     } catch (error) {
-      toast.error('Erro ao carregar tags');
+      toast.error(t('tags.errorLoading'));
     } finally {
       setLoading(false);
     }
@@ -37,14 +39,14 @@ export default function Tags() {
       if (editingTag) {
         const response = await api.put(`/tags/${editingTag.idTag}`, { ...data, id: editingTag.idTag });
         if (response.success) {
-          toast.success('Tag atualizada!');
+          toast.success(t('tags.updatedSuccess'));
           loadTags();
           handleCloseModal();
         }
       } else {
         const response = await api.post('/tags', data);
         if (response.success) {
-          toast.success('Tag criada!');
+          toast.success(t('tags.createdSuccess'));
           loadTags();
           handleCloseModal();
         }
@@ -55,15 +57,15 @@ export default function Tags() {
   };
 
   const handleDelete = async (id) => {
-    if (!confirm('Tem certeza que deseja excluir esta tag?')) return;
+    if (!confirm(t('categories.tagDeleteConfirm'))) return;
     try {
       const response = await api.delete(`/tags/${id}`);
       if (response.success) {
-        toast.success('Tag excluída!');
+        toast.success(t('tags.deletedSuccess'));
         loadTags();
       }
     } catch (error) {
-      toast.error('Erro ao excluir tag');
+      toast.error(t('tags.errorDeleting'));
     }
   };
 

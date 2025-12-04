@@ -2,6 +2,7 @@ import { Info } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../contexts/AuthContext';
+import { useLanguage } from '../../contexts/LanguageContext';
 import api from '../../services/api';
 import Modal from '../common/Modal';
 import { parseFloatBrazilian, parseIntBrazilian } from '../../utils/formatters';
@@ -9,6 +10,7 @@ import Spinner from '../common/Spinner';
 
 export default function InvestmentModal({ isOpen, onClose, onSuccess, investmentToEdit }) {
   const { user } = useAuth();
+  const { t } = useLanguage();
   const [mode, setMode] = useState('VARIABLE'); // VARIABLE or FIXED
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -117,13 +119,13 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
         setAccounts(investmentAccounts);
         
         if (investmentAccounts.length === 0) {
-          toast.error('Você precisa criar uma conta do tipo "Investimento" primeiro');
+          toast.error(t('investments.needInvestmentAccount'));
           onClose();
         }
       }
     } catch (error) {
-      console.error('Erro ao carregar contas:', error);
-      toast.error('Erro ao carregar contas');
+      console.error(t('investments.errorLoadingAccounts'), error);
+      toast.error(t('investments.errorLoadingAccounts'));
     }
   };
 
@@ -133,31 +135,31 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
     try {
       // Validações de campos obrigatórios
       if (!variableForm.name || variableForm.name.trim() === '') {
-        toast.error('Informe o nome do ativo');
+        toast.error(t('investments.enterAssetName'));
         setLoading(false);
         return;
       }
       
       if (!variableForm.category || variableForm.category.trim() === '') {
-        toast.error('Selecione uma categoria');
+        toast.error(t('investments.errorSelectCategory'));
         setLoading(false);
         return;
       }
       
       if (!variableForm.quantity || variableForm.quantity.trim() === '') {
-        toast.error('Informe a quantidade');
+        toast.error(t('investments.enterQuantity'));
         setLoading(false);
         return;
       }
       
       if (!variableForm.accountId || variableForm.accountId === '') {
-        toast.error('Selecione uma conta de investimento');
+        toast.error(t('investments.errorSelectAccount'));
         setLoading(false);
         return;
       }
       
       if (!variableForm.date || variableForm.date.trim() === '') {
-        toast.error('Informe a data do aporte');
+        toast.error(t('investments.enterContributionDate'));
         setLoading(false);
         return;
       }
@@ -165,7 +167,7 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
       let quantity = parseFloatBrazilian(variableForm.quantity);
       
       if (isNaN(quantity) || quantity === 0) {
-        toast.error('A quantidade deve ser diferente de zero');
+        toast.error(t('investments.quantityMustNotBeZero'));
         setLoading(false);
         return;
       }
@@ -182,7 +184,7 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
       if (manualPriceInput) {
         manualPrice = parseFloatBrazilian(manualPriceInput);
         if (isNaN(manualPrice) || manualPrice <= 0) {
-          toast.error('Informe um preço válido maior que zero');
+          toast.error(t('investments.enterValidPrice'));
           setLoading(false);
           return;
         }
@@ -223,14 +225,14 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
       
       if (response && response.success) {
         if (investmentToEdit) {
-          toast.success('Investimento atualizado com sucesso!');
+          toast.success(t('investments.updatedSuccess'));
           // Dispara evento para recarregar contas
           window.dispatchEvent(new CustomEvent('investmentUpdated'));
         } else if (variableForm.operationType === 'SELL') {
-          toast.success('Venda de ativo registrada com sucesso!');
+          toast.success(t('investments.sellRegisteredSuccess'));
           window.dispatchEvent(new CustomEvent('investmentUpdated'));
         } else {
-          toast.success('Investimento criado com sucesso!');
+          toast.success(t('investments.createdSuccess'));
           window.dispatchEvent(new CustomEvent('investmentUpdated'));
         }
         if (onSuccess) {
@@ -401,7 +403,7 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
   if (!isOpen) return null;
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={investmentToEdit ? "Editar Investimento" : (mode === 'VARIABLE' ? "Novo Investimento" : "Novo Investimento - Renda Fixa")}>
+    <Modal isOpen={isOpen} onClose={onClose} title={investmentToEdit ? t('investments.editInvestment') : (mode === 'VARIABLE' ? t('investments.newInvestment') : t('investments.newFixedIncome'))}>
       {mode === 'VARIABLE' ? (
         <form onSubmit={handleVariableSubmit} className="space-y-4">
           
@@ -415,7 +417,7 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
                   : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'
               }`}
             >
-              Compra
+              {t('investments.buy')}
             </button>
             <button
               type="button"
@@ -426,30 +428,30 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
                   : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'
               }`}
             >
-              Venda
+              {t('investments.sell')}
             </button>
           </div>
 
           <div>
-            <label className="label">Nome/Símbolo</label>
+            <label className="label">{t('investments.name')}</label>
             <input
               type="text"
               className="input"
               value={variableForm.name}
               onChange={e => setVariableForm({...variableForm, name: e.target.value})}
-              placeholder="Ex: ITUB4, AAPL, BTC"
+              placeholder={t('investments.namePlaceholder')}
               required
             />
             <p className="text-xs text-gray-500 mt-1">
-              O preço será obtido automaticamente com base no fechamento do dia, mas você pode informá-lo manualmente abaixo se preferir.
+              {t('investments.priceInfo')}
             </p>
           </div>
 
           <div className="relative">
             <div className="flex items-center gap-2">
-              <label className="label">Preço do Ativo</label>
+              <label className="label">{t('investments.price')}</label>
               <span className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
-                (Opcional)
+                ({t('common.optional')})
                 <button
                   type="button"
                   onClick={() => setShowPriceInfo(prev => !prev)}
@@ -467,44 +469,44 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
               min="0"
               value={variableForm.price}
               onChange={e => setVariableForm({...variableForm, price: e.target.value})}
-              placeholder="Insira o preço pago por unidade"
+              placeholder={t('investments.pricePerUnit')}
             />
             {showPriceInfo && (
               <div className="absolute top-full right-0 mt-2 w-64 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-3 text-xs text-gray-600 dark:text-gray-300 z-20">
                 <p>
-                  Caso você não informe o preço, ele será definido automaticamente pela base de dados com a cotação do dia do aporte.
+                  {t('investments.priceAutoInfo')}
                 </p>
                 <button
                   type="button"
                   onClick={() => setShowPriceInfo(false)}
                   className="mt-2 text-primary-600 hover:underline text-xs font-medium"
                 >
-                  Entendi
+                  {t('common.understood')}
                 </button>
               </div>
             )}
           </div>
 
           <div>
-            <label className="label">Categoria</label>
+            <label className="label">{t('investments.category')}</label>
             <select
               className="input"
               value={variableForm.category}
               onChange={handleCategoryChange}
               required
             >
-              <option value="">Selecione...</option>
-              <option value="ACAO">Ação (B3)</option>
-              <option value="STOCK">Stock (Ações Internacionais)</option>
-              <option value="CRYPTO">Criptomoeda</option>
-              <option value="FII">FII</option>
-              <option value="RENDA_FIXA">Renda Fixa</option>
+              <option value="">{t('common.select')}...</option>
+              <option value="ACAO">{t('investments.categories.ACAO')}</option>
+              <option value="STOCK">{t('investments.categories.STOCK')}</option>
+              <option value="CRYPTO">{t('investments.categories.CRYPTO')}</option>
+              <option value="FII">{t('investments.categories.FII')}</option>
+              <option value="RENDA_FIXA">{t('investments.categories.RENDA_FIXA')}</option>
             </select>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="label">Quantidade</label>
+              <label className="label">{t('investments.quantity')}</label>
               <input
                 type="number"
                 className="input"
@@ -516,7 +518,7 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
               />
             </div>
             <div>
-              <label className="label">Corretagem</label>
+              <label className="label">{t('investments.brokerage')}</label>
               <input
                 type="number"
                 className="input"
@@ -530,7 +532,7 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="label">Data do Aporte</label>
+              <label className="label">{t('investments.contributionDate')}</label>
               <input
                 type="date"
                 className="input"
@@ -540,28 +542,28 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
               />
             </div>
             <div>
-              <label className="label">Moeda</label>
+              <label className="label">{t('investments.currency')}</label>
               <select
                 className="input"
                 value={variableForm.currency}
                 onChange={e => setVariableForm({...variableForm, currency: e.target.value})}
               >
-                <option value="BRL">BRL (Real)</option>
-                <option value="USD">USD (Dólar)</option>
-                <option value="EUR">EUR (Euro)</option>
+                <option value="BRL">{t('investments.currencies.BRL')}</option>
+                <option value="USD">{t('investments.currencies.USD')}</option>
+                <option value="EUR">{t('investments.currencies.EUR')}</option>
               </select>
             </div>
           </div>
 
           <div>
-            <label className="label">Conta de Investimento</label>
+            <label className="label">{t('investments.investmentAccount')}</label>
             <select
               className="input"
               value={variableForm.accountId}
               onChange={e => setVariableForm({...variableForm, accountId: e.target.value})}
               required
             >
-              <option value="">Selecione...</option>
+              <option value="">{t('common.select')}...</option>
               {accounts.map(acc => (
                 <option key={acc.idConta} value={acc.idConta}>
                   {acc.nome} ({acc.tipo})
@@ -592,12 +594,12 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
                 onClick={() => setMode('VARIABLE')}
                 className="text-sm text-primary-600 hover:underline flex items-center gap-1"
               >
-                <Info size={14} /> Voltar para Renda Variável
+                <Info size={14} /> {t('investments.backToVariable')}
               </button>
            </div>
 
            <div>
-            <label className="label">Nome do Ativo</label>
+            <label className="label">{t('investments.assetName')}</label>
             <input
               type="text"
               className="input"
@@ -610,24 +612,24 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-               <label className="label">Tipo de Investimento</label>
+               <label className="label">{t('investments.investmentType')}</label>
                <select
                  className="input"
                  value={fixedForm.investmentType}
                  onChange={e => setFixedForm({...fixedForm, investmentType: e.target.value})}
                  required
                >
-                 <option value="">Selecione...</option>
-                 <option value="CDB">CDB</option>
-                 <option value="LCI">LCI</option>
-                 <option value="LCA">LCA</option>
-                 <option value="TESOURO">Tesouro Direto</option>
-                 <option value="DEBENTURE">Debênture</option>
-                 <option value="OUTROS">Outros</option>
+                 <option value="">{t('common.select')}...</option>
+                 <option value="CDB">{t('investments.investmentTypes.CDB')}</option>
+                 <option value="LCI">{t('investments.investmentTypes.LCI')}</option>
+                 <option value="LCA">{t('investments.investmentTypes.LCA')}</option>
+                 <option value="TESOURO">{t('investments.investmentTypes.TESOURO')}</option>
+                 <option value="DEBENTURE">{t('investments.investmentTypes.DEBENTURE')}</option>
+                 <option value="OUTROS">{t('investments.investmentTypes.OUTROS')}</option>
                </select>
             </div>
             <div>
-               <label className="label">Emissor (Opcional)</label>
+               <label className="label">{t('investments.issuer')} ({t('common.optional')})</label>
                <input
                  type="text"
                  className="input"
@@ -639,17 +641,17 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
           </div>
 
           <div>
-             <label className="label">Tipo de Rentabilidade</label>
+             <label className="label">{t('investments.profitabilityType')}</label>
              <select
                className="input"
                value={fixedForm.profitabilityType}
                onChange={e => setFixedForm({...fixedForm, profitabilityType: e.target.value})}
                required
              >
-               <option value="">Selecione...</option>
-               <option value="PRE_FIXADO">Pré-fixado</option>
-               <option value="POS_FIXADO">Pós-fixado</option>
-               <option value="POS_FIXADO_TAXA">Pós-fixado + Taxa Fixa</option>
+               <option value="">{t('common.select')}...</option>
+               <option value="PRE_FIXADO">{t('investments.preFixed')}</option>
+               <option value="POS_FIXADO">{t('investments.postFixed')}</option>
+               <option value="POS_FIXADO_TAXA">{t('investments.postFixedRate')}</option>
              </select>
           </div>
 
@@ -657,21 +659,21 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
           {(fixedForm.profitabilityType === 'POS_FIXADO' || fixedForm.profitabilityType === 'POS_FIXADO_TAXA') && (
             <div className="grid grid-cols-2 gap-4">
               <div>
-                 <label className="label">Índice</label>
+                 <label className="label">{t('investments.index')}</label>
                  <select
                    className="input"
                    value={fixedForm.index}
                    onChange={e => setFixedForm({...fixedForm, index: e.target.value})}
                    required
                  >
-                   <option value="">Selecione...</option>
-                   <option value="CDI">CDI</option>
-                   <option value="SELIC">SELIC</option>
-                   <option value="IPCA">IPCA</option>
+                   <option value="">{t('common.select')}...</option>
+                   <option value="CDI">{t('investments.indices.CDI')}</option>
+                   <option value="SELIC">{t('investments.indices.SELIC')}</option>
+                   <option value="IPCA">{t('investments.indices.IPCA')}</option>
                  </select>
               </div>
               <div>
-                 <label className="label">% do Índice</label>
+                 <label className="label">{t('investments.indexPercent')}</label>
                  <input
                    type="number"
                    className="input"
@@ -686,7 +688,7 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
 
           {fixedForm.profitabilityType === 'POS_FIXADO_TAXA' && (
              <div>
-               <label className="label">Taxa Fixa Adicional (% a.a.)</label>
+               <label className="label">{t('investments.additionalFixedRate')}</label>
                <input
                  type="number"
                  className="input"
@@ -701,7 +703,7 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
 
           {fixedForm.profitabilityType === 'PRE_FIXADO' && (
              <div>
-               <label className="label">Taxa Pré-fixada (% a.a.)</label>
+               <label className="label">{t('investments.preFixedRate')}</label>
                <input
                  type="number"
                  className="input"
@@ -715,7 +717,7 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
           )}
 
           <div>
-            <label className="label">Valor Aportado (R$)</label>
+            <label className="label">{t('investments.contributedAmount')}</label>
             <input
               type="number"
               className="input"
@@ -729,7 +731,7 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="label">Data do Aporte</label>
+              <label className="label">{t('investments.contributionDate')}</label>
               <input
                 type="date"
                 className="input"
@@ -739,7 +741,7 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
               />
             </div>
             <div>
-              <label className="label">Vencimento</label>
+              <label className="label">{t('investments.maturityDate')}</label>
               <input
                 type="date"
                 className="input"
@@ -751,14 +753,14 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
           </div>
 
           <div>
-            <label className="label">Conta de Investimento</label>
+            <label className="label">{t('investments.investmentAccount')}</label>
             <select
               className="input"
               value={fixedForm.accountId}
               onChange={e => setFixedForm({...fixedForm, accountId: e.target.value})}
               required
             >
-              <option value="">Selecione...</option>
+              <option value="">{t('common.select')}...</option>
               {accounts.map(acc => (
                 <option key={acc.idConta} value={acc.idConta}>
                   {acc.nome} ({acc.tipo})

@@ -3,11 +3,13 @@ import autoTable from 'jspdf-autotable';
 import { File, FileSpreadsheet, FileText, Filter } from 'lucide-react';
 import React, { useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
+import { useLanguage } from '../../../contexts/LanguageContext';
 import * as XLSX from 'xlsx';
 import { formatCurrency, formatDate } from '../../../utils/formatters';
 import Modal from '../../common/Modal';
 
 export default function InvestmentStatementModal({ isOpen, onClose, investments, accounts }) {
+  const { t } = useLanguage();
   const [filters, setFilters] = useState({
     startDate: '',
     endDate: '',
@@ -263,7 +265,7 @@ export default function InvestmentStatementModal({ isOpen, onClose, investments,
       doc.setFontSize(24);
       doc.setFont(undefined, 'bold');
       doc.setTextColor(...palette.textPrimary);
-      doc.text('Extrato de Investimentos', margin, yPos);
+      doc.text(t('investments.statementTitle'), margin, yPos);
       yPos += 8;
       
       doc.setFontSize(9);
@@ -273,10 +275,10 @@ export default function InvestmentStatementModal({ isOpen, onClose, investments,
       yPos += 6;
 
       const filterRange = filters.startDate || filters.endDate
-        ? `${filters.startDate || 'Início'} → ${filters.endDate || 'Hoje'}`
-        : 'Todo o período';
-      const filterBroker = filters.broker || 'Todas';
-      const filterCategory = filters.category ? (categoryNames[filters.category] || filters.category) : 'Todas';
+        ? `${filters.startDate || t('investments.start')} → ${filters.endDate || t('investments.today')}`
+        : t('investments.allPeriod');
+      const filterBroker = filters.broker || t('investments.all');
+      const filterCategory = filters.category ? (categoryNames[filters.category] || filters.category) : t('investments.all');
       doc.text(`Filtros: ${filterRange} • Corretora: ${filterBroker} • Categoria: ${filterCategory}`, margin, yPos);
       yPos += 16;
 
@@ -285,9 +287,9 @@ export default function InvestmentStatementModal({ isOpen, onClose, investments,
       const cardSpacing = 4;
       
       drawSummaryCard(
-        'Total Investido no Período',
+        t('investments.totalInvestedPeriod'),
         formatCurrency(summaryTotals.totalInvested),
-        'Aportes realizados',
+        t('investments.contributionsMade'),
         margin,
         yPos,
         cardWidth,
@@ -297,9 +299,9 @@ export default function InvestmentStatementModal({ isOpen, onClose, investments,
       );
       
       drawSummaryCard(
-        'Total Recebido em Vendas',
+        t('investments.totalReceivedSales'),
         formatCurrency(summaryTotals.totalReceived),
-        'Valor recebido',
+        t('investments.valueReceived'),
         margin + cardWidth + cardSpacing,
         yPos,
         cardWidth,
@@ -311,9 +313,9 @@ export default function InvestmentStatementModal({ isOpen, onClose, investments,
       yPos += 40;
       
       drawSummaryCard(
-        'Total em Corretagem',
+        t('investments.totalBrokerage'),
         formatCurrency(summaryTotals.totalBrokerage),
-        'Taxas pagas',
+        t('investments.feesPaid'),
         margin,
         yPos,
         cardWidth,
@@ -323,9 +325,9 @@ export default function InvestmentStatementModal({ isOpen, onClose, investments,
       );
       
       drawSummaryCard(
-        'Operações Realizadas',
-        `${summaryTotals.buyCount} compras • ${summaryTotals.sellCount} vendas`,
-        'Total de transações',
+        t('investments.operationsPerformed'),
+        `${summaryTotals.buyCount} ${t('investments.buys')} • ${summaryTotals.sellCount} ${t('investments.sells')}`,
+        t('investments.totalTransactions'),
         margin + cardWidth + cardSpacing,
         yPos,
         cardWidth,
@@ -337,14 +339,14 @@ export default function InvestmentStatementModal({ isOpen, onClose, investments,
       yPos += 40;
 
       // Tabela principal
-      drawSectionTitle('Operações Filtradas');
+      drawSectionTitle(t('investments.filteredOperations'));
       const tableData = filteredInvestments.map(inv => {
         const { total } = getOperationTotals(inv);
         return [
           formatDate(inv.dataAporte),
           inv.nome,
           categoryNames[inv.categoria] || inv.categoria,
-          inv.quantidade > 0 ? 'Compra' : 'Venda',
+          inv.quantidade > 0 ? t('investments.buyLabel') : t('investments.sellLabel'),
           Math.abs(inv.quantidade).toFixed(6),
           formatCurrency(inv.precoAporte || 0),
           formatCurrency(inv.corretagem || 0),
@@ -357,7 +359,7 @@ export default function InvestmentStatementModal({ isOpen, onClose, investments,
       autoTable(doc, {
         startY: yPos,
         head: [
-          ['Data', 'Ativo', 'Categoria', 'Tipo', 'Quantidade', 'Preço', 'Corretagem', 'Valor Total', 'Corretora', 'Lucro Realizado'],
+          [t('investments.dateLabel'), t('investments.assetLabel'), t('investments.categoryLabel'), t('investments.typeLabel'), t('investments.quantityLabel'), t('investments.price'), t('investments.brokerageLabel'), t('investments.totalValueLabel'), t('investments.brokerageLabel'), t('investments.realizedProfit')],
         ],
         body: tableData,
         styles: { 
@@ -392,19 +394,19 @@ export default function InvestmentStatementModal({ isOpen, onClose, investments,
       yPos = doc.lastAutoTable.finalY + 12;
 
       // Insights rápidos
-      drawSectionTitle('Insights Rápidos');
+      drawSectionTitle(t('investments.quickInsights'));
       doc.setFontSize(9);
       doc.setFont(undefined, 'normal');
       doc.setTextColor(...palette.textSecondary);
       if (filteredInvestments.length === 0) {
-        doc.text('Nenhuma operação encontrada com os filtros selecionados.', margin, yPos);
+        doc.text(t('investments.noOperationsFound'), margin, yPos);
         yPos += 8;
       } else {
-        doc.text(`Média de operações por dia útil: ${(filteredInvestments.length / Math.max(1, filteredInvestments.length)).toFixed(1)}`, margin, yPos);
+        doc.text(`${t('investments.avgOperationsPerDay')} ${(filteredInvestments.length / Math.max(1, filteredInvestments.length)).toFixed(1)}`, margin, yPos);
         yPos += 6;
-        doc.text(`Maior operação registrada: ${formatCurrency(Math.max(...filteredInvestments.map(inv => Math.abs(inv.valorAporte || 0))))}`, margin, yPos);
+        doc.text(`${t('investments.largestOperation')} ${formatCurrency(Math.max(...filteredInvestments.map(inv => Math.abs(inv.valorAporte || 0))))}`, margin, yPos);
         yPos += 6;
-        doc.text('Lucros realizados listados apenas em vendas (coluna final).', margin, yPos);
+        doc.text(t('investments.realizedProfitNote'), margin, yPos);
         yPos += 6;
       }
       yPos += 8;
@@ -424,10 +426,10 @@ export default function InvestmentStatementModal({ isOpen, onClose, investments,
       }
 
       doc.save(`extrato_investimentos_${new Date().toISOString().split('T')[0]}.pdf`);
-      toast.success('Extrato exportado como PDF!');
+      toast.success(t('investments.statementExportSuccessPDF'));
     } catch (error) {
-      console.error('Erro ao exportar PDF:', error);
-      toast.error('Erro ao exportar PDF');
+      console.error(t('investments.statementExportErrorPDF'), error);
+      toast.error(t('investments.statementExportErrorPDF'));
     }
   };
 
@@ -436,51 +438,51 @@ export default function InvestmentStatementModal({ isOpen, onClose, investments,
       const data = filteredInvestments.map(inv => {
         const { total } = getOperationTotals(inv);
                 return {
-        'Data': formatDate(inv.dataAporte),
-        'Ativo': inv.nome,
-        'Nome do Ativo': inv.nomeAtivo || '-',
-        'Categoria': categoryNames[inv.categoria] || inv.categoria,
-        'Tipo': inv.quantidade > 0 ? 'Compra' : 'Venda',
-        'Quantidade': Math.abs(inv.quantidade),
-        'Preço Unitário': inv.precoAporte || 0,
-        'Corretagem': inv.corretagem || 0,
-          'Valor Total': total,
-        'Corretora': inv.corretora || '-',
-                  'Lucro/Prejuízo Realizado': inv.quantidade < 0 ? inv.realizedPnL || 0 : null,
-        'Moeda': inv.moeda || 'BRL'
+        [t('investments.dateLabel')]: formatDate(inv.dataAporte),
+        [t('investments.assetLabel')]: inv.nome,
+        [t('investments.assetNameLabel')]: inv.nomeAtivo || '-',
+        [t('investments.categoryLabel')]: categoryNames[inv.categoria] || inv.categoria,
+        [t('investments.typeLabel')]: inv.quantidade > 0 ? t('investments.buyLabel') : t('investments.sellLabel'),
+        [t('investments.quantityLabel')]: Math.abs(inv.quantidade),
+        [t('investments.unitPrice')]: inv.precoAporte || 0,
+        [t('investments.brokerageLabel')]: inv.corretagem || 0,
+        [t('investments.totalValueLabel')]: total,
+        [t('investments.brokerageLabel')]: inv.corretora || '-',
+        [t('investments.realizedPnL')]: inv.quantidade < 0 ? inv.realizedPnL || 0 : null,
+        [t('investments.currencyLabel')]: inv.moeda || 'BRL'
         };
       });
 
       const ws = XLSX.utils.json_to_sheet(data);
       const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'Extrato');
+      XLSX.utils.book_append_sheet(wb, ws, t('investments.statementSheet'));
 
       // Add summary sheet
       const summaryData = [
-        ['Resumo do Extrato'],
+        [t('investments.statementSummary')],
         [''],
-        ['Total Investido', formatCurrency(summaryTotals.totalInvested)],
-        ['Total Recebido (Vendas)', formatCurrency(summaryTotals.totalReceived)],
-        ['Total Corretagem', formatCurrency(summaryTotals.totalBrokerage)],
-        ['Compras', summaryTotals.buyCount],
-        ['Vendas', summaryTotals.sellCount],
-        ['Total de Operações', filteredInvestments.length]
+        [t('investments.totalInvestedLabel'), formatCurrency(summaryTotals.totalInvested)],
+        [t('investments.totalReceived'), formatCurrency(summaryTotals.totalReceived)],
+        [t('investments.totalBrokerageLabel'), formatCurrency(summaryTotals.totalBrokerage)],
+        [t('investments.buys'), summaryTotals.buyCount],
+        [t('investments.sells'), summaryTotals.sellCount],
+        [t('investments.totalOperations'), filteredInvestments.length]
       ];
 
       const summaryWs = XLSX.utils.aoa_to_sheet(summaryData);
-      XLSX.utils.book_append_sheet(wb, summaryWs, 'Resumo');
+      XLSX.utils.book_append_sheet(wb, summaryWs, t('investments.summarySheet'));
 
       XLSX.writeFile(wb, `extrato_investimentos_${new Date().toISOString().split('T')[0]}.xlsx`);
-      toast.success('Extrato exportado como XLSX!');
+      toast.success(t('investments.statementExportSuccessXLSX'));
     } catch (error) {
-      console.error('Erro ao exportar XLSX:', error);
-      toast.error('Erro ao exportar XLSX');
+      console.error(t('investments.statementExportErrorXLSX'), error);
+      toast.error(t('investments.statementExportErrorXLSX'));
     }
   };
 
   const exportToCSV = () => {
     try {
-      const headers = ['Data', 'Ativo', 'Nome do Ativo', 'Categoria', 'Tipo', 'Quantidade', 'Preço Unitário', 'Corretagem', 'Valor Total', 'Corretora', 'Lucro/Prejuízo Realizado', 'Moeda'];
+      const headers = [t('investments.dateLabel'), t('investments.assetLabel'), t('investments.assetNameLabel'), t('investments.categoryLabel'), t('investments.typeLabel'), t('investments.quantityLabel'), t('investments.unitPrice'), t('investments.brokerageLabel'), t('investments.totalValueLabel'), t('investments.brokerageLabel'), t('investments.realizedPnL'), t('investments.currencyLabel')];
       const rows = filteredInvestments.map(inv => {
         const { total } = getOperationTotals(inv);
         return [
@@ -509,23 +511,23 @@ export default function InvestmentStatementModal({ isOpen, onClose, investments,
       link.href = URL.createObjectURL(blob);
       link.download = `extrato_investimentos_${new Date().toISOString().split('T')[0]}.csv`;
       link.click();
-      toast.success('Extrato exportado como CSV!');
+      toast.success(t('investments.statementExportSuccessCSV'));
     } catch (error) {
-      console.error('Erro ao exportar CSV:', error);
-      toast.error('Erro ao exportar CSV');
+      console.error(t('investments.statementExportErrorCSV'), error);
+      toast.error(t('investments.statementExportErrorCSV'));
     }
   };
 
   if (!isOpen) return null;
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Extrato de Investimentos" size="lg">
+    <Modal isOpen={isOpen} onClose={onClose} title={t('investments.statementTitle')} size="lg">
       <div className="space-y-4">
         {/* Filters */}
         <div className="bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg space-y-3">
           <div className="flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-gray-300">
             <Filter size={16} />
-            Filtros
+            {t('investments.filters')}
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
@@ -620,7 +622,7 @@ export default function InvestmentStatementModal({ isOpen, onClose, investments,
                               ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
                               : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
                           }`}>
-                          {isBuy ? 'Compra' : 'Venda'}
+                          {isBuy ? t('investments.buyLabel') : t('investments.sellLabel')}
                           </span>
                         </div>
                         <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
@@ -628,7 +630,7 @@ export default function InvestmentStatementModal({ isOpen, onClose, investments,
                           {inv.corretora && ` • ${inv.corretora}`}
                         </div>
                         <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                          Qtd: {Math.abs(inv.quantidade).toFixed(6)} • Preço: {formatCurrency(inv.precoAporte || 0)}
+                          {t('investments.qty')} {Math.abs(inv.quantidade).toFixed(6)} • {t('investments.price')} {formatCurrency(inv.precoAporte || 0)}
                         </div>
                       </div>
                       <div className="text-right">
@@ -637,12 +639,12 @@ export default function InvestmentStatementModal({ isOpen, onClose, investments,
                         </div>
                         {brokerage > 0 && (
                           <div className="text-xs text-gray-500 dark:text-gray-400">
-                            Corretagem: {formatCurrency(brokerage)}
+                            {t('investments.brokerage')}: {formatCurrency(brokerage)}
                           </div>
                         )}
                         {!isBuy && (
                           <div className={`text-xs font-medium mt-1 ${inv.realizedPnL >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                            {inv.realizedPnL >= 0 ? 'Lucro realizado' : 'Prejuízo realizado'} de {formatCurrency(inv.realizedPnL || 0)}
+                            {inv.realizedPnL >= 0 ? t('investments.realizedProfit') : t('investments.realizedLoss')} {t('investments.of')} {formatCurrency(inv.realizedPnL || 0)}
                           </div>
                         )}
                       </div>

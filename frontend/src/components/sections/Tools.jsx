@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Calculator, FileText, Save, Download, TrendingUp, DollarSign, Percent, Calendar, History, Trash2, Loader2 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useLanguage } from '../../contexts/LanguageContext';
 import api from '../../services/api';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import toast from 'react-hot-toast';
@@ -34,6 +35,7 @@ ChartJS.register(
 );
 
 export default function Tools() {
+  const { t } = useLanguage();
   const [activeTab, setActiveTab] = useState('juros-compostos');
   const chartRef = useRef(null);
 
@@ -41,10 +43,10 @@ export default function Tools() {
     <div className="space-y-6 animate-fade-in">
       <div>
         <h2 className="text-3xl font-bold text-gray-900 dark:text-white">
-          Ferramentas
+          {t('tools.title')}
         </h2>
         <p className="text-gray-600 dark:text-gray-400 mt-1">
-          Calculadoras financeiras úteis
+          {t('tools.subtitle')}
         </p>
       </div>
 
@@ -61,7 +63,7 @@ export default function Tools() {
           >
             <div className="flex items-center gap-2">
               <TrendingUp className="w-4 h-4" />
-              Juros Compostos
+              {t('tools.compoundInterestCalculator')}
             </div>
           </button>
           <button
@@ -74,7 +76,7 @@ export default function Tools() {
           >
             <div className="flex items-center gap-2">
               <Calculator className="w-4 h-4" />
-              Calculadora de IR
+              {t('tools.irCalculator')}
             </div>
           </button>
         </nav>
@@ -94,10 +96,10 @@ function IRCalculatorPlaceholder() {
     <div className="card text-center py-16">
       <Calculator className="w-16 h-16 mx-auto text-gray-400 mb-4" />
       <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
-        Calculadora de IR
+        {t('tools.irCalculator')}
       </h3>
       <p className="text-gray-600 dark:text-gray-400">
-        Esta funcionalidade está em desenvolvimento e estará disponível em breve.
+        {t('tools.irCalculatorPlaceholder')}
       </p>
     </div>
   );
@@ -105,6 +107,7 @@ function IRCalculatorPlaceholder() {
 
 function JurosCompostosCalculator({ chartRef }) {
   const { user } = useAuth();
+  const { t } = useLanguage();
   const [formData, setFormData] = useState({
     aporteInicial: '',
     aporteMensal: '',
@@ -239,7 +242,7 @@ function JurosCompostosCalculator({ chartRef }) {
       labels,
       datasets: [
         {
-          label: 'Saldo Total',
+          label: t('tools.totalBalance'),
           data: results.monthlyData.map((d) => d.saldo),
           borderColor: '#3b82f6',
           backgroundColor: 'rgba(59, 130, 246, 0.1)',
@@ -249,7 +252,7 @@ function JurosCompostosCalculator({ chartRef }) {
           pointHoverRadius: 4,
         },
         {
-          label: 'Valor Investido',
+          label: t('tools.investedValue'),
           data: results.monthlyData.map((d) => d.investido),
           borderColor: '#9ca3af',
           borderDash: [5, 5],
@@ -265,16 +268,16 @@ function JurosCompostosCalculator({ chartRef }) {
   const handleCalculate = () => {
     const calculated = calculateResults();
     if (!calculated) {
-      toast.error('Por favor, preencha todos os campos corretamente');
+      toast.error(t('tools.fillAllFields'));
       return;
     }
     setResults(calculated);
-    toast.success('Cálculo realizado com sucesso!');
+    toast.success(t('tools.calculationSuccess'));
   };
 
   const handleSaveToHistory = async () => {
     if (!user || !results) {
-      toast.error('Você precisa estar logado para salvar');
+      toast.error(t('tools.mustBeLoggedIn'));
       return;
     }
 
@@ -297,17 +300,17 @@ function JurosCompostosCalculator({ chartRef }) {
 
       const response = await api.post('/tools/compound-interest', payload);
       if (response.success) {
-        toast.success('Cálculo salvo no histórico!');
+        toast.success(t('tools.calculationSaved'));
         // Recarrega o histórico se o modal estiver aberto
         if (showHistoryModal) {
           loadHistory();
         }
       } else {
-        toast.error('Erro ao salvar cálculo');
+        toast.error(t('tools.errorSaving'));
       }
     } catch (error) {
       console.error('Erro ao salvar:', error);
-      toast.error('Erro ao salvar cálculo no histórico');
+      toast.error(t('tools.errorSavingHistory'));
     } finally {
       setLoading(false);
     }
@@ -322,7 +325,7 @@ function JurosCompostosCalculator({ chartRef }) {
       if (response.success) {
         setHistory(response.data || []);
       } else {
-        toast.error('Erro ao carregar histórico');
+        toast.error(t('tools.errorLoadingHistory'));
         setHistory([]);
       }
     } catch (error) {
@@ -335,7 +338,7 @@ function JurosCompostosCalculator({ chartRef }) {
   };
 
   const handleDeleteFromHistory = async (idCalculo) => {
-    if (!confirm('Tem certeza que deseja excluir este cálculo do histórico?')) {
+    if (!confirm(t('common.deleteCalculationConfirm'))) {
       return;
     }
 
@@ -349,14 +352,14 @@ function JurosCompostosCalculator({ chartRef }) {
     try {
       const response = await api.delete(`/tools/compound-interest?id=${idCalculo}`);
       if (response.success) {
-        toast.success('Cálculo excluído do histórico');
+        toast.success(t('tools.calculationDeleted'));
         loadHistory();
       } else {
-        toast.error('Erro ao excluir cálculo');
+        toast.error(t('tools.errorDeletingCalculation'));
       }
     } catch (error) {
       console.error('Erro ao excluir:', error);
-      toast.error('Erro ao excluir cálculo do histórico');
+      toast.error(t('tools.errorDeletingCalculationHistory'));
     } finally {
       setDeletingHistoryIds(prev => {
         const next = new Set(prev);
@@ -388,7 +391,7 @@ function JurosCompostosCalculator({ chartRef }) {
     }
     
     setShowHistoryModal(false);
-    toast.success('Cálculo carregado!');
+    toast.success(t('tools.calculationLoaded'));
   };
 
   useEffect(() => {
@@ -399,7 +402,7 @@ function JurosCompostosCalculator({ chartRef }) {
 
   const handleExportPDF = async () => {
     if (!results) {
-      toast.error('Realize um cálculo primeiro');
+      toast.error(t('tools.performCalculationFirst'));
       return;
     }
 
@@ -525,9 +528,9 @@ function JurosCompostosCalculator({ chartRef }) {
       const cardSpacing = 4;
       
       drawSummaryCard(
-        'Total Investido',
+        t('tools.totalInvested'),
         formatCurrency(results.totalInvestido),
-        'Aportes realizados',
+        t('tools.contributionsMade'),
         margin,
         yPos,
         cardWidth,
@@ -537,9 +540,9 @@ function JurosCompostosCalculator({ chartRef }) {
       );
       
       drawSummaryCard(
-        'Saldo Final',
+        t('tools.finalBalance'),
         formatCurrency(results.saldoFinal),
-        'Valor acumulado',
+        t('tools.accumulatedValue'),
         margin + cardWidth + cardSpacing,
         yPos,
         cardWidth,
@@ -549,9 +552,9 @@ function JurosCompostosCalculator({ chartRef }) {
       );
       
       drawSummaryCard(
-        'Total de Juros',
+        t('tools.totalInterest'),
         formatCurrency(results.totalJuros),
-        'Rendimentos',
+        t('tools.earnings'),
         margin + (cardWidth + cardSpacing) * 2,
         yPos,
         cardWidth,
@@ -562,9 +565,9 @@ function JurosCompostosCalculator({ chartRef }) {
       
       const rentabilidade = ((results.totalJuros / results.totalInvestido) * 100).toFixed(2);
       drawSummaryCard(
-        'Rentabilidade',
+        t('tools.profitability'),
         `${rentabilidade}%`,
-        'Sobre o investido',
+        t('tools.onInvested'),
         margin + (cardWidth + cardSpacing) * 3,
         yPos,
         cardWidth,
@@ -586,18 +589,18 @@ function JurosCompostosCalculator({ chartRef }) {
       doc.setFontSize(14);
       doc.setFont(undefined, 'bold');
       doc.setTextColor(...palette.textPrimary);
-      doc.text('Parâmetros do Cálculo', margin + 4, yPos);
+      doc.text(t('tools.calculationParameters'), margin + 4, yPos);
       yPos += 10;
       
       doc.setFontSize(9);
       doc.setFont(undefined, 'normal');
       
       const params = [
-        { label: 'Aporte Inicial', value: formatCurrency(parseFloat(formData.aporteInicial) || 0) },
-        { label: 'Aporte Mensal', value: formatCurrency(parseFloat(formData.aporteMensal) || 0) },
-        { label: 'Frequência de Aporte', value: formData.frequenciaAporte === 'mensal' ? 'Mensal' : formData.frequenciaAporte === 'quinzenal' ? 'Quinzenal' : 'Anual' },
-        { label: 'Taxa de Juros', value: `${formData.taxaJuros}% ${formData.tipoTaxa === 'mensal' ? 'Mensal' : 'Anual'}` },
-        { label: 'Prazo', value: `${formData.prazo} ${formData.tipoPrazo === 'meses' ? 'meses' : 'anos'}` },
+        { label: t('tools.initialContribution'), value: formatCurrency(parseFloat(formData.aporteInicial) || 0) },
+        { label: t('tools.monthlyContribution'), value: formatCurrency(parseFloat(formData.aporteMensal) || 0) },
+        { label: t('tools.contributionFrequency'), value: formData.frequenciaAporte === 'mensal' ? t('tools.monthly') : formData.frequenciaAporte === 'quinzenal' ? t('tools.biweekly') : t('tools.annual') },
+        { label: t('tools.interestRate'), value: `${formData.taxaJuros}% ${formData.tipoTaxa === 'mensal' ? t('tools.monthly') : t('tools.annual')}` },
+        { label: t('tools.period'), value: `${formData.prazo} ${formData.tipoPrazo === 'meses' ? t('tools.months') : t('tools.years')}` },
       ];
 
       // Desenha parâmetros em duas colunas
@@ -677,7 +680,7 @@ function JurosCompostosCalculator({ chartRef }) {
         doc.setFontSize(14);
         doc.setFont(undefined, 'bold');
         doc.setTextColor(...palette.textPrimary);
-        doc.text('Evolução Mensal - Primeiros 12 Meses', margin, yPos);
+        doc.text(`${t('tools.monthlyEvolution')} - ${t('tools.first12Months')}`, margin, yPos);
         yPos += 10;
 
         const first12Months = results.monthlyData.slice(0, 13);
@@ -690,7 +693,7 @@ function JurosCompostosCalculator({ chartRef }) {
 
         autoTable(doc, {
           startY: yPos,
-          head: [['Período', 'Valor Investido', 'Saldo Total', 'Juros Acumulados']],
+          head: [[t('tools.periodColumn'), t('tools.investedValue'), t('tools.totalBalance'), t('tools.accumulatedInterest')]],
           body: tableData,
           styles: { 
             fontSize: 9,
@@ -726,7 +729,7 @@ function JurosCompostosCalculator({ chartRef }) {
           doc.setFontSize(14);
           doc.setFont(undefined, 'bold');
           doc.setTextColor(...palette.textPrimary);
-          doc.text('Evolução Mensal - Últimos 12 Meses', margin, yPos);
+          doc.text(`${t('tools.monthlyEvolution')} - ${t('tools.last12Months')}`, margin, yPos);
           yPos += 10;
 
           const last12Months = results.monthlyData.slice(-13);
@@ -756,7 +759,7 @@ function JurosCompostosCalculator({ chartRef }) {
 
           autoTable(doc, {
             startY: yPos,
-            head: [['Período', 'Valor Investido', 'Saldo Total', 'Juros Acumulados']],
+            head: [[t('tools.periodColumn'), t('tools.investedValue'), t('tools.totalBalance'), t('tools.accumulatedInterest')]],
             body: lastTableData,
             styles: { 
               fontSize: 9,
@@ -803,10 +806,10 @@ function JurosCompostosCalculator({ chartRef }) {
 
       const fileName = `juros_compostos_${new Date().toISOString().split('T')[0]}.pdf`;
       doc.save(fileName);
-      toast.success('PDF exportado com sucesso!');
+      toast.success(t('tools.exportSuccessPDF'));
     } catch (error) {
       console.error('Erro ao exportar PDF:', error);
-      toast.error('Erro ao exportar PDF');
+      toast.error(t('tools.errorExportingPDF'));
     }
   };
 
@@ -1058,16 +1061,16 @@ function JurosCompostosCalculator({ chartRef }) {
                 <thead>
                   <tr className="border-b border-gray-200 dark:border-gray-700">
                     <th className="text-left py-3 px-4 text-sm font-semibold text-gray-900 dark:text-white">
-                      Mês
+                      {t('tools.month')}
                     </th>
                     <th className="text-right py-3 px-4 text-sm font-semibold text-gray-900 dark:text-white">
-                      Valor Investido
+                      {t('tools.investedValue')}
                     </th>
                     <th className="text-right py-3 px-4 text-sm font-semibold text-gray-900 dark:text-white">
-                      Saldo Total
+                      {t('tools.totalBalance')}
                     </th>
                     <th className="text-right py-3 px-4 text-sm font-semibold text-gray-900 dark:text-white">
-                      Juros Acumulados
+                      {t('tools.accumulatedInterest')}
                     </th>
                   </tr>
                 </thead>

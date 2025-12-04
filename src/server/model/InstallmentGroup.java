@@ -89,6 +89,10 @@ public class InstallmentGroup implements Serializable {
     
     /**
      * Calcula a data de uma parcela específica
+     * Se o intervalo for aproximadamente mensal (28-31 dias), usa lógica mensal inteligente
+     * que considera meses com diferentes números de dias.
+     * Caso contrário, usa intervalo fixo de dias.
+     * 
      * @param numeroParcela Número da parcela (1, 2, 3, ...)
      * @return Data da parcela
      */
@@ -96,10 +100,33 @@ public class InstallmentGroup implements Serializable {
         if (numeroParcela < 1 || numeroParcela > numeroParcelas) {
             throw new IllegalArgumentException("Número de parcela inválido: " + numeroParcela);
         }
-        // Parcela 1 = dataPrimeiraParcela
-        // Parcela 2 = dataPrimeiraParcela + intervaloDias
-        // Parcela 3 = dataPrimeiraParcela + (2 * intervaloDias)
-        return dataPrimeiraParcela.plusDays((numeroParcela - 1) * intervaloDias);
+        
+        // Parcela 1 sempre é a dataPrimeiraParcela
+        if (numeroParcela == 1) {
+            return dataPrimeiraParcela;
+        }
+        
+        // Se o intervalo for aproximadamente mensal (28-31 dias), usa lógica mensal inteligente
+        if (intervaloDias >= 28 && intervaloDias <= 31) {
+            // Calcula quantos meses adicionar
+            int mesesAdicionar = numeroParcela - 1;
+            LocalDate dataCalculada = dataPrimeiraParcela.plusMonths(mesesAdicionar);
+            
+            // Tenta manter o mesmo dia do mês
+            int diaOriginal = dataPrimeiraParcela.getDayOfMonth();
+            try {
+                // Tenta usar o mesmo dia do mês
+                return dataCalculada.withDayOfMonth(diaOriginal);
+            } catch (java.time.DateTimeException e) {
+                // Se o dia não existe no mês (ex: 31 de fevereiro), usa o último dia do mês
+                return dataCalculada.withDayOfMonth(dataCalculada.lengthOfMonth());
+            }
+        } else {
+            // Para intervalos não mensais, usa a lógica de dias fixos
+            // Parcela 2 = dataPrimeiraParcela + intervaloDias
+            // Parcela 3 = dataPrimeiraParcela + (2 * intervaloDias)
+            return dataPrimeiraParcela.plusDays((numeroParcela - 1) * intervaloDias);
+        }
     }
     
     @Override

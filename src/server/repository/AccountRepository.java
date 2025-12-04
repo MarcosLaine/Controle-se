@@ -70,6 +70,9 @@ public class AccountRepository {
         
         if (tipoUpper.contains("CARTAO") || tipoUpper.contains("CARTÃO")) {
             tipo = "CARTAO_CREDITO";
+        } else {
+            // Garante que o tipo seja sempre salvo em maiúsculas para consistência
+            tipo = tipo != null ? tipo.toUpperCase() : tipo;
         }
         
         boolean isCartao = tipoUpper.contains("CARTAO") || tipoUpper.contains("CARTÃO");
@@ -198,14 +201,49 @@ public class AccountRepository {
             conn = getConnection();
             conn.setAutoCommit(false);
             
-            if (hasCartaoCreditoColumns(conn) && (diaFechamento != null || diaPagamento != null)) {
+            // Busca a conta atual para verificar se é cartão de crédito e preservar valores existentes
+            Conta contaAtual = buscarConta(idConta);
+            if (contaAtual == null) {
+                throw new IllegalArgumentException("Conta não encontrada");
+            }
+            
+            // Normaliza o tipo: se contém "cartão", "cartao", "crédito" ou "credito", converte para CARTAO_CREDITO
+            String tipoUpper = novoTipo != null ? novoTipo.toUpperCase() : "";
+            // Remove acentos e espaços para comparação mais robusta
+            String tipoNormalizado = tipoUpper.replace("É", "E").replace("À", "A").replace(" ", "_").replace("-", "_");
+            boolean isCartao = tipoNormalizado.contains("CARTAO") || tipoNormalizado.contains("CARTÃO") || 
+                              (tipoNormalizado.contains("CREDITO") && tipoNormalizado.contains("CARTAO")) ||
+                              (tipoNormalizado.contains("CRÉDITO") && tipoNormalizado.contains("CARTAO"));
+            if (isCartao) {
+                novoTipo = "CARTAO_CREDITO";
+            } else {
+                // Garante que o tipo seja sempre salvo em maiúsculas para consistência
+                novoTipo = novoTipo != null ? novoTipo.toUpperCase() : novoTipo;
+            }
+            
+            // Verifica se a conta atual é cartão de crédito (para preservar campos mesmo se tipo mudar)
+            boolean contaAtualEraCartao = contaAtual.isCartaoCredito();
+            
+            // Se for cartão de crédito (atual ou anterior), preserva ou atualiza campos de cartão
+            if (hasCartaoCreditoColumns(conn) && (isCartao || contaAtualEraCartao)) {
+                // Se os valores não foram fornecidos, preserva os valores existentes
+                Integer diaFechamentoFinal = diaFechamento;
+                Integer diaPagamentoFinal = diaPagamento;
+                
+                if (diaFechamentoFinal == null && contaAtual.getDiaFechamento() != null) {
+                    diaFechamentoFinal = contaAtual.getDiaFechamento();
+                }
+                if (diaPagamentoFinal == null && contaAtual.getDiaPagamento() != null) {
+                    diaPagamentoFinal = contaAtual.getDiaPagamento();
+                }
+                
                 String sql = "UPDATE contas SET nome = ?, tipo = ?, saldo_atual = ?, dia_fechamento = ?, dia_pagamento = ? WHERE id_conta = ?";
                 try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
                     pstmt.setString(1, novoNome);
                     pstmt.setString(2, novoTipo);
                     pstmt.setDouble(3, novoSaldo);
-                    if (diaFechamento != null) pstmt.setInt(4, diaFechamento); else pstmt.setNull(4, Types.INTEGER);
-                    if (diaPagamento != null) pstmt.setInt(5, diaPagamento); else pstmt.setNull(5, Types.INTEGER);
+                    if (diaFechamentoFinal != null) pstmt.setInt(4, diaFechamentoFinal); else pstmt.setNull(4, Types.INTEGER);
+                    if (diaPagamentoFinal != null) pstmt.setInt(5, diaPagamentoFinal); else pstmt.setNull(5, Types.INTEGER);
                     pstmt.setInt(6, idConta);
                     pstmt.executeUpdate();
                     conn.commit();
@@ -218,6 +256,7 @@ public class AccountRepository {
                 }
             }
             
+            // Para contas que não são cartão de crédito, atualiza sem os campos de cartão
             String sql = "UPDATE contas SET nome = ?, tipo = ?, saldo_atual = ? WHERE id_conta = ?";
             try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
                 pstmt.setString(1, novoNome);

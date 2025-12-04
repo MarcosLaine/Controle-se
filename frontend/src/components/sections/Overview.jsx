@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { ArrowUp, ArrowDown, Scale, Landmark, TrendingUp, Info, CreditCard } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useData } from '../../contexts/DataContext';
+import { useLanguage } from '../../contexts/LanguageContext';
 import api from '../../services/api';
 import axios from 'axios';
 import { formatCurrency, formatDate } from '../../utils/formatters';
@@ -33,6 +34,7 @@ ChartJS.register(
 export default function Overview() {
   const { user } = useAuth();
   const { fetchData, getCachedData } = useData();
+  const { t } = useLanguage();
   const [loading, setLoading] = useState(true);
   const [overviewData, setOverviewData] = useState(null);
   const [recentTransactions, setRecentTransactions] = useState([]);
@@ -197,23 +199,23 @@ export default function Overview() {
       {/* Header */}
       <div>
         <h2 className="text-3xl font-bold text-gray-900 dark:text-white">
-          Visão Geral
+          {t('overview.title')}
         </h2>
         <p className="text-gray-600 dark:text-gray-400 mt-1">
-          Resumo das suas finanças
+          {t('overview.subtitle')}
         </p>
       </div>
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <SummaryCard
-          title="Receitas"
+          title={t('overview.income')}
           amount={formatCurrency(overviewData?.totalIncome || 0)}
           icon={ArrowUp}
           type="income"
         />
         <SummaryCard
-          title="Gastos"
+          title={t('overview.expenses')}
           amount={formatCurrency(overviewData?.totalExpense || 0)}
           icon={ArrowDown}
           type="expense"
@@ -221,7 +223,7 @@ export default function Overview() {
         <SummaryCard
           title={
             <span className="flex items-center gap-2">
-              Saldo
+              {t('overview.balance')}
               <Info
                 className="w-4 h-4 cursor-pointer opacity-70 hover:opacity-100"
                 onClick={(e) => {
@@ -238,7 +240,7 @@ export default function Overview() {
         <SummaryCard
           title={
             <span className="flex items-center gap-2">
-              Patrimônio
+              {t('overview.patrimony')}
               <Info
                 className="w-4 h-4 cursor-pointer opacity-70 hover:opacity-100"
                 onClick={(e) => {
@@ -255,20 +257,37 @@ export default function Overview() {
       </div>
 
       {/* Card da Próxima Fatura */}
-      {overviewData?.valorFaturaAPagar !== undefined && overviewData?.valorFaturaAPagar !== null && overviewData.valorFaturaAPagar > 0 && (
+      {(overviewData?.valorFaturaAPagar !== undefined && overviewData?.valorFaturaAPagar !== null) || overviewData?.cartoesInfo ? (
         <div className="card border-l-4 border-orange-500 bg-orange-50 dark:bg-orange-900/10">
           <div className="flex items-center justify-between">
             <div className="flex-1">
               <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">
-                Próxima Fatura em Aberto
+                {t('overview.nextInvoice')}
               </p>
               <p className="text-2xl font-bold text-orange-600 dark:text-orange-400">
-                {formatCurrency(overviewData.valorFaturaAPagar)}
+                {formatCurrency(overviewData?.valorFaturaAPagar || 0)}
               </p>
-              {overviewData.cartoesInfo && (
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  Vencimento: {formatDate(overviewData.cartoesInfo.proximoPagamento)}
-                </p>
+              {overviewData?.cartoesInfo && (
+                <div className="space-y-1 text-sm mt-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-gray-600 dark:text-gray-400">{t('overview.nextClosing')}</span>
+                    <span className="font-medium text-gray-900 dark:text-white">
+                      {formatDate(overviewData.cartoesInfo.proximoFechamento)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-gray-600 dark:text-gray-400">{t('overview.nextPayment')}</span>
+                    <span className={`font-medium ${
+                      overviewData.cartoesInfo.diasAtePagamento <= 7 
+                        ? 'text-red-600 dark:text-red-400' 
+                        : overviewData.cartoesInfo.diasAtePagamento <= 15
+                        ? 'text-yellow-600 dark:text-yellow-400'
+                        : 'text-gray-900 dark:text-white'
+                    }`}>
+                      {formatDate(overviewData.cartoesInfo.proximoPagamento)}
+                    </span>
+                  </div>
+                </div>
               )}
             </div>
             <div className="w-12 h-12 bg-orange-100 dark:bg-orange-900/30 rounded-full flex items-center justify-center ml-4">
@@ -276,14 +295,14 @@ export default function Overview() {
             </div>
           </div>
         </div>
-      )}
+      ) : null}
 
       {/* Charts and Recent Transactions */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Category Chart */}
         <div className="card">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-            Gastos por Categoria
+            {t('overview.byCategory')}
           </h3>
           {categoryChartData ? (
             <div className="h-64">
@@ -316,7 +335,7 @@ export default function Overview() {
             </div>
           ) : (
             <p className="text-center text-gray-500 py-8">
-              Nenhum dado disponível
+              {t('common.noData')}
             </p>
           )}
         </div>
@@ -381,34 +400,20 @@ export default function Overview() {
       <Modal
         isOpen={showSaldoInfo}
         onClose={() => setShowSaldoInfo(false)}
-        title="Informação: Saldo"
+        title={`${t('common.info')}: ${t('overview.balance')}`}
       >
         <div className="space-y-2">
-          <p>
-            O <strong>Saldo</strong> representa a soma de todas as suas contas
-            disponíveis para uso imediato (Corrente, Poupança, Dinheiro, etc.).
-          </p>
-          <p>
-            Contas do tipo <strong>Investimento</strong> não são contabilizadas
-            neste valor.
-          </p>
+          <p>{t('overview.balanceInfoDetail')}</p>
         </div>
       </Modal>
 
       <Modal
         isOpen={showPatrimonioInfo}
         onClose={() => setShowPatrimonioInfo(false)}
-        title="Informação: Patrimônio"
+        title={`${t('common.info')}: ${t('overview.patrimony')}`}
       >
         <div className="space-y-2">
-          <p>
-            O <strong>Patrimônio</strong> representa o valor total acumulado em
-            todas as suas contas cadastradas no sistema.
-          </p>
-          <p>
-            Este valor inclui o saldo de todas as contas, inclusive as de{' '}
-            <strong>Investimento</strong>.
-          </p>
+          <p>{t('overview.patrimonyInfoDetail')}</p>
         </div>
       </Modal>
     </div>

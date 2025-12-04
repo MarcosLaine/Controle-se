@@ -8,6 +8,7 @@ import Dashboard from './pages/Dashboard';
 import CompoundInterestCalculatorPage from './pages/CompoundInterestCalculatorPage';
 import SkeletonScreen from './components/common/SkeletonScreen';
 import ThemeProvider from './contexts/ThemeContext';
+import LanguageProvider from './contexts/LanguageContext';
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -55,13 +56,14 @@ function AppRoutes() {
 
 function App() {
   return (
-    <ThemeProvider>
-      <AuthProvider>
-        <DataProvider>
-          <Router>
-            <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-              <AppRoutes />
-              <Toaster
+    <LanguageProvider>
+      <ThemeProvider>
+        <AuthProvider>
+          <DataProvider>
+            <Router>
+              <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+                <AppRoutes />
+                <Toaster
                 position="top-center"
                 toastOptions={{
                   duration: 3000,
@@ -111,6 +113,7 @@ function App() {
         </DataProvider>
       </AuthProvider>
     </ThemeProvider>
+    </LanguageProvider>
   );
 }
 

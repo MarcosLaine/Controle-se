@@ -117,7 +117,7 @@ public class InstallmentService {
                     try {
                         // Marca a parcela como paga e estorna o saldo ao cartão de crédito
                         expenseRepository.marcarParcelaComoPaga(idGasto);
-                        LOGGER.info("Parcela " + i + "/" + numeroParcelas + " marcada automaticamente como paga (data passada: " + dataParcela + ") - Valor estornado: R$ " + valorParcela);
+                        // LOGGER.info("Parcela " + i + "/" + numeroParcelas + " marcada automaticamente como paga (data passada: " + dataParcela + ") - Valor estornado: R$ " + valorParcela);
                     } catch (Exception e) {
                         LOGGER.severe("ERRO CRÍTICO ao marcar parcela " + i + " como paga automaticamente: " + e.getMessage());
                         e.printStackTrace();
@@ -128,7 +128,7 @@ public class InstallmentService {
             }
         }
         
-        LOGGER.info("Compra parcelada criada com sucesso: " + numeroParcelas + " parcelas");
+        // LOGGER.info("Compra parcelada criada com sucesso: " + numeroParcelas + " parcelas");
         return idGrupo;
     }
     
