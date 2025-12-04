@@ -60,7 +60,7 @@ public class ControleSeServer {
         
         while (true) {
             try {
-                exibirMenuCompressao(scanner);
+                exibirMenuAdministracao(scanner);
             } catch (Exception e) {
                 System.err.println("Erro no menu: " + e.getMessage());
                 e.printStackTrace();
@@ -77,14 +77,15 @@ public class ControleSeServer {
     /**
      * Exibe menu CLI para compressão/descompressão de arquivos
      */
-    private static void exibirMenuCompressao(Scanner scanner) {
+private static void exibirMenuAdministracao(Scanner scanner) {
         System.out.println("\n========================================");
-        System.out.println("   SISTEMA DE COMPRESSÃO DE DADOS");
+        System.out.println("   SISTEMA DE ADMINISTRAÇÃO DO SERVIDOR");
         System.out.println("========================================");
         System.out.println("1. Comprimir arquivos com LZW");
         System.out.println("2. Comprimir arquivos com Huffman");
         System.out.println("3. Descomprimir arquivo");
         System.out.println("4. Mostrar informações do servidor");
+        System.out.println("5. Pesquisar por padrão (KMP / BM)");
         System.out.println("========================================");
         System.out.print("Escolha uma opção: ");
         
@@ -107,6 +108,9 @@ public class ControleSeServer {
                     System.out.println("\nPressione Enter para continuar...");
                     scanner.nextLine();
                     break;
+                case 5:
+                    menuPesquisarPadrao(scanner);
+                    break;
                 default:
                     System.out.println("Opção inválida. Tente novamente.");
                     System.out.println("Pressione Enter para continuar...");
@@ -123,7 +127,107 @@ public class ControleSeServer {
             }
         }
     }
-    
+
+    /**
+     * Realiza busca textual em todos os registros do banco de dados
+     */
+    private static void menuPesquisarPadrao(Scanner scanner) {
+        System.out.println("\n=== PESQUISA POR PADRÃO DE TEXTO (GLOBAL) ===");
+        System.out.println("Busca realizada nas descrições de TODOS os Gastos e Receitas.");
+        System.out.println("1. Algoritmo KMP (Knuth-Morris-Pratt)");
+        System.out.println("2. Algoritmo Boyer-Moore");
+        System.out.print("Escolha o algoritmo: ");
+        
+        int algoritmo = scanner.nextInt();
+        scanner.nextLine(); // Consome newline
+        
+        if (algoritmo != 1 && algoritmo != 2) {
+            System.out.println("Opção inválida!");
+            return;
+        }
+        
+        System.out.print("Digite o termo a pesquisar: ");
+        String termo = scanner.nextLine();
+        
+        if (termo == null || termo.trim().isEmpty()) {
+            System.out.println("Padrão vazio.");
+            return;
+        }
+        
+        System.out.println("\nIniciando busca global...");
+        long inicio = System.nanoTime();
+        int encontrados = 0;
+        String padrao = termo.toLowerCase();
+        
+        // Busca em todos os Gastos
+        System.out.println("\n--- Resultados em Gastos ---");
+        int i = 1;
+        Gasto g;
+        // Itera sequencialmente até não encontrar mais gastos
+        while ((g = bancoDados.buscarGasto(i++)) != null) {
+            if (g.isAtivo()) {
+                String texto = g.getDescricao().toLowerCase();
+                boolean match;
+                
+                if (algoritmo == 1) {
+                    match = PatternMatching.searchKMP(texto, padrao);
+                } else {
+                    match = PatternMatching.searchBoyerMoore(texto, padrao);
+                }
+                
+                if (match) {
+                    // Busca usuário para exibir nome
+                    Usuario u = bancoDados.buscarUsuario(g.getIdUsuario());
+                    String nomeUsuario = (u != null) ? u.getNome() : "Desconhecido";
+                    
+                    System.out.println("[ID: " + g.getIdGasto() + "] Usuário: " + nomeUsuario + 
+                                     " | " + g.getData() + " | " + g.getDescricao() + 
+                                     " | R$ " + g.getValor());
+                    encontrados++;
+                }
+            }
+        }
+        
+        // Busca em todas as Receitas
+        System.out.println("\n--- Resultados em Receitas ---");
+        i = 1;
+        Receita r;
+        // Itera sequencialmente até não encontrar mais receitas
+        while ((r = bancoDados.buscarReceita(i++)) != null) {
+            if (r.isAtivo()) {
+                String texto = r.getDescricao().toLowerCase();
+                boolean match;
+                
+                if (algoritmo == 1) {
+                    match = PatternMatching.searchKMP(texto, padrao);
+                } else {
+                    match = PatternMatching.searchBoyerMoore(texto, padrao);
+                }
+                
+                if (match) {
+                    // Busca usuário para exibir nome
+                    Usuario u = bancoDados.buscarUsuario(r.getIdUsuario());
+                    String nomeUsuario = (u != null) ? u.getNome() : "Desconhecido";
+                    
+                    System.out.println("[ID: " + r.getIdReceita() + "] Usuário: " + nomeUsuario + 
+                                     " | " + r.getData() + " | " + r.getDescricao() + 
+                                     " | R$ " + r.getValor());
+                    encontrados++;
+                }
+            }
+        }
+        
+        long fim = System.nanoTime();
+        System.out.println("\n==================================");
+        System.out.println("Total de registros encontrados: " + encontrados);
+        System.out.println("Algoritmo utilizado: " + (algoritmo == 1 ? "KMP" : "Boyer-Moore"));
+        System.out.println("Tempo de execução: " + (fim - inicio) + " nanosegundos"); // Exibe em nanosegundos como solicitado em AEDS
+        System.out.println("==================================");
+        
+        System.out.println("Pressione Enter para continuar...");
+        scanner.nextLine();
+        exibirInformacoesServidor();
+    }
     /**
      * Comprime todos os arquivos .db usando o algoritmo especificado
      */
