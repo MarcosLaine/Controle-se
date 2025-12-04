@@ -39,8 +39,9 @@ public class InvestmentsHandler implements HttpHandler {
     
     private void handleGetInvestments(HttpExchange exchange) throws IOException {
         try {
-            String userIdParam = RequestUtil.getQueryParam(exchange, "userId");
-            int userId = userIdParam != null ? Integer.parseInt(userIdParam) : 1;
+            // Usa o userId do token JWT autenticado, não do parâmetro da query string
+            // Isso previne que usuários vejam investimentos de outros usuários
+            int userId = AuthUtil.requireUserId(exchange);
             
             List<Investimento> investments = investmentRepository.buscarInvestimentosPorUsuario(userId);
             QuoteService quoteService = QuoteService.getInstance();
@@ -333,10 +334,31 @@ public class InvestmentsHandler implements HttpHandler {
     
     private void handleUpdateInvestment(HttpExchange exchange) throws IOException {
         try {
+            // Valida que o usuário está autenticado
+            int authenticatedUserId = AuthUtil.requireUserId(exchange);
+            
             String requestBody = RequestUtil.readRequestBody(exchange);
             Map<String, Object> data = JsonUtil.parseJsonWithNested(requestBody);
             
             int idInvestimento = ((Number) data.get("id")).intValue();
+            
+            // Verifica se o investimento existe e pertence ao usuário autenticado
+            Investimento investimento = investmentRepository.buscarInvestimento(idInvestimento);
+            if (investimento == null) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Investimento não encontrado");
+                ResponseUtil.sendJsonResponse(exchange, 404, response);
+                return;
+            }
+            
+            if (investimento.getIdUsuario() != authenticatedUserId) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Você não tem permissão para atualizar este investimento");
+                ResponseUtil.sendJsonResponse(exchange, 403, response);
+                return;
+            }
             String nome = (String) data.get("nome");
             String nomeAtivo = data.containsKey("nomeAtivo") ? (String) data.get("nomeAtivo") : null;
             String categoria = (String) data.get("categoria");
@@ -403,6 +425,9 @@ public class InvestmentsHandler implements HttpHandler {
     
     private void handleDeleteInvestment(HttpExchange exchange) throws IOException {
         try {
+            // Valida que o usuário está autenticado
+            int authenticatedUserId = AuthUtil.requireUserId(exchange);
+            
             String idParam = RequestUtil.getQueryParam(exchange, "id");
             if (idParam == null) {
                 ResponseUtil.sendErrorResponse(exchange, 400, "ID do investimento não fornecido");
@@ -410,6 +435,25 @@ public class InvestmentsHandler implements HttpHandler {
             }
             
             int idInvestimento = Integer.parseInt(idParam);
+            
+            // Verifica se o investimento existe e pertence ao usuário autenticado
+            Investimento investimento = investmentRepository.buscarInvestimento(idInvestimento);
+            if (investimento == null) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Investimento não encontrado");
+                ResponseUtil.sendJsonResponse(exchange, 404, response);
+                return;
+            }
+            
+            if (investimento.getIdUsuario() != authenticatedUserId) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Você não tem permissão para excluir este investimento");
+                ResponseUtil.sendJsonResponse(exchange, 403, response);
+                return;
+            }
+            
             investmentRepository.excluirInvestimento(idInvestimento);
             
             Map<String, Object> response = new HashMap<>();

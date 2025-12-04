@@ -44,8 +44,9 @@ public class AccountsHandler implements HttpHandler {
     
     private void handleGet(HttpExchange exchange) throws IOException {
         try {
-            String userIdParam = RequestUtil.getQueryParam(exchange, "userId");
-            int userId = userIdParam != null ? Integer.parseInt(userIdParam) : 1;
+            // Usa o userId do token JWT autenticado, não do parâmetro da query string
+            // Isso previne que usuários vejam contas de outros usuários
+            int userId = AuthUtil.requireUserId(exchange);
             
             List<Conta> accounts = accountRepository.buscarContasPorUsuario(userId);
             List<Map<String, Object>> accountList = new ArrayList<>();
@@ -148,8 +149,9 @@ public class AccountsHandler implements HttpHandler {
                 return;
             }
             
-            String userIdParam = RequestUtil.getQueryParam(exchange, "userId");
-            int userId = userIdParam != null ? Integer.parseInt(userIdParam) : 1;
+            // Usa o userId do token JWT autenticado, não do parâmetro da query string
+            // Isso previne que usuários vejam informações de fatura de outros usuários
+            int userId = AuthUtil.requireUserId(exchange);
             
             Conta conta = accountRepository.buscarConta(accountId);
             if (conta == null) {

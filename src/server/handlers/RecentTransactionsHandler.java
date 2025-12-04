@@ -28,10 +28,11 @@ public class RecentTransactionsHandler implements HttpHandler {
         }
         
         try {
-            String userIdParam = RequestUtil.getQueryParam(exchange, "userId");
-            String limitParam = RequestUtil.getQueryParam(exchange, "limit");
+            // Usa o userId do token JWT autenticado, não do parâmetro da query string
+            // Isso previne que usuários vejam transações recentes de outros usuários
+            int userId = AuthUtil.requireUserId(exchange);
             
-            int userId = userIdParam != null ? Integer.parseInt(userIdParam) : 1;
+            String limitParam = RequestUtil.getQueryParam(exchange, "limit");
             int limit = limitParam != null ? Integer.parseInt(limitParam) : 10;
             
             List<Gasto> expenses = expenseRepository.buscarGastosComFiltros(userId, null, null, null);

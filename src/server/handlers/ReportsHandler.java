@@ -41,12 +41,13 @@ public class ReportsHandler implements HttpHandler {
     
     private void handleGetReports(HttpExchange exchange) throws IOException {
         try {
-            String userIdParam = RequestUtil.getQueryParam(exchange, "userId");
+            // Usa o userId do token JWT autenticado, não do parâmetro da query string
+            // Isso previne que usuários vejam relatórios de outros usuários
+            int userId = AuthUtil.requireUserId(exchange);
+            
             String periodParam = RequestUtil.getQueryParam(exchange, "period");
             String startDateParam = RequestUtil.getQueryParam(exchange, "startDate");
             String endDateParam = RequestUtil.getQueryParam(exchange, "endDate");
-            
-            int userId = userIdParam != null ? Integer.parseInt(userIdParam) : 1;
             String period = periodParam != null ? periodParam : "month";
             
             // Calcula datas baseado no período

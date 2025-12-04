@@ -43,8 +43,9 @@ public class CategoriesHandler implements HttpHandler {
     
     private void handleGet(HttpExchange exchange) throws IOException {
         try {
-            String userIdParam = RequestUtil.getQueryParam(exchange, "userId");
-            int userId = userIdParam != null ? Integer.parseInt(userIdParam) : 1;
+            // Usa o userId do token JWT autenticado, não do parâmetro da query string
+            // Isso previne que usuários vejam categorias de outros usuários
+            int userId = AuthUtil.requireUserId(exchange);
             
             List<Categoria> categories = categoryRepository.buscarCategoriasPorUsuario(userId);
             List<Map<String, Object>> categoryList = new ArrayList<>();
@@ -244,6 +245,25 @@ public class CategoriesHandler implements HttpHandler {
             // Sanitiza nome
             newName = InputValidator.sanitizeInput(newName);
             
+            // Valida que o usuário está autenticado e que a categoria pertence a ele
+            int authenticatedUserId = AuthUtil.requireUserId(exchange);
+            Categoria categoria = categoryRepository.buscarCategoria(categoryId);
+            if (categoria == null) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Categoria não encontrada");
+                ResponseUtil.sendJsonResponse(exchange, 404, response);
+                return;
+            }
+            
+            if (categoria.getIdUsuario() != authenticatedUserId) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Você não tem permissão para atualizar esta categoria");
+                ResponseUtil.sendJsonResponse(exchange, 403, response);
+                return;
+            }
+            
             categoryRepository.atualizarCategoria(categoryId, newName);
             
             Map<String, Object> response = new HashMap<>();
@@ -262,6 +282,8 @@ public class CategoriesHandler implements HttpHandler {
     
     private void handleDelete(HttpExchange exchange) throws IOException {
         try {
+            int authenticatedUserId = AuthUtil.requireUserId(exchange);
+            
             String idParam = RequestUtil.getQueryParam(exchange, "id");
             
             // Se não encontrou no query param, tenta pegar da URL
@@ -287,6 +309,25 @@ public class CategoriesHandler implements HttpHandler {
             }
             
             int categoryId = Integer.parseInt(idParam);
+            
+            // Verifica se a categoria existe e pertence ao usuário autenticado
+            Categoria categoria = categoryRepository.buscarCategoria(categoryId);
+            if (categoria == null) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Categoria não encontrada");
+                ResponseUtil.sendJsonResponse(exchange, 404, response);
+                return;
+            }
+            
+            if (categoria.getIdUsuario() != authenticatedUserId) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Você não tem permissão para excluir esta categoria");
+                ResponseUtil.sendJsonResponse(exchange, 403, response);
+                return;
+            }
+            
             categoryRepository.excluirCategoria(categoryId);
             
             Map<String, Object> response = new HashMap<>();
