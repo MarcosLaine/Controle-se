@@ -10,6 +10,7 @@ import server.services.QuoteService;
 import java.io.IOException;
 import java.time.LocalDate;
 import java.util.*;
+import java.util.stream.Collectors;
 
 public class InvestmentsHandler implements HttpHandler {
     private final InvestmentRepository investmentRepository;
@@ -61,13 +62,79 @@ public class InvestmentsHandler implements HttpHandler {
             int limit = (limitParam != null && !limitParam.isEmpty()) ? Integer.parseInt(limitParam) : 12;
             int offset = (offsetParam != null && !offsetParam.isEmpty()) ? Integer.parseInt(offsetParam) : 0;
             
+            // Busca investimentos paginados para a resposta
             List<Investimento> investments = investmentRepository.buscarInvestimentosPorUsuario(userId, limit, offset, categoryParam, assetNameParam);
+            
+            // Busca TODOS os investimentos para calcular o summary corretamente
+            List<Investimento> allInvestments = investmentRepository.buscarInvestimentosPorUsuario(userId);
+            if (categoryParam != null && !categoryParam.isEmpty()) {
+                allInvestments = allInvestments.stream()
+                    .filter(inv -> inv.getCategoria().equals(categoryParam))
+                    .collect(Collectors.toList());
+            }
+            if (assetNameParam != null && !assetNameParam.isEmpty()) {
+                allInvestments = allInvestments.stream()
+                    .filter(inv -> inv.getNome().equals(assetNameParam))
+                    .collect(Collectors.toList());
+            }
+            
             QuoteService quoteService = QuoteService.getInstance();
             
-            List<Map<String, Object>> investmentList = new ArrayList<>();
+            // Calcula summary com TODOS os investimentos
             double totalInvested = 0;
             double totalCurrent = 0;
+            for (Investimento inv : allInvestments) {
+                try {
+                    // Converte valor do aporte para BRL se o investimento foi registrado em outra moeda
+                    double valorAporteBRL = inv.getValorAporte();
+                
+                    if (!"BRL".equals(inv.getMoeda())) {
+                        double exchangeRate = quoteService.getExchangeRate(inv.getMoeda(), "BRL");
+                        valorAporteBRL *= exchangeRate;
+                    }
+                
+                    double currentValue = 0.0;
+                    // Para renda fixa, calcula valor atual baseado nos índices
+                    if ("RENDA_FIXA".equals(inv.getCategoria())) {
+                        currentValue = quoteService.calculateFixedIncomeValue(
+                            valorAporteBRL,
+                            inv.getTipoInvestimento(),
+                            inv.getTipoRentabilidade(),
+                            inv.getIndice(),
+                            inv.getPercentualIndice(),
+                            inv.getTaxaFixa(),
+                            inv.getDataAporte(),
+                            inv.getDataVencimento(),
+                            LocalDate.now()
+                        );
+                    } else {
+                        // Para outros tipos, busca cotação atual
+                        QuoteService.QuoteResult quote = quoteService.getQuote(inv.getNome(), inv.getCategoria(), null);
+                        double currentPrice = quote != null && quote.success ? quote.price : inv.getPrecoAporte();
+                        
+                        // Converte preço atual para BRL se a cotação vier em outra moeda
+                        if (quote != null && quote.success) {
+                            String currency = quote.currency != null ? quote.currency : 
+                                ("CRYPTO".equals(inv.getCategoria()) ? "USD" : "BRL");
+                            if (!"BRL".equals(currency)) {
+                                double exchangeRate = quoteService.getExchangeRate(currency, "BRL");
+                                currentPrice *= exchangeRate;
+                            }
+                        }
+                        
+                        currentValue = inv.getQuantidade() * currentPrice;
+                    }
+                    
+                    totalInvested += valorAporteBRL;
+                    totalCurrent += currentValue;
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    // Continua processando os outros investimentos mesmo se um falhar
+                }
+            }
             
+            // Processa apenas os investimentos paginados para a lista de resposta
+            List<Map<String, Object>> investmentList = new ArrayList<>();
             for (Investimento inv : investments) {
                 try {
                     double currentPrice = 0.0;
@@ -119,9 +186,6 @@ public class InvestmentsHandler implements HttpHandler {
                 double returnValue = currentValue - valorAporteBRL;
                 double returnPercent = valorAporteBRL > 0 ? (returnValue / valorAporteBRL) * 100 : 0;
                 
-                totalInvested += valorAporteBRL;
-                totalCurrent += currentValue;
-                
                 Map<String, Object> invData = new HashMap<>();
                 invData.put("idInvestimento", inv.getIdInvestimento());
                 invData.put("nome", inv.getNome());
@@ -166,7 +230,8 @@ public class InvestmentsHandler implements HttpHandler {
             summary.put("totalReturnPercent", totalInvested > 0 ? ((totalCurrent - totalInvested) / totalInvested) * 100 : 0);
             
             // Verifica se há mais investimentos para carregar
-            boolean hasMore = investmentList.size() == limit;
+            int totalCount = investmentRepository.contarInvestimentosPorUsuario(userId, categoryParam, assetNameParam);
+            boolean hasMore = (offset + investmentList.size()) < totalCount;
             
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);

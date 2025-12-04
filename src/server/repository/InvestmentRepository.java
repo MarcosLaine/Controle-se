@@ -242,6 +242,40 @@ public class InvestmentRepository {
         return investimentos;
     }
 
+    public int contarInvestimentosPorUsuario(int idUsuario, String category, String assetName) {
+        if (idUsuario <= 0) {
+            throw new IllegalArgumentException("ID do usuário deve ser maior que zero");
+        }
+        StringBuilder sql = new StringBuilder("SELECT COUNT(*) FROM investimentos WHERE id_usuario = ? AND ativo = TRUE");
+        
+        if (category != null && !category.isEmpty()) {
+            sql.append(" AND categoria = ?");
+        }
+        if (assetName != null && !assetName.isEmpty()) {
+            sql.append(" AND nome = ?");
+        }
+        
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql.toString())) {
+            int paramIndex = 1;
+            pstmt.setInt(paramIndex++, idUsuario);
+            if (category != null && !category.isEmpty()) {
+                pstmt.setString(paramIndex++, category);
+            }
+            if (assetName != null && !assetName.isEmpty()) {
+                pstmt.setString(paramIndex++, assetName);
+            }
+            
+            ResultSet rs = pstmt.executeQuery();
+            if (rs.next()) {
+                return rs.getInt(1);
+            }
+            return 0;
+        } catch (SQLException e) {
+            throw new RuntimeException("Erro ao contar investimentos: " + e.getMessage(), e);
+        }
+    }
+
     public List<Investimento> buscarInvestimentosPorConta(int idConta) {
         String sql = "SELECT * FROM investimentos WHERE id_conta = ? AND ativo = TRUE ORDER BY data_aporte DESC";
         List<Investimento> investimentos = new ArrayList<>();
