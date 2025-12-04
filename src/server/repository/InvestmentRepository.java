@@ -110,7 +110,7 @@ public class InvestmentRepository {
             
             int idInvestimento;
             try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
-                System.out.println("[DEBUG] InvestmentRepository.cadastrarInvestimento: Criando investimento para userId=" + idUsuario);
+                // System.out.println("[DEBUG] InvestmentRepository.cadastrarInvestimento: Criando investimento para userId=" + idUsuario);
                 pstmt.setString(1, nome);
                 pstmt.setString(2, nomeAtivo);
                 pstmt.setString(3, categoria);
@@ -132,7 +132,7 @@ public class InvestmentRepository {
                 ResultSet rs = pstmt.executeQuery();
                 if (!rs.next()) throw new RuntimeException("Erro ao cadastrar investimento");
                 idInvestimento = rs.getInt(1);
-                System.out.println("[DEBUG] InvestmentRepository.cadastrarInvestimento: Investimento criado com id=" + idInvestimento + " para userId=" + idUsuario);
+                // System.out.println("[DEBUG] InvestmentRepository.cadastrarInvestimento: Investimento criado com id=" + idInvestimento + " para userId=" + idUsuario);
             }
             
             // Não debita mais da conta - o saldo será calculado dinamicamente baseado no valor atual dos investimentos
@@ -191,8 +191,8 @@ public class InvestmentRepository {
              PreparedStatement pstmt = conn.prepareStatement(sql.toString())) {
             int paramIndex = 1;
             pstmt.setInt(paramIndex++, idUsuario);
-            System.out.println("[DEBUG] InvestmentRepository.buscarInvestimentosPorUsuario: SQL=" + sql.toString());
-            System.out.println("[DEBUG] InvestmentRepository.buscarInvestimentosPorUsuario: Parâmetro userId=" + idUsuario + " no índice " + (paramIndex - 1));
+            // System.out.println("[DEBUG] InvestmentRepository.buscarInvestimentosPorUsuario: SQL=" + sql.toString());
+            // System.out.println("[DEBUG] InvestmentRepository.buscarInvestimentosPorUsuario: Parâmetro userId=" + idUsuario + " no índice " + (paramIndex - 1));
             if (category != null && !category.isEmpty()) {
                 pstmt.setString(paramIndex++, category);
             }
@@ -234,8 +234,8 @@ public class InvestmentRepository {
                 System.err.println("[ERRO] InvestmentRepository.buscarInvestimentosPorUsuario: " + skipped + 
                                  " investimentos foram ignorados por não pertencerem ao userId=" + idUsuario);
             }
-            System.out.println("[DEBUG] InvestmentRepository.buscarInvestimentosPorUsuario: Encontrados " + count + 
-                             " investimentos válidos para userId=" + idUsuario);
+            // System.out.println("[DEBUG] InvestmentRepository.buscarInvestimentosPorUsuario: Encontrados " + count + 
+            //                  " investimentos válidos para userId=" + idUsuario);
         } catch (SQLException e) {
             throw new RuntimeException("Erro ao buscar investimentos: " + e.getMessage(), e);
         }

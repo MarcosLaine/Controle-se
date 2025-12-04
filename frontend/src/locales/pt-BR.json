@@ -37,7 +37,8 @@
     "deleteTransactionConfirm": "Tem certeza que deseja excluir esta transação?",
     "deleteCalculationConfirm": "Tem certeza que deseja excluir este cálculo do histórico?",
     "to": "para",
-    "of": "de"
+    "of": "de",
+    "select": "Selecionar"
   },
   "auth": {
     "login": "Entrar",
@@ -322,6 +323,13 @@
     "realizedPnL": "Lucro/Prejuízo Realizado",
     "currencyLabel": "Moeda",
     "returnInfo": "Informações sobre o retorno total",
+    "contributionDate": "Data do Aporte",
+    "investmentAccount": "Conta de Investimento",
+    "currencies": {
+      "BRL": "BRL (Real)",
+      "USD": "USD (Dólar)",
+      "EUR": "EUR (Euro)"
+    },
     "statementTitle": "Extrato de Investimentos",
     "totalInvestedPeriod": "Total Investido no Período",
     "totalReceivedSales": "Total Recebido em Vendas",

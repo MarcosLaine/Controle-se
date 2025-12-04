@@ -48,9 +48,9 @@ public class InvestmentsHandler implements HttpHandler {
             }
             String queryUserId = RequestUtil.getQueryParam(exchange, "userId");
             if (queryUserId != null && !queryUserId.equals(String.valueOf(userId))) {
-                System.err.println("[DEBUG] InvestimentosHandler: Query string tem userId=" + queryUserId + " mas token tem userId=" + userId);
+                // System.err.println("[DEBUG] InvestimentosHandler: Query string tem userId=" + queryUserId + " mas token tem userId=" + userId);
             }
-            System.out.println("[DEBUG] InvestimentosHandler.get: Usando userId=" + userId + " do token JWT");
+            // System.out.println("[DEBUG] InvestimentosHandler.get: Usando userId=" + userId + " do token JWT");
             
             String limitParam = RequestUtil.getQueryParam(exchange, "limit");
             String offsetParam = RequestUtil.getQueryParam(exchange, "offset");
@@ -103,9 +103,14 @@ public class InvestmentsHandler implements HttpHandler {
                     currentPrice = quote != null && quote.success ? quote.price : inv.getPrecoAporte();
                     
                     // Converte preço atual para BRL se a cotação vier em outra moeda
-                    if (quote != null && quote.success && !"BRL".equals(quote.currency)) {
-                        double exchangeRate = quoteService.getExchangeRate(quote.currency, "BRL");
-                        currentPrice *= exchangeRate;
+                    // Para criptomoedas, assume USD se currency não estiver definida
+                    if (quote != null && quote.success) {
+                        String currency = quote.currency != null ? quote.currency : 
+                            ("CRYPTO".equals(inv.getCategoria()) ? "USD" : "BRL");
+                        if (!"BRL".equals(currency)) {
+                            double exchangeRate = quoteService.getExchangeRate(currency, "BRL");
+                            currentPrice *= exchangeRate;
+                        }
                     }
                     
                     currentValue = inv.getQuantidade() * currentPrice;
@@ -193,10 +198,10 @@ public class InvestmentsHandler implements HttpHandler {
             // Remove qualquer userId que possa ter vindo do frontend e usa apenas o do token
             Object frontendUserId = data.remove("userId");
             if (frontendUserId != null && !frontendUserId.equals(userId)) {
-                System.err.println("[DEBUG] InvestimentosHandler: Frontend enviou userId=" + frontendUserId + " mas token tem userId=" + userId);
+                // System.err.println("[DEBUG] InvestimentosHandler: Frontend enviou userId=" + frontendUserId + " mas token tem userId=" + userId);
             }
             data.put("userId", userId);
-            System.out.println("[DEBUG] InvestimentosHandler.create: Usando userId=" + userId + " do token JWT");
+            //  System.out.println("[DEBUG] InvestimentosHandler.create: Usando userId=" + userId + " do token JWT");
             
             String nome = (String) data.get("nome");
             String categoria = (String) data.get("categoria");

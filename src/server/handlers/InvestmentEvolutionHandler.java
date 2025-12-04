@@ -332,6 +332,10 @@ public class InvestmentEvolutionHandler implements HttpHandler {
         // Mapas para rastrear valores por categoria APENAS para estados cuja primeira transação já ocorreu
         Map<String, Double> categoryInvestedMap = new HashMap<>();
         Map<String, Double> categoryCurrentMap = new HashMap<>();
+        
+        // Verifica se esta é a data de hoje ou futura - nesse caso, sempre usa preços atuais
+        LocalDate today = LocalDate.now();
+        boolean isTodayOrFuture = !dateForPricing.isBefore(today);
 
         // Processa apenas estados cuja primeira transação já ocorreu
         for (AssetState state : assetState.values()) {
@@ -354,20 +358,56 @@ public class InvestmentEvolutionHandler implements HttpHandler {
             totalInvested += invested;
             
             // Calcula preço atual
-            LocalDate priceLookupDate = dateForPricing;
-            if (priceLookupInterval > 1) {
-                long daysSinceEpoch = dateForPricing.toEpochDay();
-                long roundedDays = (daysSinceEpoch / priceLookupInterval) * priceLookupInterval;
-                priceLookupDate = LocalDate.ofEpochDay(roundedDays);
-                if (priceLookupDate.isAfter(dateForPricing)) {
-                    priceLookupDate = priceLookupDate.minusDays(priceLookupInterval);
+            double price = 0.0;
+            
+            // Para datas de hoje ou futuras, sempre busca cotação atual (null = hoje)
+            if (isTodayOrFuture) {
+                price = resolvePriceForDate(state, null, null, quoteService, priceCache);
+                // Se não conseguiu cotação atual, tenta usar a última conhecida
+                if (price <= 0 && state.lastKnownPrice > 0) {
+                    price = state.lastKnownPrice;
+                }
+            } else {
+                // Para datas passadas, usa a lógica normal com priceLookupInterval
+                LocalDate priceLookupDate = dateForPricing;
+                if (priceLookupInterval > 1) {
+                    long daysSinceEpoch = dateForPricing.toEpochDay();
+                    long roundedDays = (daysSinceEpoch / priceLookupInterval) * priceLookupInterval;
+                    priceLookupDate = LocalDate.ofEpochDay(roundedDays);
+                    if (priceLookupDate.isAfter(dateForPricing)) {
+                        priceLookupDate = priceLookupDate.minusDays(priceLookupInterval);
+                    }
+                }
+                
+                price = resolvePriceForDate(state, priceLookupDate, 
+                    priceLookupDate.equals(dateForPricing) ? dateTimeForPricing : null, 
+                    quoteService, priceCache);
+                
+                // Interpolação linear para períodos longos
+                if (priceLookupInterval > 1 && !priceLookupDate.equals(dateForPricing)) {
+                    LocalDate prevDate = priceLookupDate;
+                    LocalDate nextDate = priceLookupDate.plusDays(priceLookupInterval);
+                    
+                    String prevKey = state.symbol + "|" + state.category + "|" + prevDate.toString();
+                    String nextKey = state.symbol + "|" + state.category + "|" + nextDate.toString();
+                    
+                    Double prevPrice = priceCache.get(prevKey);
+                    Double nextPrice = priceCache.get(nextKey);
+                    
+                    if (prevPrice != null && nextPrice != null) {
+                        long daysBetween = ChronoUnit.DAYS.between(prevDate, nextDate);
+                        long daysFromPrev = ChronoUnit.DAYS.between(prevDate, dateForPricing);
+                        if (daysBetween > 0) {
+                            double ratio = (double) daysFromPrev / daysBetween;
+                            price = prevPrice + (nextPrice - prevPrice) * ratio;
+                        }
+                    } else if (prevPrice != null) {
+                        price = prevPrice;
+                    }
                 }
             }
             
-            double price = resolvePriceForDate(state, priceLookupDate, 
-                priceLookupDate.equals(dateForPricing) ? dateTimeForPricing : null, 
-                quoteService, priceCache);
-            
+            // Fallback se ainda não tem preço válido
             if (price <= 0 && state.getTotalQuantity() > 0) {
                 if (state.lastKnownPrice > 0) {
                     price = state.lastKnownPrice;
@@ -376,29 +416,6 @@ public class InvestmentEvolutionHandler implements HttpHandler {
                 }
                 if (price > 0) {
                     state.lastKnownPrice = price;
-                }
-            }
-            
-            // Interpolação linear para períodos longos
-            if (priceLookupInterval > 1 && !priceLookupDate.equals(dateForPricing)) {
-                LocalDate prevDate = priceLookupDate;
-                LocalDate nextDate = priceLookupDate.plusDays(priceLookupInterval);
-                
-                String prevKey = state.symbol + "|" + state.category + "|" + prevDate.toString();
-                String nextKey = state.symbol + "|" + state.category + "|" + nextDate.toString();
-                
-                Double prevPrice = priceCache.get(prevKey);
-                Double nextPrice = priceCache.get(nextKey);
-                
-                if (prevPrice != null && nextPrice != null) {
-                    long daysBetween = ChronoUnit.DAYS.between(prevDate, nextDate);
-                    long daysFromPrev = ChronoUnit.DAYS.between(prevDate, dateForPricing);
-                    if (daysBetween > 0) {
-                        double ratio = (double) daysFromPrev / daysBetween;
-                        price = prevPrice + (nextPrice - prevPrice) * ratio;
-                    }
-                } else if (prevPrice != null) {
-                    price = prevPrice;
                 }
             }
             
@@ -495,6 +512,8 @@ public class InvestmentEvolutionHandler implements HttpHandler {
 
     private double resolvePriceForDate(AssetState state, LocalDate date, LocalDateTime dateTime, QuoteService quoteService, Map<String, Double> priceCache) {
         if ("RENDA_FIXA".equalsIgnoreCase(state.category)) {
+            // Para renda fixa, se date for null, usa hoje
+            LocalDate calcDate = date != null ? date : LocalDate.now();
             double totalValue = 0.0;
             for (PositionLayer layer : state.layers) {
                 totalValue += quoteService.calculateFixedIncomeValue(
@@ -506,7 +525,7 @@ public class InvestmentEvolutionHandler implements HttpHandler {
                     state.taxaFixa,
                     layer.aporteDate,
                     state.dataVencimento,
-                    date
+                    calcDate
                 );
             }
             double qty = state.getTotalQuantity();
@@ -518,9 +537,32 @@ public class InvestmentEvolutionHandler implements HttpHandler {
             return price;
         }
 
-        // IMPORTANTE: Para datas futuras, usa sempre a última cotação conhecida
+        // IMPORTANTE: Para datas futuras ou null (cotação atual), usa sempre a última cotação conhecida
         LocalDate today = LocalDate.now();
-        boolean isFuture = date != null && date.isAfter(today);
+        boolean isTodayOrFuture = date == null || !date.isBefore(today);
+        
+        // Se date for null, busca cotação atual (hoje)
+        if (date == null) {
+            String cacheKey = state.symbol + "|" + state.category + "|" + today.toString();
+            if (priceCache.containsKey(cacheKey)) {
+                return priceCache.get(cacheKey);
+            }
+            
+            QuoteService.QuoteResult currentQuote = quoteService.getQuote(state.symbol, state.category, null, null);
+            if (currentQuote != null && currentQuote.success && currentQuote.price > 0) {
+                double price = currentQuote.price;
+                // Para criptomoedas, assume USD se currency não estiver definida
+                String currency = currentQuote.currency != null ? currentQuote.currency : 
+                    ("CRYPTO".equalsIgnoreCase(state.category) ? "USD" : (state.currency != null ? state.currency : "BRL"));
+                if (currency != null && !"BRL".equalsIgnoreCase(currency)) {
+                    double exchangeRate = quoteService.getExchangeRate(currency, "BRL");
+                    price *= exchangeRate;
+                }
+                priceCache.put(cacheKey, price);
+                return price;
+            }
+            return 0.0;
+        }
         
         String cacheKey = state.symbol + "|" + state.category + "|" + (dateTime != null ? dateTime.toString() : date.toString());
         if (priceCache.containsKey(cacheKey)) {
@@ -530,23 +572,27 @@ public class InvestmentEvolutionHandler implements HttpHandler {
         double price = 0.0;
         
         // Para datas futuras, tenta buscar a cotação atual primeiro (mais recente disponível)
-        if (isFuture) {
+        if (isTodayOrFuture) {
             // Busca cotação atual para usar como referência para datas futuras
             QuoteService.QuoteResult currentQuote = quoteService.getQuote(state.symbol, state.category, null, null);
             if (currentQuote != null && currentQuote.success && currentQuote.price > 0) {
                 price = currentQuote.price;
-                String currency = currentQuote.currency != null ? currentQuote.currency : state.currency;
+                // Para criptomoedas, assume USD se currency não estiver definida
+                String currency = currentQuote.currency != null ? currentQuote.currency : 
+                    ("CRYPTO".equalsIgnoreCase(state.category) ? "USD" : (state.currency != null ? state.currency : "BRL"));
                 if (currency != null && !"BRL".equalsIgnoreCase(currency)) {
                     double exchangeRate = quoteService.getExchangeRate(currency, "BRL");
                     price *= exchangeRate;
                 }
             }
         } else {
-            // Para datas passadas ou atuais, busca cotação normalmente
+            // Para datas passadas, busca cotação normalmente
             QuoteService.QuoteResult quote = quoteService.getQuote(state.symbol, state.category, date, dateTime);
             if (quote != null && quote.success && quote.price > 0) {
                 price = quote.price;
-                String currency = quote.currency != null ? quote.currency : state.currency;
+                // Para criptomoedas, assume USD se currency não estiver definida
+                String currency = quote.currency != null ? quote.currency : 
+                    ("CRYPTO".equalsIgnoreCase(state.category) ? "USD" : (state.currency != null ? state.currency : "BRL"));
                 if (currency != null && !"BRL".equalsIgnoreCase(currency)) {
                     double exchangeRate = quoteService.getExchangeRate(currency, "BRL");
                     price *= exchangeRate;
@@ -570,7 +616,9 @@ public class InvestmentEvolutionHandler implements HttpHandler {
                     QuoteService.QuoteResult currentQuote = quoteService.getQuote(state.symbol, state.category, null, null);
                     if (currentQuote != null && currentQuote.success && currentQuote.price > 0) {
                         price = currentQuote.price;
-                        String currency = currentQuote.currency != null ? currentQuote.currency : state.currency;
+                        // Para criptomoedas, assume USD se currency não estiver definida
+                        String currency = currentQuote.currency != null ? currentQuote.currency : 
+                            ("CRYPTO".equalsIgnoreCase(state.category) ? "USD" : (state.currency != null ? state.currency : "BRL"));
                         if (currency != null && !"BRL".equalsIgnoreCase(currency)) {
                             double exchangeRate = quoteService.getExchangeRate(currency, "BRL");
                             price *= exchangeRate;
@@ -650,7 +698,9 @@ public class InvestmentEvolutionHandler implements HttpHandler {
                     QuoteService.QuoteResult quote = quoteService.getQuote(symbol, category, date, null);
                     if (quote != null && quote.success && quote.price > 0) {
                         double price = quote.price;
-                        String currency = quote.currency != null ? quote.currency : (state.currency != null ? state.currency : "BRL");
+                        // Para criptomoedas, assume USD se currency não estiver definida
+                        String currency = quote.currency != null ? quote.currency : 
+                            ("CRYPTO".equalsIgnoreCase(category) ? "USD" : (state.currency != null ? state.currency : "BRL"));
                         if (currency != null && !"BRL".equalsIgnoreCase(currency)) {
                             double exchangeRate = quoteService.getExchangeRate(currency, "BRL");
                             price *= exchangeRate;

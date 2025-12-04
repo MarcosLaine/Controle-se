@@ -93,7 +93,7 @@ public final class JwtUtil {
             }
 
             String payloadJson = new String(BASE64_URL_DECODER.decode(parts[1]), StandardCharsets.UTF_8);
-            System.out.println("[DEBUG] JwtUtil.validateToken: Payload JSON decodificado: " + payloadJson);
+            // System.out.println("[DEBUG] JwtUtil.validateToken: Payload JSON decodificado: " + payloadJson);
             
             long exp = extractLong(payloadJson, "exp");
             if (Instant.now().getEpochSecond() > exp) {
@@ -101,14 +101,14 @@ public final class JwtUtil {
             }
 
             long userId = extractLong(payloadJson, "sub");
-            System.out.println("[DEBUG] JwtUtil.validateToken: userId extraído do token: " + userId);
+            // System.out.println("[DEBUG] JwtUtil.validateToken: userId extraído do token: " + userId);
             if (userId <= 0) {
                 System.err.println("[ERRO] JwtUtil.validateToken: userId inválido ou não encontrado no payload: " + payloadJson);
                 return JwtValidationResult.invalid("Token inválido: userId não encontrado ou inválido");
             }
             String email = extractString(payloadJson, "email");
             String name = extractString(payloadJson, "name");
-            System.out.println("[DEBUG] JwtUtil.validateToken: Token válido para userId=" + userId + ", email=" + email);
+            // System.out.println("[DEBUG] JwtUtil.validateToken: Token válido para userId=" + userId + ", email=" + email);   
             return JwtValidationResult.valid((int) userId, email, name);
         } catch (Exception e) {
             return JwtValidationResult.invalid("Falha ao validar token");
@@ -149,7 +149,7 @@ public final class JwtUtil {
             String value = matcher.group(1);
             try {
                 long result = Long.parseLong(value);
-                System.out.println("[DEBUG] JwtUtil.extractLong: Campo '" + key + "' encontrado com valor: " + result);
+                // System.out.println("[DEBUG] JwtUtil.extractLong: Campo '" + key + "' encontrado com valor: " + result);
                 return result;
             } catch (NumberFormatException e) {
                 System.err.println("[ERRO] JwtUtil.extractLong: Erro ao parsear valor '" + value + "' do campo '" + key + "'");

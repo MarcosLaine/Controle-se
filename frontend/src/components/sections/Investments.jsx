@@ -169,7 +169,24 @@ const buildEvolutionSeries = (transactions, startDate, endDate, t) => {
   const currentPoints = [];
   let txIndex = 0;
 
-  interval.forEach((date) => {
+  // Cria um mapa de preços atuais por ativo para o último ponto (hoje)
+  const today = startOfDay(new Date());
+  const currentPricesMap = new Map();
+  transactions.forEach(trade => {
+    const key = `${trade.categoria || 'OUTROS'}_${trade.nome}`;
+    // Usa o preço atual mais recente disponível
+    if (trade.precoAtual && trade.precoAtual > 0) {
+      const existing = currentPricesMap.get(key);
+      if (!existing || !existing.precoAtual || existing.precoAtual <= 0) {
+        currentPricesMap.set(key, trade);
+      }
+    }
+  });
+
+  interval.forEach((date, dateIndex) => {
+    const isLastPoint = dateIndex === interval.length - 1;
+    const isToday = startOfDay(date).getTime() === today.getTime();
+    
     while (
       txIndex < sorted.length &&
       getTradeDate(sorted[txIndex]) <= date
@@ -214,6 +231,16 @@ const buildEvolutionSeries = (transactions, startDate, endDate, t) => {
       txIndex++;
     }
 
+    // Para o último ponto (hoje), atualiza preços atuais de todos os ativos
+    if (isLastPoint || isToday) {
+      assetState.forEach((state, key) => {
+        const currentTrade = currentPricesMap.get(key);
+        if (currentTrade && currentTrade.precoAtual && currentTrade.precoAtual > 0) {
+          state.currentPrice = currentTrade.precoAtual;
+        }
+      });
+    }
+
     let totalInvested = 0;
     let totalCurrent = 0;
     assetState.forEach((state) => {
@@ -221,7 +248,10 @@ const buildEvolutionSeries = (transactions, startDate, endDate, t) => {
       if (quantity <= 0) return;
       const costBasis = state.layers.reduce((sum, layer) => sum + layer.qty * layer.unitCost, 0);
       totalInvested += costBasis;
-      const price = state.currentPrice || (costBasis > 0 ? costBasis / quantity : 0);
+      // Para o último ponto, prioriza sempre o preço atual se disponível
+      const price = (isLastPoint || isToday) && state.currentPrice 
+        ? state.currentPrice 
+        : (state.currentPrice || (costBasis > 0 ? costBasis / quantity : 0));
       totalCurrent += quantity * price;
     });
 
@@ -641,6 +671,17 @@ const {
     }
     
     const group = acc[category][assetName];
+    
+    // Atualiza nomeAtivo se o investimento atual tiver e o grupo não tiver, ou se o investimento tiver um nome mais completo
+    if (inv.nomeAtivo && inv.nomeAtivo.trim()) {
+        if (!group.nomeAtivo || !group.nomeAtivo.trim()) {
+            // Se o grupo não tem nomeAtivo, usa o do investimento atual
+            group.nomeAtivo = inv.nomeAtivo;
+        } else if (inv.nomeAtivo.length > group.nomeAtivo.length) {
+            // Se o investimento atual tem um nome mais completo, atualiza
+            group.nomeAtivo = inv.nomeAtivo;
+        }
+    }
     
     // Add to transactions list
     group.aportes.push(inv);
