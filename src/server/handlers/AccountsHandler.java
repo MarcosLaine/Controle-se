@@ -4,10 +4,9 @@ import com.sun.net.httpserver.*;
 import java.io.*;
 import java.util.*;
 import server.model.Conta;
-import server.utils.*;
-import server.utils.CreditCardUtil;
-import server.validation.*;
 import server.repository.*;
+import server.utils.*;
+import server.validation.*;
 
 /**
  * Handler para operações com Contas
@@ -324,7 +323,6 @@ public class AccountsHandler implements HttpHandler {
             }
             
             // Obtém o ID do usuário autenticado do token JWT
-            // O userId do token JWT é a fonte de verdade e sempre será usado
             int userId;
             try {
                 userId = AuthUtil.requireUserId(exchange);
@@ -335,8 +333,6 @@ public class AccountsHandler implements HttpHandler {
                 ResponseUtil.sendJsonResponse(exchange, 401, response);
                 return;
             }
-            
-            // Ignora qualquer userId que venha no body - sempre usa o do token JWT
             
             int accountId = accountRepository.cadastrarConta(name, type, balance, userId, diaFechamento, diaPagamento);
             
