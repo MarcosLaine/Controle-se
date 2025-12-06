@@ -123,6 +123,7 @@ public class IncomesHandler implements HttpHandler {
                     
                     double valorFaturaAtual = expenseRepository.calcularValorFaturaAtual(
                         accountId, 
+                        userId,
                         ultimoFechamento, 
                         proximoFechamento
                     );

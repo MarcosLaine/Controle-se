@@ -76,6 +76,17 @@ public class ExpensesHandler implements HttpHandler {
             List<Integer> tagIds = parseTagIds(data);
             String[] observacoes = parseObservacoes(data);
             
+            // Extrai dataEntradaFatura se fornecida
+            LocalDate dataEntradaFatura = null;
+            Object dataEntradaFaturaObj = data.get("dataEntradaFatura");
+            if (dataEntradaFaturaObj != null && !dataEntradaFaturaObj.toString().trim().isEmpty()) {
+                try {
+                    dataEntradaFatura = LocalDate.parse((String) dataEntradaFaturaObj);
+                } catch (Exception e) {
+                    // Ignora se a data não for válida
+                }
+            }
+            
             Conta conta = accountRepository.buscarConta(accountId);
             if (conta == null) {
                 Map<String, Object> response = new HashMap<>();
@@ -135,7 +146,7 @@ public class ExpensesHandler implements HttpHandler {
             }
             
             // Gasto único ou recorrência periódica
-            int expenseId = expenseRepository.cadastrarGasto(description, value, date, frequency, userId, categoryIds, accountId, observacoes);
+            int expenseId = expenseRepository.cadastrarGasto(description, value, date, frequency, userId, categoryIds, accountId, observacoes, dataEntradaFatura);
             
             for (int tagId : tagIds) {
                 tagRepository.associarTagTransacao(expenseId, "GASTO", tagId);
@@ -178,16 +189,11 @@ public class ExpensesHandler implements HttpHandler {
                 return;
             }
             
-            if (contaOrigemIdObj == null) {
-                Map<String, Object> response = new HashMap<>();
-                response.put("success", false);
-                response.put("message", "Conta de origem não fornecida");
-                ResponseUtil.sendJsonResponse(exchange, 400, response);
-                return;
-            }
-            
             int expenseId = ((Number) expenseIdObj).intValue();
-            int contaOrigemId = ((Number) contaOrigemIdObj).intValue();
+            Integer contaOrigemId = null;
+            if (contaOrigemIdObj != null) {
+                contaOrigemId = ((Number) contaOrigemIdObj).intValue();
+            }
             
             // Busca o gasto (parcela)
             Gasto gasto = expenseRepository.buscarGasto(expenseId);
@@ -226,47 +232,49 @@ public class ExpensesHandler implements HttpHandler {
                 return;
             }
             
-            // Valida a conta de origem
-            Conta contaOrigem = accountRepository.buscarConta(contaOrigemId);
-            if (contaOrigem == null) {
-                Map<String, Object> response = new HashMap<>();
-                response.put("success", false);
-                response.put("message", "Conta de origem não encontrada");
-                ResponseUtil.sendJsonResponse(exchange, 404, response);
-                return;
+            // Valida a conta de origem (se fornecida)
+            if (contaOrigemId != null) {
+                Conta contaOrigem = accountRepository.buscarConta(contaOrigemId);
+                if (contaOrigem == null) {
+                    Map<String, Object> response = new HashMap<>();
+                    response.put("success", false);
+                    response.put("message", "Conta de origem não encontrada");
+                    ResponseUtil.sendJsonResponse(exchange, 404, response);
+                    return;
+                }
+                
+                // Valida que a conta origem pertence ao usuário autenticado
+                if (contaOrigem.getIdUsuario() != userId) {
+                    Map<String, Object> response = new HashMap<>();
+                    response.put("success", false);
+                    response.put("message", "Você não tem permissão para usar esta conta de origem");
+                    ResponseUtil.sendJsonResponse(exchange, 403, response);
+                    return;
+                }
+                
+                // Valida que não é investimento
+                String tipoContaOrigem = contaOrigem.getTipo() != null ? contaOrigem.getTipo().toLowerCase().trim() : "";
+                if (tipoContaOrigem.equals("investimento") || tipoContaOrigem.equals("investimento (corretora)") || tipoContaOrigem.startsWith("investimento")) {
+                    Map<String, Object> response = new HashMap<>();
+                    response.put("success", false);
+                    response.put("message", "Contas de investimento não podem ser usadas como conta de origem");
+                    ResponseUtil.sendJsonResponse(exchange, 400, response);
+                    return;
+                }
+                
+                // Valida que não é a mesma conta do gasto
+                if (contaOrigemId == gasto.getIdConta()) {
+                    Map<String, Object> response = new HashMap<>();
+                    response.put("success", false);
+                    response.put("message", "A conta de origem não pode ser a mesma da parcela");
+                    ResponseUtil.sendJsonResponse(exchange, 400, response);
+                    return;
+                }
+                
+                // Decrementa o saldo da conta origem (dinheiro sai da conta origem)
+                accountRepository.decrementarSaldo(contaOrigemId, gasto.getValor());
             }
-            
-            // Valida que a conta origem pertence ao usuário autenticado
-            if (contaOrigem.getIdUsuario() != userId) {
-                Map<String, Object> response = new HashMap<>();
-                response.put("success", false);
-                response.put("message", "Você não tem permissão para usar esta conta de origem");
-                ResponseUtil.sendJsonResponse(exchange, 403, response);
-                return;
-            }
-            
-            // Valida que não é investimento
-            String tipoContaOrigem = contaOrigem.getTipo() != null ? contaOrigem.getTipo().toLowerCase().trim() : "";
-            if (tipoContaOrigem.equals("investimento") || tipoContaOrigem.equals("investimento (corretora)") || tipoContaOrigem.startsWith("investimento")) {
-                Map<String, Object> response = new HashMap<>();
-                response.put("success", false);
-                response.put("message", "Contas de investimento não podem ser usadas como conta de origem");
-                ResponseUtil.sendJsonResponse(exchange, 400, response);
-                return;
-            }
-            
-            // Valida que não é a mesma conta do gasto
-            if (contaOrigemId == gasto.getIdConta()) {
-                Map<String, Object> response = new HashMap<>();
-                response.put("success", false);
-                response.put("message", "A conta de origem não pode ser a mesma da parcela");
-                ResponseUtil.sendJsonResponse(exchange, 400, response);
-                return;
-            }
-            
-            // Processa o pagamento antecipado
-            // 1. Decrementa o saldo da conta origem (dinheiro sai da conta origem)
-            accountRepository.decrementarSaldo(contaOrigemId, gasto.getValor());
+            // Se não houver conta de origem, apenas marca como paga sem decrementar saldo
             
             // 2. Marca a parcela como paga e estorna o saldo ao cartão (aumenta limite disponível)
             expenseRepository.marcarParcelaComoPaga(expenseId);

@@ -21,6 +21,7 @@ public class Gasto implements Serializable {
     private Integer idGrupoParcela;
     private Integer numeroParcela;
     private Integer totalParcelas;
+    private LocalDate dataEntradaFatura;
     
     public Gasto(int idGasto, String descricao, double valor, LocalDate data, String frequencia, int idUsuario, int idCategoria, int idConta) {
         this.idGasto = idGasto;
@@ -86,6 +87,9 @@ public class Gasto implements Serializable {
     
     public Integer getTotalParcelas() { return totalParcelas; }
     public void setTotalParcelas(Integer totalParcelas) { this.totalParcelas = totalParcelas; }
+    
+    public LocalDate getDataEntradaFatura() { return dataEntradaFatura; }
+    public void setDataEntradaFatura(LocalDate dataEntradaFatura) { this.dataEntradaFatura = dataEntradaFatura; }
     
     public boolean isParcela() {
         return idGrupoParcela != null && numeroParcela != null && totalParcelas != null;

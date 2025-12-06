@@ -24,6 +24,17 @@ import {
 
 ChartJS.register(ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarElement, Title);
 
+// Função para validar se a data está completa (formato YYYY-MM-DD)
+const isDateComplete = (dateString) => {
+  if (!dateString) return false;
+  // Verifica se a data tem o formato completo YYYY-MM-DD (10 caracteres)
+  const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+  if (!dateRegex.test(dateString)) return false;
+  // Verifica se é uma data válida
+  const date = new Date(dateString);
+  return date instanceof Date && !isNaN(date) && dateString === date.toISOString().split('T')[0];
+};
+
 export default function Reports() {
   const { user } = useAuth();
   const { t } = useLanguage();
@@ -36,10 +47,38 @@ export default function Reports() {
   
   // Ref para armazenar o AbortController da requisição atual
   const abortControllerRef = useRef(null);
+  const previousPeriodRef = useRef(period);
+
+  // Limpa as datas quando o período muda
+  useEffect(() => {
+    if (previousPeriodRef.current !== period) {
+      if (period === 'custom') {
+        // Quando muda para custom, limpa as datas para o usuário selecionar manualmente
+        setStartDate('');
+        setEndDate('');
+      } else {
+        // Quando muda de custom para outro período, também limpa
+        setStartDate('');
+        setEndDate('');
+      }
+      previousPeriodRef.current = period;
+    }
+  }, [period]);
 
   const loadReports = useCallback(async () => {
     if (!user) return;
-    if (period === 'custom' && (!startDate || !endDate)) return;
+    // Para período customizado, só carrega se ambas as datas estiverem completamente preenchidas
+    if (period === 'custom') {
+      // Verifica se ambas as datas estão completas (formato YYYY-MM-DD)
+      if (!isDateComplete(startDate) || !isDateComplete(endDate)) {
+        return; // Não carrega se faltar alguma data ou se a data estiver incompleta
+      }
+      // Valida se a data de início é anterior à data de fim
+      if (new Date(startDate) > new Date(endDate)) {
+        toast.error(t('reports.invalidDateRange') || 'Data de início deve ser anterior à data de fim');
+        return;
+      }
+    }
     
     // Cancela a requisição anterior se ainda estiver em andamento
     if (abortControllerRef.current) {
@@ -99,8 +138,18 @@ export default function Reports() {
   }, [user, period, startDate, endDate]);
 
   useEffect(() => {
-    if (user && (period !== 'custom' || (startDate && endDate))) {
-      loadReports();
+    // Só carrega se:
+    // 1. Tem usuário
+    // 2. Período não é custom OU (é custom E ambas as datas estão completamente preenchidas)
+    if (user) {
+      if (period !== 'custom') {
+        // Para períodos não customizados, carrega imediatamente
+        loadReports();
+      } else if (isDateComplete(startDate) && isDateComplete(endDate)) {
+        // Para período customizado, só carrega quando ambas as datas estão completamente preenchidas
+        loadReports();
+      }
+      // Se for custom mas faltar alguma data ou estiver incompleta, não faz nada (aguarda o usuário preencher)
     }
     
     // Cleanup: cancela requisições quando o componente é desmontado ou quando os parâmetros mudam
@@ -110,7 +159,7 @@ export default function Reports() {
         abortControllerRef.current = null;
       }
     };
-  }, [loadReports]);
+  }, [user, period, startDate, endDate, loadReports]);
 
   const exportToPDF = () => {
     if (!reportData) {
@@ -541,7 +590,10 @@ export default function Reports() {
 
       const response = await fetch(`${API_BASE_URL}/reports`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': user.token ? `Bearer ${user.token}` : ''
+        },
         body: JSON.stringify(data),
       });
 
@@ -599,16 +651,30 @@ export default function Reports() {
               <input
                 type="date"
                 value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
+                onChange={(e) => {
+                  const newStartDate = e.target.value;
+                  setStartDate(newStartDate);
+                  // Se a data de fim for anterior à nova data de início, limpa a data de fim
+                  if (endDate && newStartDate && new Date(newStartDate) > new Date(endDate)) {
+                    setEndDate('');
+                  }
+                }}
                 className="input w-full sm:w-auto"
                 placeholder="Data Início"
+                max={endDate || undefined}
+                autoComplete="off"
               />
               <input
                 type="date"
                 value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
+                onChange={(e) => {
+                  // Garante que apenas o usuário pode preencher a data
+                  setEndDate(e.target.value);
+                }}
                 className="input w-full sm:w-auto"
                 placeholder="Data Fim"
+                min={startDate || undefined}
+                autoComplete="off"
               />
             </>
           )}

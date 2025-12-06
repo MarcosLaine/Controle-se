@@ -1,0 +1,12 @@
+tipo,descricao,valor,data,conta,tipo_conta,categoria,tags,observacoes,numero_parcelas,intervalo_dias,frequencia,data_entrada_fatura,pagamento_fatura,conta_origem
+gasto,seiko,3589.00,2025-10-09,BTG,CARTAO_CREDITO,Teste, Pessoal,Compra parcelada de relógio Seiko,12,30,UNICA,,,
+gasto,pulseiras,63.83,2025-10-21,BTG,CARTAO_CREDITO,Teste, Pessoal,Compra parcelada de pulseiras,3,30,UNICA,,,
+gasto,99,9.09,2025-11-26,BTG,CARTAO_CREDITO,Transporte,,Compra retida,1,30,UNICA,2025-11-28,,
+gasto,99,7.73,2025-11-27,BTG,CARTAO_CREDITO,Transporte,,Compra retida,1,30,UNICA,2025-11-28,,
+gasto,99,7.20,2025-11-27,BTG,CARTAO_CREDITO,Transporte,,Compra retida,1,30,UNICA,2025-11-28,,
+gasto,99,5.30,2025-11-28,BTG,CARTAO_CREDITO,Transporte,,,1,30,UNICA,,,
+gasto,araujo,22.69,2025-11-28,BTG,CARTAO_CREDITO,Transporte,,,1,30,UNICA,,,
+gasto,99,26.46,2025-11-29,BTG,CARTAO_CREDITO,Transporte,,,1,30,UNICA,,,
+gasto,99,9.60,2025-12-01,BTG,CARTAO_CREDITO,Transporte,,,1,30,UNICA,,,
+gasto,99,11.16,2025-12-02,BTG,CARTAO_CREDITO,Transporte,,,1,30,UNICA,,,
+gasto,render,197.90,2025-12-03,BTG,CARTAO_CREDITO,Transporte,,,1,30,UNICA,,,

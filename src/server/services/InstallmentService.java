@@ -79,7 +79,7 @@ public class InstallmentService {
         // Cria cada parcela
         for (int i = 1; i <= numeroParcelas; i++) {
             LocalDate dataParcela = grupo.calcularDataParcela(i);
-            String descricaoParcela = descricao + " (" + i + "/" + numeroParcelas + ")";
+            // Mantém a descrição original sem adicionar (X/Y)
             
             // A última parcela recebe a diferença para garantir que a soma seja exatamente o valor total
             double valorParcela = (i == numeroParcelas) 
@@ -88,7 +88,7 @@ public class InstallmentService {
             
             // Cria o gasto da parcela
             int idGasto = expenseRepository.cadastrarGasto(
-                descricaoParcela,
+                descricao,
                 valorParcela,
                 dataParcela,
                 "UNICA", // Parcelas não são recorrências
@@ -108,14 +108,24 @@ public class InstallmentService {
                 }
             }
             
-            // Se a parcela já passou (data no passado), marca automaticamente como paga
+            // Se a parcela já passou (data no passado ou hoje), marca automaticamente como paga
             // Isso faz o estorno automático do valor ao cartão de crédito
             LocalDate hoje = LocalDate.now();
-            if (dataParcela.isBefore(hoje)) {
+            if (!dataParcela.isAfter(hoje)) { // Se a data não é futura (passado ou hoje)
                 Conta conta = accountRepository.buscarConta(idConta);
-                if (conta != null && conta.isCartaoCredito()) {
+                // Verifica se é cartão de crédito de forma mais robusta
+                boolean isCartao = false;
+                if (conta != null && conta.getTipo() != null) {
+                    String tipoLower = conta.getTipo().toLowerCase().trim();
+                    isCartao = tipoLower.contains("cartao") || tipoLower.contains("cartão") || 
+                               tipoLower.contains("credito") || tipoLower.contains("crédito") ||
+                               tipoLower.equals("cartao_credito");
+                }
+                
+                if (isCartao) {
                     try {
                         // Marca a parcela como paga e estorna o saldo ao cartão de crédito
+                        // O método marcarParcelaComoPaga já faz a verificação e o estorno
                         expenseRepository.marcarParcelaComoPaga(idGasto);
                         // LOGGER.info("Parcela " + i + "/" + numeroParcelas + " marcada automaticamente como paga (data passada: " + dataParcela + ") - Valor estornado: R$ " + valorParcela);
                     } catch (Exception e) {
@@ -124,6 +134,8 @@ public class InstallmentService {
                         // Re-lança a exceção para garantir que o problema seja visível
                         throw new RuntimeException("Erro ao processar parcela passada automaticamente: " + e.getMessage(), e);
                     }
+                } else {
+                    LOGGER.warning("Parcela " + i + "/" + numeroParcelas + " não marcada como paga - conta " + idConta + " não é cartão de crédito (tipo: " + (conta != null ? conta.getTipo() : "null") + ")");
                 }
             }
         }
@@ -172,7 +184,7 @@ public class InstallmentService {
         // Cria cada parcela
         for (int i = 1; i <= numeroParcelas; i++) {
             LocalDate dataParcela = grupo.calcularDataParcela(i);
-            String descricaoParcela = descricao + " (" + i + "/" + numeroParcelas + ")";
+            // Mantém a descrição original sem adicionar (X/Y)
             
             // A última parcela recebe a diferença para garantir que a soma seja exatamente o valor total
             double valorParcela = (i == numeroParcelas) 
@@ -181,7 +193,7 @@ public class InstallmentService {
             
             // Cria a receita da parcela
             int idReceita = incomeRepository.cadastrarReceita(
-                descricaoParcela,
+                descricao,
                 valorParcela,
                 dataParcela,
                 idUsuario,

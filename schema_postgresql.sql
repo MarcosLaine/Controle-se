@@ -71,6 +71,7 @@ CREATE TABLE IF NOT EXISTS gastos (
     proxima_recorrencia DATE,
     id_gasto_original INTEGER DEFAULT 0,
     ativo BOOLEAN DEFAULT TRUE,
+    data_entrada_fatura DATE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (id_usuario) REFERENCES usuarios(id_usuario) ON DELETE CASCADE,

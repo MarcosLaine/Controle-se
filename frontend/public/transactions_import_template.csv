@@ -1,0 +1,8 @@
+tipo,descricao,valor,data,conta,tipo_conta,categoria,tags,observacoes,numero_parcelas,intervalo_dias,frequencia,data_entrada_fatura,pagamento_fatura,conta_origem
+gasto,Supermercado,150.50,2024-01-15,Conta Corrente,corrente,Alimentação,compras,Compra mensal,1,30,UNICA,,,
+gasto,Notebook,3000.00,2024-01-20,Cartão Nubank,cartao_credito,Eletrônicos,compras,Compra parcelada,12,30,UNICA,,,
+gasto,Netflix,29.90,2024-01-01,Cartão Itau,cartao_credito,Entretenimento,assinatura,Assinatura mensal,1,30,MENSAL,,,
+gasto,Compra retida,500.00,2024-01-10,Cartão Visa,cartao_credito,Compras,,,1,30,UNICA,2024-02-15,,,
+receita,Salário,5000.00,2024-01-05,Conta Corrente,corrente,,trabalho,Salário mensal,1,30,MENSAL,,,
+receita,Pagamento Fatura,1500.00,2024-01-25,Cartão Nubank,cartao_credito,,,Pagamento da fatura,1,30,UNICA,,sim,Conta Corrente
+

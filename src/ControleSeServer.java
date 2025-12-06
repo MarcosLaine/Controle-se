@@ -406,6 +406,10 @@ public class ControleSeServer {
             withRateLimit(secure(new server.handlers.InvestmentQuoteHandler()), "/api/investments/quote", apiCircuitBreaker));
         server.createContext("/api/tools/compound-interest", 
             withRateLimit(secure(new server.handlers.CompoundInterestHandler()), "/api/tools/compound-interest", apiCircuitBreaker));
+        // Import transactions - template é público, mas import e confirm precisam de autenticação
+        // O handler verifica autenticação internamente para import e confirm
+        server.createContext("/api/transactions/import", 
+            new server.handlers.ImportTransactionsHandler());
         
         // Health check
         server.createContext("/health", new server.handlers.HealthHandler());

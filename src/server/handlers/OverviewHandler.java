@@ -98,6 +98,7 @@ public class OverviewHandler implements HttpHandler {
                     
                     double valorFaturaAtual = expenseRepository.calcularValorFaturaAtual(
                         cartao.getIdConta(), 
+                        userId,
                         ultimoFechamento, 
                         proximoFechamento
                     );

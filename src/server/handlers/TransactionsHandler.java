@@ -73,6 +73,22 @@ public class TransactionsHandler implements HttpHandler {
             Map<Integer, List<Tag>> tagsPorReceita = tagRepository.buscarTagsDeReceitas(idsReceitas);
             Map<Integer, String[]> observacoesPorReceita = incomeRepository.buscarObservacoesDeReceitas(idsReceitas);
             
+            // Busca informações das contas para calcular o mês da fatura
+            AccountRepository accountRepository = new AccountRepository();
+            Set<Integer> idsContas = new HashSet<>();
+            for (Gasto gasto : expenses) {
+                if (gasto.getDataEntradaFatura() != null) {
+                    idsContas.add(gasto.getIdConta());
+                }
+            }
+            Map<Integer, Conta> contasMap = new HashMap<>();
+            for (Integer idConta : idsContas) {
+                Conta conta = accountRepository.buscarConta(idConta);
+                if (conta != null) {
+                    contasMap.put(idConta, conta);
+                }
+            }
+            
             List<Map<String, Object>> transactions = new ArrayList<>();
             
             for (Gasto gasto : expenses) {
@@ -114,6 +130,21 @@ public class TransactionsHandler implements HttpHandler {
                 transaction.put("categories", nomesCategorias);
                 transaction.put("tags", tagsList);
                 transaction.put("ativo", gasto.isAtivo());
+                // Campo de data de entrada na fatura (para compras retidas)
+                if (gasto.getDataEntradaFatura() != null) {
+                    transaction.put("dataEntradaFatura", gasto.getDataEntradaFatura().toString());
+                    // Adiciona informações da conta para calcular o mês da fatura
+                    Conta conta = contasMap.get(gasto.getIdConta());
+                    if (conta != null && conta.isCartaoCredito()) {
+                        transaction.put("accountId", conta.getIdConta());
+                        if (conta.getDiaFechamento() != null) {
+                            transaction.put("diaFechamento", conta.getDiaFechamento());
+                        }
+                        if (conta.getDiaPagamento() != null) {
+                            transaction.put("diaPagamento", conta.getDiaPagamento());
+                        }
+                    }
+                }
                 // Campos de parcelas
                 if (gasto.getIdGrupoParcela() != null) {
                     transaction.put("idGrupoParcela", gasto.getIdGrupoParcela());

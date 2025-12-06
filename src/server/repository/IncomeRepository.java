@@ -540,7 +540,7 @@ public class IncomeRepository {
      */
     public double calcularTotalPagoFatura(int idUsuario, int idConta, LocalDate dataInicio, LocalDate dataFim, ExpenseRepository expenseRepository) {
         double totalReceitas = calcularTotalReceitasPorPeriodoEConta(idUsuario, idConta, dataInicio, dataFim);
-        double totalParcelasPagas = expenseRepository.calcularTotalParcelasPagasPorPeriodoEConta(idConta, dataInicio, dataFim);
+        double totalParcelasPagas = expenseRepository.calcularTotalParcelasPagasPorPeriodoEConta(idConta, idUsuario, dataInicio, dataFim);
         return totalReceitas + totalParcelasPagas;
     }
 

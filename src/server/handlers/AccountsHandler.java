@@ -88,6 +88,7 @@ public class AccountsHandler implements HttpHandler {
                         
                         double valorFaturaAtual = expenseRepository.calcularValorFaturaAtual(
                             conta.getIdConta(), 
+                            userId,
                             ultimoFechamento, 
                             proximoFechamento
                         );
@@ -183,6 +184,7 @@ public class AccountsHandler implements HttpHandler {
             
             double valorFaturaAtual = expenseRepository.calcularValorFaturaAtual(
                 conta.getIdConta(), 
+                userId,
                 ultimoFechamento, 
                 proximoFechamento
             );

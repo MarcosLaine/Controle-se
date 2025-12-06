@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Plus, Minus, Trash2, ArrowUp, ArrowDown, Filter, CreditCard, Search } from 'lucide-react';
+import { Plus, Minus, Trash2, ArrowUp, ArrowDown, Filter, CreditCard, Search, Upload } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useData } from '../../contexts/DataContext';
 import { useLanguage } from '../../contexts/LanguageContext';
@@ -10,6 +10,7 @@ import Modal from '../common/Modal';
 import toast from 'react-hot-toast';
 import SkeletonSection from '../common/SkeletonSection';
 import Spinner from '../common/Spinner';
+import ImportTransactionsModal from './ImportTransactionsModal';
 
 export default function Transactions() {
   const { user } = useAuth();
@@ -28,6 +29,7 @@ export default function Transactions() {
   const [hasMore, setHasMore] = useState(false);
   const [offset, setOffset] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
   
   // Ref para armazenar o AbortController da requisição atual
   const abortControllerRef = useRef(null);
@@ -347,6 +349,10 @@ export default function Transactions() {
           </p>
         </div>
         <div className="flex gap-2 w-full sm:w-auto">
+          <button onClick={() => setShowImportModal(true)} className="flex-1 sm:flex-none btn-secondary justify-center">
+            <Upload className="w-4 h-4" />
+            {t('import.title') || 'Importar'}
+          </button>
           <button onClick={() => setShowExpenseModal(true)} className="flex-1 sm:flex-none btn-secondary justify-center">
             <Minus className="w-4 h-4" />
             {t('transactions.newExpense')}
@@ -517,6 +523,86 @@ export default function Transactions() {
                       <> - {transaction.category}</>
                     )}
                   </p>
+                  {transaction.dataEntradaFatura && transaction.type === 'expense' && (() => {
+                    try {
+                      const purchaseDate = new Date(transaction.date);
+                      const invoiceDate = new Date(transaction.dataEntradaFatura);
+                      const purchaseMonth = purchaseDate.getMonth();
+                      const purchaseYear = purchaseDate.getFullYear();
+                      const invoiceMonth = invoiceDate.getMonth();
+                      const invoiceYear = invoiceDate.getFullYear();
+                      
+                      // Se a data de entrada na fatura é diferente da data da compra, calcula o mês da fatura
+                      if (invoiceDate.getTime() !== purchaseDate.getTime()) {
+                        let invoiceMonthToShow = invoiceMonth;
+                        let invoiceYearToShow = invoiceYear;
+                        
+                        // Se tiver informações da conta, calcula o mês da fatura baseado na data de pagamento
+                        if (transaction.diaFechamento && transaction.diaPagamento) {
+                          const diaFechamento = transaction.diaFechamento;
+                          const diaPagamento = transaction.diaPagamento;
+                          
+                          // Calcula qual é o próximo pagamento a partir da data de entrada na fatura
+                          const invoiceDateObj = new Date(invoiceDate);
+                          invoiceDateObj.setHours(0, 0, 0, 0);
+                          
+                          // Primeiro, encontra o fechamento da fatura que a data de entrada pertence
+                          // Tenta criar a data de fechamento no mesmo mês da data de entrada
+                          let fechamentoEsteMes = new Date(invoiceDateObj.getFullYear(), invoiceDateObj.getMonth(), diaFechamento);
+                          fechamentoEsteMes.setHours(0, 0, 0, 0);
+                          
+                          let fechamentoFatura;
+                          if (invoiceDateObj > fechamentoEsteMes) {
+                            // A data de entrada é depois do fechamento deste mês, então o fechamento é no próximo mês
+                            fechamentoFatura = new Date(invoiceDateObj.getFullYear(), invoiceDateObj.getMonth() + 1, diaFechamento);
+                          } else {
+                            // A data de entrada é antes ou igual ao fechamento deste mês, então o fechamento é deste mês
+                            // (compras efetivadas no dia do fechamento entram na fatura que fecha naquele dia, igual às compras normais)
+                            fechamentoFatura = fechamentoEsteMes;
+                          }
+                          
+                          // Agora encontra o pagamento correspondente a esse fechamento
+                          // O pagamento é no mesmo mês do fechamento, ou no próximo mês se o fechamento for depois do dia de pagamento
+                          let pagamentoFatura = new Date(fechamentoFatura.getFullYear(), fechamentoFatura.getMonth(), diaPagamento);
+                          pagamentoFatura.setHours(0, 0, 0, 0);
+                          
+                          // Se o fechamento é depois ou igual ao pagamento do mesmo mês, o pagamento é no próximo mês
+                          if (fechamentoFatura >= pagamentoFatura) {
+                            pagamentoFatura = new Date(fechamentoFatura.getFullYear(), fechamentoFatura.getMonth() + 1, diaPagamento);
+                          }
+                          
+                          // A fatura é identificada pela data de pagamento
+                          invoiceMonthToShow = pagamentoFatura.getMonth();
+                          invoiceYearToShow = pagamentoFatura.getFullYear();
+                        }
+                        
+                        const monthNames = [
+                          t('common.january') || 'Janeiro',
+                          t('common.february') || 'Fevereiro',
+                          t('common.march') || 'Março',
+                          t('common.april') || 'Abril',
+                          t('common.may') || 'Maio',
+                          t('common.june') || 'Junho',
+                          t('common.july') || 'Julho',
+                          t('common.august') || 'Agosto',
+                          t('common.september') || 'Setembro',
+                          t('common.october') || 'Outubro',
+                          t('common.november') || 'Novembro',
+                          t('common.december') || 'Dezembro'
+                        ];
+                        const monthName = monthNames[invoiceMonthToShow] || `${invoiceMonthToShow + 1}/${invoiceYearToShow}`;
+                        return (
+                          <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                            {t('transactions.enteredInvoiceMonth', { month: `${monthName} ${invoiceYearToShow}` })}
+                          </p>
+                        );
+                      }
+                    } catch (e) {
+                      // Ignora erros de parsing de data
+                      console.error('Erro ao calcular mês da fatura:', e);
+                    }
+                    return null;
+                  })()}
                   {transaction.tags && transaction.tags.length > 0 && (
                     <div className="flex flex-wrap gap-2 mt-2">
                       {transaction.tags.map((tag) => (
@@ -683,11 +769,24 @@ export default function Transactions() {
           user={user}
         />
       )}
+
+      {/* Import Transactions Modal */}
+      <ImportTransactionsModal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        onSuccess={() => {
+          loadData();
+          invalidateCache(`overview-${user.id}-month`);
+          invalidateCache(`overview-${user.id}-year`);
+          invalidateCache(`overview-${user.id}-all`);
+          invalidateCache(`recent-transactions-${user.id}`);
+        }}
+      />
     </div>
   );
 }
 
-function TransactionModal({ isOpen, onClose, type, categories, accounts, tags, onSuccess, user }) {
+export function TransactionModal({ isOpen, onClose, type, categories, accounts, tags, onSuccess, user, initialData, isEditMode }) {
   const { t } = useLanguage();
   const [formData, setFormData] = useState({
     description: '',
@@ -702,9 +801,77 @@ function TransactionModal({ isOpen, onClose, type, categories, accounts, tags, o
     numeroParcelas: '',
     intervaloDias: 30,
     contaOrigemId: '', // Conta de onde o dinheiro sai para pagar a fatura
+    compraRetida: false,
+    dataEntradaFatura: '',
   });
   const [invoiceInfo, setInvoiceInfo] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [showRetainedPurchaseModal, setShowRetainedPurchaseModal] = useState(false);
+
+  // Carrega dados iniciais se for modo de edição
+  useEffect(() => {
+    if (isOpen && initialData) {
+      setFormData({
+        description: initialData.description || '',
+        value: initialData.value || '',
+        date: initialData.date || new Date().toISOString().split('T')[0],
+        accountId: initialData.accountId || '',
+        categoryIds: initialData.categoryIds || [],
+        tagIds: initialData.tagIds || [],
+        observacoes: initialData.observacoes || '',
+        pagamentoFatura: initialData.pagamentoFatura || false,
+        isParcelado: initialData.isParcelado || false,
+        numeroParcelas: initialData.numeroParcelas || '',
+        intervaloDias: initialData.intervaloDias || 30,
+        contaOrigemId: initialData.contaOrigemId || '',
+        compraRetida: initialData.compraRetida || false,
+        dataEntradaFatura: initialData.dataEntradaFatura || '',
+        frequency: initialData.frequency || 'UNICA',
+      });
+
+      // Carrega informações da fatura se necessário
+      if (type === 'income' && initialData.accountId) {
+        loadInvoiceInfo(initialData.accountId);
+      }
+    } else if (isOpen && !initialData) {
+      // Reset form quando não é edição
+      setFormData({
+        description: '',
+        value: '',
+        date: new Date().toISOString().split('T')[0],
+        accountId: '',
+        categoryIds: [],
+        tagIds: [],
+        observacoes: '',
+        pagamentoFatura: false,
+        isParcelado: false,
+        numeroParcelas: '',
+        intervaloDias: 30,
+        contaOrigemId: '',
+        compraRetida: false,
+        dataEntradaFatura: '',
+        frequency: 'UNICA',
+      });
+      setInvoiceInfo(null);
+    }
+  }, [isOpen, initialData, type]);
+
+  const loadInvoiceInfo = async (accountId) => {
+    if (!user || !accountId) return;
+    try {
+      const response = await api.get(`/accounts/${accountId}/invoice-info?userId=${user.id}`);
+      if (response.success && response.data) {
+        setInvoiceInfo({
+          valorFatura: response.data.valorFatura || 0,
+          valorJaPago: response.data.valorJaPago || 0,
+          valorDisponivel: response.data.valorDisponivelPagamento || 0
+        });
+      }
+    } catch (error) {
+      console.error('Erro ao carregar informações da fatura:', error);
+      setInvoiceInfo(null);
+    }
+  };
 
   // Verifica se há contas do tipo cartão de crédito
   const hasCreditCardAccounts = accounts.some(acc => {
@@ -783,6 +950,13 @@ function TransactionModal({ isOpen, onClose, type, categories, accounts, tags, o
       }
     }
     
+    // Se for modo de edição (importação), apenas retorna os dados sem salvar
+    if (isEditMode) {
+      onSuccess(formData);
+      onClose();
+      return;
+    }
+    
     setLoading(true);
     try {
       const data = {
@@ -828,6 +1002,11 @@ function TransactionModal({ isOpen, onClose, type, categories, accounts, tags, o
         // O backend vai dividir automaticamente
       }
 
+      // Se for gasto com compra retida, adiciona data de entrada na fatura
+      if (type === 'expense' && formData.compraRetida && formData.dataEntradaFatura) {
+        data.dataEntradaFatura = formData.dataEntradaFatura;
+      }
+
       const endpoint = type === 'expense' ? '/expenses' : '/incomes';
       const response = await api.post(endpoint, data);
       if (response.success) {
@@ -847,6 +1026,8 @@ function TransactionModal({ isOpen, onClose, type, categories, accounts, tags, o
           numeroParcelas: '',
           intervaloDias: 30,
           contaOrigemId: '',
+          compraRetida: false,
+          dataEntradaFatura: '',
         });
       }
     } catch (error) {
@@ -860,7 +1041,10 @@ function TransactionModal({ isOpen, onClose, type, categories, accounts, tags, o
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={type === 'expense' ? t('transactions.newExpense') : t('transactions.newIncome')}
+      title={isEditMode 
+        ? (type === 'expense' ? t('transactions.editExpense') || 'Editar Gasto' : t('transactions.editIncome') || 'Editar Receita')
+        : (type === 'expense' ? t('transactions.newExpense') : t('transactions.newIncome'))
+      }
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
@@ -1207,6 +1391,63 @@ function TransactionModal({ isOpen, onClose, type, categories, accounts, tags, o
           }
           return null;
         })()}
+        {type === 'expense' && (() => {
+          const selectedAccount = accounts.find(acc => acc.idConta.toString() === formData.accountId);
+          const isCreditCard = selectedAccount && isCreditCardAccount(selectedAccount);
+          
+          if (isCreditCard) {
+            return (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-3">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.compraRetida}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setFormData({ 
+                          ...formData, 
+                          compraRetida: checked,
+                          dataEntradaFatura: checked ? formData.dataEntradaFatura : ''
+                        });
+                      }}
+                      className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500 shrink-0"
+                    />
+                    <span className="label text-sm">{t('transactions.retainedPurchase')}</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setShowRetainedPurchaseModal(true);
+                    }}
+                    className="text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 text-sm font-medium underline hover:no-underline transition-all shrink-0"
+                    title={t('transactions.retainedPurchaseModalTitle')}
+                  >
+                    {t('common.help') || 'Ajuda'}
+                  </button>
+                </div>
+                {formData.compraRetida && (
+                  <div className="pl-6 space-y-2">
+                    <label className="label">{t('transactions.invoiceEntryDate')}</label>
+                    <input
+                      type="date"
+                      value={formData.dataEntradaFatura}
+                      onChange={(e) => setFormData({ ...formData, dataEntradaFatura: e.target.value })}
+                      className="input"
+                      required={formData.compraRetida}
+                      min={formData.date}
+                    />
+                    <p className="text-xs text-gray-600 dark:text-gray-400">
+                      {t('transactions.retainedPurchaseHelp')}
+                    </p>
+                  </div>
+                )}
+              </div>
+            );
+          }
+          return null;
+        })()}
         {tags.length > 0 && (
           <div>
             <label className="label">Tags (opcional)</label>
@@ -1267,6 +1508,47 @@ function TransactionModal({ isOpen, onClose, type, categories, accounts, tags, o
           </button>
         </div>
       </form>
+      
+      {/* Modal explicativo sobre compras retidas */}
+      <Modal
+        isOpen={showRetainedPurchaseModal}
+        onClose={() => setShowRetainedPurchaseModal(false)}
+        title={t('transactions.retainedPurchaseModalTitle')}
+      >
+        <div className="space-y-4">
+          <p className="text-gray-700 dark:text-gray-300">
+            {t('transactions.retainedPurchaseModalContent')}
+          </p>
+          
+          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+            <p className="font-semibold text-blue-900 dark:text-blue-100 mb-2">
+              {t('transactions.retainedPurchaseExample')}
+            </p>
+            <p className="text-sm text-blue-800 dark:text-blue-200">
+              {t('transactions.retainedPurchaseExampleText')}
+            </p>
+          </div>
+          
+          <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
+            <p className="font-semibold text-green-900 dark:text-green-100 mb-2">
+              {t('transactions.retainedPurchaseHowToUse')}
+            </p>
+            <p className="text-sm text-green-800 dark:text-green-200">
+              {t('transactions.retainedPurchaseHowToUseText')}
+            </p>
+          </div>
+          
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => setShowRetainedPurchaseModal(false)}
+              className="btn-primary"
+            >
+              {t('common.understood') || t('common.ok')}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </Modal>
   );
 }
@@ -1302,18 +1584,19 @@ function PayInstallmentModal({ isOpen, onClose, installment, accounts, onSuccess
   const handleSubmit = async (e) => {
     e.preventDefault();
     
-    if (!contaOrigemId) {
-      toast.error(t('transactions.selectOriginAccount'));
-      return;
-    }
-
     setLoading(true);
     try {
-      const response = await api.post('/expenses/pay-installment', {
+      const requestData = {
         expenseId: installment.id,
-        contaOrigemId: parseInt(contaOrigemId),
         userId: user.id
-      });
+      };
+      
+      // Só envia contaOrigemId se foi selecionada
+      if (contaOrigemId) {
+        requestData.contaOrigemId = parseInt(contaOrigemId);
+      }
+      
+      const response = await api.post('/expenses/pay-installment', requestData);
 
       if (response.success) {
         toast.success(t('transactions.paymentRegisteredSuccess'));
@@ -1357,7 +1640,7 @@ function PayInstallmentModal({ isOpen, onClose, installment, accounts, onSuccess
               <span className="font-semibold">{formatDate(installment.date)}</span>
             </div>
             <div className="flex justify-between pt-1 border-t border-blue-200 dark:border-blue-700">
-              <span className="font-medium">{t('transactions.installment')}:</span>
+              <span className="font-medium">{t('transactions.installmentLabel')}:</span>
               <span className="font-bold">
                 {installment.numeroParcela}/{installment.totalParcelas}
               </span>
@@ -1366,7 +1649,7 @@ function PayInstallmentModal({ isOpen, onClose, installment, accounts, onSuccess
         </div>
 
         <div>
-          <label className="label">{t('transactions.sourceAccountOptional')} *</label>
+          <label className="label">{t('transactions.sourceAccountOptional')}</label>
           <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
             {t('transactions.sourceAccountHelp')}
           </p>
@@ -1374,7 +1657,6 @@ function PayInstallmentModal({ isOpen, onClose, installment, accounts, onSuccess
             value={contaOrigemId}
             onChange={(e) => setContaOrigemId(e.target.value)}
             className="input"
-            required
           >
             <option value="">{t('accounts.selectAccount') || t('transactions.account')}</option>
             {accounts
@@ -1394,11 +1676,9 @@ function PayInstallmentModal({ isOpen, onClose, installment, accounts, onSuccess
         </div>
 
         <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
-          <p className="text-xs text-blue-800 dark:text-blue-200 mb-2">
-            <strong>ℹ️ {t('common.info')}:</strong> {t('transactions.registerAdvancePayment')}
-          </p>
-          <p className="text-xs text-blue-700 dark:text-blue-300">
-            {t('transactions.noRealBankTransaction')}
+          <p className="text-xs text-blue-800 dark:text-blue-200 mb-2 flex items-start gap-2">
+            <strong>ℹ️ {t('common.info')}:</strong>
+            <span>{t('transactions.noRealBankTransaction')}</span>
           </p>
         </div>
 

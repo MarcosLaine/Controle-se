@@ -172,10 +172,19 @@ public class JsonUtil {
                 Object value = null;
                 
                 if (firstChar == '\"') {
-                    // String value
-                    int valueEnd = json.indexOf("\"", i + 1);
-                    if (valueEnd != -1) {
-                        value = json.substring(i + 1, valueEnd);
+                    // String value - lê até a próxima aspas não escapada
+                    int valueStart = i + 1;
+                    int valueEnd = valueStart;
+                    while (valueEnd < json.length()) {
+                        if (json.charAt(valueEnd) == '"' && (valueEnd == valueStart || json.charAt(valueEnd - 1) != '\\')) {
+                            break;
+                        }
+                        valueEnd++;
+                    }
+                    if (valueEnd < json.length()) {
+                        String rawValue = json.substring(valueStart, valueEnd);
+                        // Desescapar caracteres especiais
+                        value = rawValue.replace("\\\"", "\"").replace("\\\\", "\\").replace("\\n", "\n").replace("\\r", "\r").replace("\\t", "\t");
                         i = valueEnd + 1;
                     }
                 } else if (firstChar == '{') {
@@ -212,7 +221,7 @@ public class JsonUtil {
                     }
                     String valueStr = json.substring(i, valueEnd).trim();
                     
-                    // Tenta converter para número
+                    // Tenta converter para número ou boolean
                     try {
                         String normalizedStr = NumberUtil.normalizeBrazilianNumber(valueStr);
                         if (normalizedStr.contains(".")) {
@@ -221,7 +230,16 @@ public class JsonUtil {
                             value = Integer.parseInt(normalizedStr);
                         }
                     } catch (NumberFormatException e) {
-                        value = valueStr;
+                        // Tenta converter para boolean
+                        if (valueStr.equalsIgnoreCase("true")) {
+                            value = true;
+                        } else if (valueStr.equalsIgnoreCase("false")) {
+                            value = false;
+                        } else if (valueStr.equalsIgnoreCase("null")) {
+                            value = null;
+                        } else {
+                            value = valueStr;
+                        }
                     }
                     
                     i = valueEnd;
@@ -279,10 +297,19 @@ public class JsonUtil {
                 Object value = null;
                 
                 if (firstChar == '\"') {
-                    // String value
-                    int valueEnd = json.indexOf("\"", i + 1);
-                    if (valueEnd != -1) {
-                        value = json.substring(i + 1, valueEnd);
+                    // String value - lê até a próxima aspas não escapada
+                    int valueStart = i + 1;
+                    int valueEnd = valueStart;
+                    while (valueEnd < json.length()) {
+                        if (json.charAt(valueEnd) == '"' && (valueEnd == valueStart || json.charAt(valueEnd - 1) != '\\')) {
+                            break;
+                        }
+                        valueEnd++;
+                    }
+                    if (valueEnd < json.length()) {
+                        String rawValue = json.substring(valueStart, valueEnd);
+                        // Desescapar caracteres especiais
+                        value = rawValue.replace("\\\"", "\"").replace("\\\\", "\\").replace("\\n", "\n").replace("\\r", "\r").replace("\\t", "\t");
                         i = valueEnd + 1;
                     }
                 } else if (firstChar == '{') {
