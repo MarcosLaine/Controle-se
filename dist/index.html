@@ -2,21 +2,42 @@
 <html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="description" content="Sistema de controle financeiro pessoal - Gerencie suas receitas, despesas, investimentos e muito mais" />
+    <meta name="theme-color" content="#10b981" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Controle-se" />
     <title>Controle-se - Sistema Financeiro</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <!-- Google reCAPTCHA v2 -->
     <script src="https://www.google.com/recaptcha/api.js" async defer></script>
-    <script type="module" crossorigin src="/assets/index-CrvsNxlW.js"></script>
+    <script type="module" crossorigin src="/assets/index-CsTLIk2o.js"></script>
     <link rel="modulepreload" crossorigin href="/assets/react-vendor-C6xB1Gdz.js">
     <link rel="modulepreload" crossorigin href="/assets/chart-vendor-8o9__gM7.js">
     <link rel="stylesheet" crossorigin href="/assets/index-CJeL0Y-k.css">
-  </head>
+  <link rel="manifest" href="/manifest.webmanifest"><script id="vite-plugin-pwa:register-sw" src="/registerSW.js"></script></head>
   <body>
-    <div id="root"></div>
+    <div id="root"></div>
+    <script>
+      // Captura o beforeinstallprompt o mais cedo possível
+      // antes do React carregar
+      let capturedPrompt = null;
+      
+      window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        capturedPrompt = e;
+        console.log('beforeinstallprompt capturado no script inline');
+        // Armazena no window para o hook acessar
+        window.__deferredPrompt = e;
+        // Dispara evento customizado para o hook ouvir
+        window.dispatchEvent(new CustomEvent('pwa-install-available', { detail: e }));
+      });
+    </script>
   </body>
 </html>
 

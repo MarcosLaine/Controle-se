@@ -694,6 +694,12 @@
     "portuguese": "Português",
     "english": "English"
   },
+  "pwa": {
+    "install": "Install app",
+    "installed": "App installed",
+    "iosInstructions": "Tap the share button (□↑) and select 'Add to Home Screen'",
+    "installInstructions": "Use the browser menu (⋮) to install the app"
+  },
   "import": {
     "title": "Import Transactions",
     "templateTitle": "Download CSV Template",

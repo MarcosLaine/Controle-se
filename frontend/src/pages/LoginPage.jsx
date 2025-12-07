@@ -1,10 +1,11 @@
 import React, { useState, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Wallet, Mail, Lock, User, Moon, Sun, Calculator, TrendingUp, Globe } from 'lucide-react';
+import { Wallet, Mail, Lock, User, Moon, Sun, Calculator, TrendingUp, Globe, Download } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useTheme } from '../contexts/ThemeContext';
 import { useLanguage } from '../contexts/LanguageContext';
+import { usePWAInstall } from '../hooks/usePWAInstall';
 import ReCaptcha from '../components/common/ReCaptcha';
 
 // Site key do reCAPTCHA
@@ -21,6 +22,7 @@ export default function LoginPage() {
   const [searchParams] = useSearchParams();
   const { theme, toggleTheme } = useTheme();
   const { language, changeLanguage, t } = useLanguage();
+  const { isInstallable, handleInstall } = usePWAInstall();
   const redirectTo = searchParams.get('redirect') || '/dashboard';
   const [isLanguageMenuOpen, setIsLanguageMenuOpen] = useState(false);
 
@@ -90,6 +92,17 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-50 via-white to-primary-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 p-4">
       <div className="absolute top-4 right-4 flex items-center gap-2">
+        {isInstallable && (
+          <button
+            onClick={handleInstall}
+            className="p-2 rounded-lg bg-white dark:bg-gray-800 shadow-md hover:shadow-lg transition-all"
+            aria-label={t('pwa.install')}
+            title={t('pwa.install')}
+          >
+            <Download className="w-5 h-5 text-gray-700 dark:text-gray-300" />
+          </button>
+        )}
+        
         <div className="relative">
           <button
             onClick={() => setIsLanguageMenuOpen(!isLanguageMenuOpen)}

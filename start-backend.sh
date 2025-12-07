@@ -30,7 +30,8 @@ echo ""
 
 # Verifica se as dependências existem
 if [ ! -f "lib/postgresql.jar" ] || [ ! -f "lib/hikaricp.jar" ] || [ ! -f "lib/slf4j-api.jar" ] || [ ! -f "lib/slf4j-simple.jar" ] || \
-   [ ! -f "lib/jakarta-validation-api.jar" ] || [ ! -f "lib/hibernate-validator.jar" ] || [ ! -f "lib/jakarta-el.jar" ] || [ ! -f "lib/jakarta-el-impl.jar" ]; then
+   [ ! -f "lib/jakarta-validation-api.jar" ] || [ ! -f "lib/hibernate-validator.jar" ] || [ ! -f "lib/jboss-logging.jar" ] || \
+   [ ! -f "lib/classmate.jar" ] || [ ! -f "lib/jakarta-el.jar" ] || [ ! -f "lib/jakarta-el-impl.jar" ]; then
     echo "⚠ AVISO: Algumas dependências não foram encontradas."
     echo "Execute './start.sh' uma vez para baixar as dependências."
     exit 1
@@ -54,7 +55,7 @@ if [ -z "$JAVA_FILES" ]; then
 fi
 
 # Compila todos os arquivos de uma vez
-javac -cp ".:lib/postgresql.jar:lib/hikaricp.jar:lib/slf4j-api.jar:lib/slf4j-simple.jar:lib/jakarta-validation-api.jar:lib/hibernate-validator.jar:lib/jakarta-el.jar:lib/jakarta-el-impl.jar:bin" \
+javac -cp ".:lib/postgresql.jar:lib/hikaricp.jar:lib/slf4j-api.jar:lib/slf4j-simple.jar:lib/jakarta-validation-api.jar:lib/hibernate-validator.jar:lib/jboss-logging.jar:lib/classmate.jar:lib/jakarta-el.jar:lib/jakarta-el-impl.jar:bin" \
       -d bin \
       -source 11 \
       -target 11 \
@@ -99,7 +100,7 @@ echo "=========================================="
 echo ""
 
 # Executa o servidor
-java -cp ".:lib/postgresql.jar:lib/hikaricp.jar:lib/slf4j-api.jar:lib/slf4j-simple.jar:lib/jakarta-validation-api.jar:lib/hibernate-validator.jar:lib/jakarta-el.jar:lib/jakarta-el-impl.jar:bin" \
+java -cp ".:lib/postgresql.jar:lib/hikaricp.jar:lib/slf4j-api.jar:lib/slf4j-simple.jar:lib/jakarta-validation-api.jar:lib/hibernate-validator.jar:lib/jboss-logging.jar:lib/classmate.jar:lib/jakarta-el.jar:lib/jakarta-el-impl.jar:bin" \
      -Dfile.encoding=UTF-8 \
      ControleSeServer
 

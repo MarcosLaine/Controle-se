@@ -26,10 +26,10 @@ public class StaticFileHandler implements HttpHandler {
         // Check if path is a static file (has file extension)
         boolean isStaticFile = path.contains(".") && 
             (path.endsWith(".html") || path.endsWith(".js") || path.endsWith(".css") || 
-             path.endsWith(".json") || path.endsWith(".png") || path.endsWith(".jpg") || 
-             path.endsWith(".jpeg") || path.endsWith(".svg") || path.endsWith(".woff") || 
-             path.endsWith(".woff2") || path.endsWith(".ttf") || path.endsWith(".map") ||
-             path.endsWith(".ico") || path.startsWith("/assets/"));
+             path.endsWith(".json") || path.endsWith(".webmanifest") || path.endsWith(".png") || 
+             path.endsWith(".jpg") || path.endsWith(".jpeg") || path.endsWith(".svg") || 
+             path.endsWith(".woff") || path.endsWith(".woff2") || path.endsWith(".ttf") || 
+             path.endsWith(".map") || path.endsWith(".ico") || path.startsWith("/assets/"));
         
         try {
             File file = null;
@@ -101,6 +101,7 @@ public class StaticFileHandler implements HttpHandler {
         if (path.endsWith(".css")) return "text/css; charset=utf-8";
         if (path.endsWith(".js")) return "application/javascript; charset=utf-8";
         if (path.endsWith(".json")) return "application/json; charset=utf-8";
+        if (path.endsWith(".webmanifest")) return "application/manifest+json; charset=utf-8";
         if (path.endsWith(".png")) return "image/png";
         if (path.endsWith(".jpg") || path.endsWith(".jpeg")) return "image/jpeg";
         if (path.endsWith(".svg")) return "image/svg+xml";

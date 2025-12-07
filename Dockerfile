@@ -34,6 +34,8 @@ RUN mkdir -p lib && \
     curl -L -o lib/slf4j-simple.jar https://repo1.maven.org/maven2/org/slf4j/slf4j-simple/2.0.9/slf4j-simple-2.0.9.jar && \
     curl -L -o lib/jakarta-validation-api.jar https://repo1.maven.org/maven2/jakarta/validation/jakarta.validation-api/3.1.1/jakarta.validation-api-3.1.1.jar && \
     curl -L -o lib/hibernate-validator.jar https://repo1.maven.org/maven2/org/hibernate/validator/hibernate-validator/8.0.1.Final/hibernate-validator-8.0.1.Final.jar && \
+    curl -L -o lib/jboss-logging.jar https://repo1.maven.org/maven2/org/jboss/logging/jboss-logging/3.5.3.Final/jboss-logging-3.5.3.Final.jar && \
+    curl -L -o lib/classmate.jar https://repo1.maven.org/maven2/com/fasterxml/classmate/1.5.1/classmate-1.5.1.jar && \
     curl -L -o lib/jakarta-el.jar https://repo1.maven.org/maven2/jakarta/el/jakarta.el-api/5.0.1/jakarta.el-api-5.0.1.jar && \
     curl -L -o lib/jakarta-el-impl.jar https://repo1.maven.org/maven2/org/glassfish/jakarta.el/4.0.1/jakarta.el-4.0.1.jar || \
     curl -L -o lib/jakarta-el-impl.jar https://repo1.maven.org/maven2/org/glassfish/jakarta.el/5.0.0/jakarta.el-5.0.0.jar
@@ -46,7 +48,7 @@ RUN mkdir -p bin
 
 # Compile Java Code
 # Compile all Java files, javac will resolve dependencies automatically
-RUN javac -cp "lib/postgresql.jar:lib/hikaricp.jar:lib/slf4j-api.jar:lib/jakarta-validation-api.jar:lib/hibernate-validator.jar:lib/jakarta-el.jar:lib/jakarta-el-impl.jar" -d bin -sourcepath src $(find src -name "*.java")
+RUN javac -cp "lib/postgresql.jar:lib/hikaricp.jar:lib/slf4j-api.jar:lib/jakarta-validation-api.jar:lib/hibernate-validator.jar:lib/jboss-logging.jar:lib/classmate.jar:lib/jakarta-el.jar:lib/jakarta-el-impl.jar" -d bin -sourcepath src $(find src -name "*.java")
 
 # ==========================================
 # Stage 3: Runtime Environment
@@ -73,4 +75,4 @@ EXPOSE 8080
 
 # Start the server
 # Modificado para priorizar variáveis de ambiente do sistema, usando .env apenas se existir e variáveis não estiverem definidas
-CMD ["sh", "-c", "if [ -f .env ]; then echo 'Carregando .env...'; export $(cat .env | grep -v '^#' | xargs); fi; java -cp bin:lib/postgresql.jar:lib/hikaricp.jar:lib/slf4j-api.jar:lib/slf4j-simple.jar:lib/jakarta-validation-api.jar:lib/hibernate-validator.jar:lib/jakarta-el.jar:lib/jakarta-el-impl.jar ControleSeServer"]
+CMD ["sh", "-c", "if [ -f .env ]; then echo 'Carregando .env...'; export $(cat .env | grep -v '^#' | xargs); fi; java -cp bin:lib/postgresql.jar:lib/hikaricp.jar:lib/slf4j-api.jar:lib/slf4j-simple.jar:lib/jakarta-validation-api.jar:lib/hibernate-validator.jar:lib/jboss-logging.jar:lib/classmate.jar:lib/jakarta-el.jar:lib/jakarta-el-impl.jar ControleSeServer"]

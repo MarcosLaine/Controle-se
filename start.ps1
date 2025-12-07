@@ -277,6 +277,80 @@ if (-not $needsHibernateValidatorDownload) {
     Write-Host "[OK] Hibernate Validator encontrado" -ForegroundColor Green
 }
 
+# Verifica/baixa JBoss Logging (dependência do Hibernate Validator) se não existir
+$jbossLoggingJarPath = "lib/jboss-logging.jar"
+$needsJbossLoggingDownload = -not (Test-Path $jbossLoggingJarPath)
+
+if ($needsJbossLoggingDownload) {
+    Write-Host ""
+    Write-Host "Baixando JBoss Logging..."
+    $JBOSS_LOGGING_VERSION = "3.5.3.Final"
+    $JBOSS_LOGGING_URL = "https://repo1.maven.org/maven2/org/jboss/logging/jboss-logging/$JBOSS_LOGGING_VERSION/jboss-logging-$JBOSS_LOGGING_VERSION.jar"
+    
+    try {
+        $oldErrorAction = $ErrorActionPreference
+        $ErrorActionPreference = "Stop"
+        Invoke-WebRequest -Uri $JBOSS_LOGGING_URL -OutFile $jbossLoggingJarPath -UseBasicParsing
+        $ErrorActionPreference = $oldErrorAction
+        
+        if (Test-Path $jbossLoggingJarPath) {
+            Write-Host "[OK] JBoss Logging baixado ($JBOSS_LOGGING_VERSION)" -ForegroundColor Green
+        }
+        else {
+            Write-Host "ERRO: Falha ao baixar JBoss Logging" -ForegroundColor Red
+            Write-Host "Baixe manualmente: $JBOSS_LOGGING_URL"
+            exit 1
+        }
+    }
+    catch {
+        Write-Host "ERRO: Falha ao baixar JBoss Logging" -ForegroundColor Red
+        Write-Host "Erro: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "Baixe manualmente: $JBOSS_LOGGING_URL"
+        exit 1
+    }
+}
+
+if (-not $needsJbossLoggingDownload) {
+    Write-Host "[OK] JBoss Logging encontrado" -ForegroundColor Green
+}
+
+# Verifica/baixa Classmate (dependência do Hibernate Validator) se não existir
+$classmateJarPath = "lib/classmate.jar"
+$needsClassmateDownload = -not (Test-Path $classmateJarPath)
+
+if ($needsClassmateDownload) {
+    Write-Host ""
+    Write-Host "Baixando Classmate..."
+    $CLASSMATE_VERSION = "1.5.1"
+    $CLASSMATE_URL = "https://repo1.maven.org/maven2/com/fasterxml/classmate/$CLASSMATE_VERSION/classmate-$CLASSMATE_VERSION.jar"
+    
+    try {
+        $oldErrorAction = $ErrorActionPreference
+        $ErrorActionPreference = "Stop"
+        Invoke-WebRequest -Uri $CLASSMATE_URL -OutFile $classmateJarPath -UseBasicParsing
+        $ErrorActionPreference = $oldErrorAction
+        
+        if (Test-Path $classmateJarPath) {
+            Write-Host "[OK] Classmate baixado ($CLASSMATE_VERSION)" -ForegroundColor Green
+        }
+        else {
+            Write-Host "ERRO: Falha ao baixar Classmate" -ForegroundColor Red
+            Write-Host "Baixe manualmente: $CLASSMATE_URL"
+            exit 1
+        }
+    }
+    catch {
+        Write-Host "ERRO: Falha ao baixar Classmate" -ForegroundColor Red
+        Write-Host "Erro: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "Baixe manualmente: $CLASSMATE_URL"
+        exit 1
+    }
+}
+
+if (-not $needsClassmateDownload) {
+    Write-Host "[OK] Classmate encontrado" -ForegroundColor Green
+}
+
 # Verifica/baixa Jakarta EL (Expression Language - dependência do Hibernate Validator) se não existir
 $jakartaElJarPath = "lib/jakarta-el.jar"
 $needsJakartaElDownload = -not (Test-Path $jakartaElJarPath)
@@ -403,6 +477,12 @@ if (Test-Path "lib/jakarta-validation-api.jar") {
 if (Test-Path "lib/hibernate-validator.jar") {
     $classpath += ";$pwd\lib\hibernate-validator.jar"
 }
+if (Test-Path "lib/jboss-logging.jar") {
+    $classpath += ";$pwd\lib\jboss-logging.jar"
+}
+if (Test-Path "lib/classmate.jar") {
+    $classpath += ";$pwd\lib\classmate.jar"
+}
 if (Test-Path "lib/jakarta-el.jar") {
     $classpath += ";$pwd\lib\jakarta-el.jar"
 }
@@ -491,6 +571,12 @@ if (Test-Path "lib/jakarta-validation-api.jar") {
 }
 if (Test-Path "lib/hibernate-validator.jar") {
     $classpath += ";$pwd\lib\hibernate-validator.jar"
+}
+if (Test-Path "lib/jboss-logging.jar") {
+    $classpath += ";$pwd\lib\jboss-logging.jar"
+}
+if (Test-Path "lib/classmate.jar") {
+    $classpath += ";$pwd\lib\classmate.jar"
 }
 if (Test-Path "lib/jakarta-el.jar") {
     $classpath += ";$pwd\lib\jakarta-el.jar"

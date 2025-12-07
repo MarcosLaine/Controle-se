@@ -667,6 +667,12 @@
     "portuguese": "Português",
     "english": "English"
   },
+  "pwa": {
+    "install": "Instalar aplicativo",
+    "installed": "Aplicativo instalado",
+    "iosInstructions": "Toque no botão de compartilhar (□↑) e selecione 'Adicionar à Tela de Início'",
+    "installInstructions": "Use o menu do navegador (⋮) para instalar o aplicativo"
+  },
   "import": {
     "title": "Importar Transações",
     "templateTitle": "Baixar Modelo CSV",

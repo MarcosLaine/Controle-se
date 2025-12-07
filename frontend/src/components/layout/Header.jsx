@@ -1,9 +1,10 @@
-import { LogOut, Menu, Moon, Sun, User, Wallet, Globe } from 'lucide-react';
+import { LogOut, Menu, Moon, Sun, User, Wallet, Globe, Download } from 'lucide-react';
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useLanguage } from '../../contexts/LanguageContext';
+import { usePWAInstall } from '../../hooks/usePWAInstall';
 import ChangePasswordModal from '../common/ChangePasswordModal';
 
 export default function Header({ onMenuClick }) {
@@ -13,6 +14,7 @@ export default function Header({ onMenuClick }) {
   const navigate = useNavigate();
   const [isPasswordModalOpen, setPasswordModalOpen] = useState(false);
   const [isLanguageMenuOpen, setIsLanguageMenuOpen] = useState(false);
+  const { isInstallable, handleInstall } = usePWAInstall();
 
   const handleLogout = () => {
     logout();
@@ -39,6 +41,17 @@ export default function Header({ onMenuClick }) {
         </div>
 
         <div className="flex items-center gap-2 lg:gap-4">
+          {isInstallable && (
+            <button
+              onClick={handleInstall}
+              className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              aria-label={t('pwa.install')}
+              title={t('pwa.install')}
+            >
+              <Download className="w-5 h-5 text-gray-700 dark:text-gray-300" />
+            </button>
+          )}
+          
           <div className="relative">
             <button
               onClick={() => setIsLanguageMenuOpen(!isLanguageMenuOpen)}

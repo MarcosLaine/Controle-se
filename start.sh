@@ -227,6 +227,52 @@ else
     echo "✓ Hibernate Validator encontrado"
 fi
 
+# Verifica/baixa JBoss Logging (dependência do Hibernate Validator)
+if [ ! -f "lib/jboss-logging.jar" ]; then
+    echo ""
+    echo "Baixando JBoss Logging..."
+    JBOSS_LOGGING_VERSION="3.5.3.Final"
+    JBOSS_LOGGING_URL="https://repo1.maven.org/maven2/org/jboss/logging/jboss-logging/${JBOSS_LOGGING_VERSION}/jboss-logging-${JBOSS_LOGGING_VERSION}.jar"
+    
+    if command -v wget &> /dev/null; then
+        wget -q -O lib/jboss-logging.jar "$JBOSS_LOGGING_URL"
+    elif command -v curl &> /dev/null; then
+        curl -s -L -o lib/jboss-logging.jar "$JBOSS_LOGGING_URL"
+    fi
+    
+    if [ $? -eq 0 ] && [ -f "lib/jboss-logging.jar" ]; then
+        echo "✓ JBoss Logging baixado (${JBOSS_LOGGING_VERSION})"
+    else
+        echo "✗ Erro ao baixar JBoss Logging"
+        exit 1
+    fi
+else
+    echo "✓ JBoss Logging encontrado"
+fi
+
+# Verifica/baixa Classmate (dependência do Hibernate Validator)
+if [ ! -f "lib/classmate.jar" ]; then
+    echo ""
+    echo "Baixando Classmate..."
+    CLASSMATE_VERSION="1.5.1"
+    CLASSMATE_URL="https://repo1.maven.org/maven2/com/fasterxml/classmate/${CLASSMATE_VERSION}/classmate-${CLASSMATE_VERSION}.jar"
+    
+    if command -v wget &> /dev/null; then
+        wget -q -O lib/classmate.jar "$CLASSMATE_URL"
+    elif command -v curl &> /dev/null; then
+        curl -s -L -o lib/classmate.jar "$CLASSMATE_URL"
+    fi
+    
+    if [ $? -eq 0 ] && [ -f "lib/classmate.jar" ]; then
+        echo "✓ Classmate baixado (${CLASSMATE_VERSION})"
+    else
+        echo "✗ Erro ao baixar Classmate"
+        exit 1
+    fi
+else
+    echo "✓ Classmate encontrado"
+fi
+
 # Verifica/baixa Jakarta EL (Expression Language - dependência do Hibernate Validator)
 if [ ! -f "lib/jakarta-el.jar" ]; then
     echo ""
@@ -314,7 +360,7 @@ if [ -z "$JAVA_FILES" ]; then
 fi
 
 # Compila todos os arquivos de uma vez
-javac -cp ".:lib/postgresql.jar:lib/hikaricp.jar:lib/slf4j-api.jar:lib/slf4j-simple.jar:lib/jakarta-validation-api.jar:lib/hibernate-validator.jar:lib/jakarta-el.jar:lib/jakarta-el-impl.jar:bin" \
+javac -cp ".:lib/postgresql.jar:lib/hikaricp.jar:lib/slf4j-api.jar:lib/slf4j-simple.jar:lib/jakarta-validation-api.jar:lib/hibernate-validator.jar:lib/jboss-logging.jar:lib/classmate.jar:lib/jakarta-el.jar:lib/jakarta-el-impl.jar:bin" \
       -d bin \
       -source 11 \
       -target 11 \
@@ -370,7 +416,7 @@ echo "=========================================="
 echo ""
 
 # Executa o servidor
-java -cp ".:lib/postgresql.jar:lib/hikaricp.jar:lib/slf4j-api.jar:lib/slf4j-simple.jar:lib/jakarta-validation-api.jar:lib/hibernate-validator.jar:lib/jakarta-el.jar:lib/jakarta-el-impl.jar:bin" \
+java -cp ".:lib/postgresql.jar:lib/hikaricp.jar:lib/slf4j-api.jar:lib/slf4j-simple.jar:lib/jakarta-validation-api.jar:lib/hibernate-validator.jar:lib/jboss-logging.jar:lib/classmate.jar:lib/jakarta-el.jar:lib/jakarta-el-impl.jar:bin" \
      -Dfile.encoding=UTF-8 \
      ControleSeServer
 
