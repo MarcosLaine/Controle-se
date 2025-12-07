@@ -201,7 +201,7 @@ public class InvestmentEvolutionHandler implements HttpHandler {
             LocalDate tempStart = transactions.isEmpty() ? startDate : transactions.get(0).getDataAporte();
             if (tempStart.isAfter(startDate)) tempStart = startDate;
             for (LocalDate date = tempStart; !date.isAfter(endDate); date = date.plusDays(1)) {
-                tempTxIndex = consumeTransactions(transactions, tempAssetState, tempTxIndex, date);
+                tempTxIndex = consumeTransactions(transactions, tempAssetState, tempTxIndex, date, quoteService);
             }
             // Pre-busca cotações baseado nos ativos identificados
             preFetchQuotesInBatch(tempAssetState, startDate, endDate, priceLookupInterval, quoteService, priceCache);
@@ -216,7 +216,7 @@ public class InvestmentEvolutionHandler implements HttpHandler {
 
             while (!cursor.isAfter(endCursor)) {
                 LocalDate currentDate = cursor.toLocalDate();
-                txIndex = consumeTransactions(transactions, assetState, txIndex, currentDate);
+                txIndex = consumeTransactions(transactions, assetState, txIndex, currentDate, quoteService);
                 accumulatePoint(assetState, quoteService, priceCache, labels, investedPoints, currentPoints,
                     categoryInvested, categoryCurrent, allCategoriesSeen, categoryFirstTransactionIndex, cursor.format(HOURLY_LABEL_FORMATTER), currentDate, cursor, 1);
                 cursor = cursor.plusHours(2);
@@ -238,7 +238,7 @@ public class InvestmentEvolutionHandler implements HttpHandler {
                 // IMPORTANTE: Processa TODAS as transações até a data atual, não apenas até o último ponto processado
                 // Isso garante que o estado dos ativos esteja correto mesmo quando há dayStep > 1
                 // O txIndex é mantido entre iterações para evitar reprocessar transações
-                txIndex = consumeTransactions(transactions, assetState, txIndex, date);
+                txIndex = consumeTransactions(transactions, assetState, txIndex, date, quoteService);
                 accumulatePoint(assetState, quoteService, priceCache, labels, investedPoints, currentPoints,
                     categoryInvested, categoryCurrent, allCategoriesSeen, categoryFirstTransactionIndex, date.format(labelFormatter), date, date.atStartOfDay(), priceLookupInterval);
             }
@@ -246,7 +246,7 @@ public class InvestmentEvolutionHandler implements HttpHandler {
             // GARANTIA CRÍTICA: Processa todas as transações restantes até a data final
             // Isso garante que o estado final esteja correto mesmo se houver transações após o último ponto processado
             if (txIndex < transactions.size()) {
-                consumeTransactions(transactions, assetState, txIndex, endDate);
+                consumeTransactions(transactions, assetState, txIndex, endDate, quoteService);
             }
         }
 
@@ -289,7 +289,7 @@ public class InvestmentEvolutionHandler implements HttpHandler {
         return data;
     }
 
-    private int consumeTransactions(List<Investimento> transactions, Map<String, AssetState> assetState, int txIndex, LocalDate cutoffDate) {
+    private int consumeTransactions(List<Investimento> transactions, Map<String, AssetState> assetState, int txIndex, LocalDate cutoffDate, QuoteService quoteService) {
         while (txIndex < transactions.size() && !transactions.get(txIndex).getDataAporte().isAfter(cutoffDate)) {
             Investimento inv = transactions.get(txIndex);
             
@@ -303,7 +303,7 @@ public class InvestmentEvolutionHandler implements HttpHandler {
             String key = buildAssetKey(inv);
             AssetState state = assetState.computeIfAbsent(key, k -> AssetState.fromInvestment(inv));
             state.updateMetadata(inv);
-            state.applyTransaction(inv);
+            state.applyTransaction(inv, quoteService);
 
             txIndex++;
         }
@@ -339,11 +339,6 @@ public class InvestmentEvolutionHandler implements HttpHandler {
 
         // Processa apenas estados cuja primeira transação já ocorreu
         for (AssetState state : assetState.values()) {
-            // Pula estados vazios
-            if (state.isEmpty() || state.getTotalQuantity() <= 0.000001) {
-                continue;
-            }
-            
             // CRÍTICO: Verifica se a primeira transação deste ativo já ocorreu na data atual
             LocalDate firstTransactionDate = state.getFirstTransactionDate();
             if (firstTransactionDate == null || firstTransactionDate.isAfter(dateForPricing)) {
@@ -351,10 +346,22 @@ public class InvestmentEvolutionHandler implements HttpHandler {
                 continue;
             }
             
+            // Inclui estados que têm posições mantidas OU que têm aportes feitos (totalContributions > 0)
+            // Isso garante que mesmo ativos completamente vendidos ainda contam no total investido
+            boolean hasRemainingPosition = !state.isEmpty() && state.getTotalQuantity() > 0.000001;
+            boolean hasContributions = state.totalContributions > 0.000001;
+            
+            if (!hasRemainingPosition && !hasContributions) {
+                // Estado vazio sem aportes, pula
+                continue;
+            }
+            
             String category = state.category != null ? state.category : "OUTROS";
             
             // Calcula valores do investimento
-            double invested = state.getTotalCostBasis();
+            // Usa getTotalInvested() para incluir o custo das posições vendidas (realizedCostBasis)
+            // Isso garante que o totalInvested no gráfico corresponda ao totalInvested do card
+            double invested = state.getTotalInvested();
             totalInvested += invested;
             
             // Calcula preço atual
@@ -419,8 +426,12 @@ public class InvestmentEvolutionHandler implements HttpHandler {
                 }
             }
             
-            double current = state.getTotalQuantity() * price;
-            totalCurrent += current;
+            // Só calcula valor atual se houver posição mantida
+            double current = 0.0;
+            if (hasRemainingPosition) {
+                current = state.getTotalQuantity() * price;
+                totalCurrent += current;
+            }
             
             // Acumula valores por categoria
             categoryInvestedMap.put(category, categoryInvestedMap.getOrDefault(category, 0.0) + invested);
@@ -735,6 +746,9 @@ public class InvestmentEvolutionHandler implements HttpHandler {
         LocalDate dataVencimento;
         final List<PositionLayer> layers = new ArrayList<>();
         double lastKnownPrice;
+        double realizedCostBasis = 0.0; // Rastreia o custo das posições vendidas
+        LocalDate firstTransactionDateEver = null; // Rastreia a primeira transação mesmo após vendas totais
+        double totalContributions = 0.0; // Soma de TODOS os valorAporte das compras (qty > 0)
 
         private AssetState(String symbol, String category) {
             this.symbol = symbol;
@@ -764,7 +778,7 @@ public class InvestmentEvolutionHandler implements HttpHandler {
             }
         }
 
-        void applyTransaction(Investimento inv) {
+        void applyTransaction(Investimento inv, QuoteService quoteService) {
             double qty = inv.getQuantidade();
             
             // Ignora transações com quantidade zero (não devem existir, mas protege contra bugs)
@@ -772,16 +786,30 @@ public class InvestmentEvolutionHandler implements HttpHandler {
                 return;
             }
             
-            double unitCost = (qty != 0) ? Math.abs(inv.getValorAporte()) / Math.abs(qty) : 0.0;
+            // Converte valorAporte para BRL se necessário (igual ao InvestmentsHandler)
+            double valorAporteBRL = inv.getValorAporte();
+            if (!"BRL".equals(inv.getMoeda())) {
+                double exchangeRate = quoteService.getExchangeRate(inv.getMoeda(), "BRL");
+                valorAporteBRL *= exchangeRate;
+            }
+            
+            double unitCost = (qty != 0) ? Math.abs(valorAporteBRL) / Math.abs(qty) : 0.0;
 
+            // Atualiza primeira data de transação se necessário
+            if (firstTransactionDateEver == null || inv.getDataAporte().isBefore(firstTransactionDateEver)) {
+                firstTransactionDateEver = inv.getDataAporte();
+            }
+            
             if (qty > 0) {
                 // Compra: adiciona nova camada
                 PositionLayer layer = new PositionLayer();
                 layer.qty = qty;
                 layer.unitCost = unitCost;
                 layer.aporteDate = inv.getDataAporte();
-                layer.originalAmount = Math.abs(inv.getValorAporte());
+                layer.originalAmount = Math.abs(valorAporteBRL);
                 layers.add(layer);
+                // Acumula o valor do aporte em BRL (soma de todos os aportes feitos)
+                totalContributions += Math.abs(valorAporteBRL);
             } else if (qty < 0) {
                 // Venda: remove quantidade das camadas existentes (FIFO)
                 double remaining = Math.abs(qty);
@@ -789,6 +817,8 @@ public class InvestmentEvolutionHandler implements HttpHandler {
                 while (iterator.hasNext() && remaining > 0) {
                     PositionLayer layer = iterator.next();
                     double qtyToUse = Math.min(remaining, layer.qty);
+                    // Adiciona o custo da quantidade vendida ao realizedCostBasis
+                    realizedCostBasis += qtyToUse * layer.unitCost;
                     layer.qty -= qtyToUse;
                     remaining -= qtyToUse;
                     // Remove camada se quantidade ficou muito pequena (arredondamento)
@@ -810,6 +840,18 @@ public class InvestmentEvolutionHandler implements HttpHandler {
         double getTotalCostBasis() {
             return layers.stream().mapToDouble(layer -> layer.qty * layer.unitCost).sum();
         }
+        
+        /**
+         * Retorna o custo total investido, incluindo posições mantidas e vendidas.
+         * Isso corresponde ao conceito de "total investido" que inclui todas as compras.
+         * Usa totalContributions que é a soma de todos os valorAporte das compras,
+         * garantindo que corresponda ao cálculo do InvestmentsHandler.
+         */
+        double getTotalInvested() {
+            // Retorna a soma de todos os aportes feitos (compras)
+            // Isso garante que corresponda ao cálculo do InvestmentsHandler que soma todos os valorAporte
+            return totalContributions;
+        }
 
         double getAverageCost() {
             double qty = getTotalQuantity();
@@ -821,16 +863,24 @@ public class InvestmentEvolutionHandler implements HttpHandler {
         
         /**
          * Retorna a data da primeira transação (compra) deste ativo.
-         * Retorna null se não houver camadas.
+         * Retorna null se não houver transações.
          */
         LocalDate getFirstTransactionDate() {
+            // Se não há camadas mas há realizedCostBasis, significa que foi completamente vendido
+            // Nesse caso, usa firstTransactionDateEver que foi rastreado durante as transações
             if (layers.isEmpty()) {
-                return null;
+                return firstTransactionDateEver;
             }
-            return layers.stream()
+            // Se há camadas, retorna a data da primeira camada (mais antiga)
+            LocalDate fromLayers = layers.stream()
                 .map(layer -> layer.aporteDate)
                 .min(LocalDate::compareTo)
                 .orElse(null);
+            // Se firstTransactionDateEver é mais antigo (pode acontecer se todas as camadas foram vendidas e depois houve nova compra)
+            if (firstTransactionDateEver != null && (fromLayers == null || firstTransactionDateEver.isBefore(fromLayers))) {
+                return firstTransactionDateEver;
+            }
+            return fromLayers;
         }
     }
 
