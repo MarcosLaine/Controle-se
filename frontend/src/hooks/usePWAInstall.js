@@ -76,24 +76,25 @@ export function usePWAInstall() {
                 const isChrome = /Chrome/.test(navigator.userAgent) && /Google Inc/.test(navigator.vendor);
                 const isEdge = /Edg/.test(navigator.userAgent);
                 
-                // Mostra botão se:
-                // 1. Tem deferredPrompt (melhor caso)
-                // 2. É iOS (instalação manual)
-                // 3. É Chrome/Edge (pode ter prompt na barra ou podemos tentar)
-                if (currentDeferredPrompt || isIOS || isChrome || isEdge) {
+                // Mostra botão APENAS se:
+                // 1. Tem deferredPrompt (melhor caso - instalação direta)
+                // 2. É iOS (instalação manual sempre disponível)
+                // NÃO mostra apenas por ter SW + Manifest, pois sem deferredPrompt não podemos instalar
+                if (currentDeferredPrompt || isIOS) {
                   setIsInstallable(true);
-                  console.log('Botão de instalação ativado - SW + Manifest válidos');
+                  console.log('Botão de instalação ativado - SW + Manifest válidos' + (currentDeferredPrompt ? ' + deferredPrompt disponível' : ' (iOS)'));
+                } else {
+                  console.log('PWA configurado mas deferredPrompt não disponível - botão não será mostrado');
                 }
               })
               .catch(err => {
                 console.warn('Erro ao verificar manifest (não crítico):', err.message);
                 // Mesmo com erro no manifest, se tem SW pode tentar
                 // O manifest pode não estar acessível, mas o PWA ainda pode funcionar
-                const isChrome = /Chrome/.test(navigator.userAgent) && /Google Inc/.test(navigator.vendor);
-                const isEdge = /Edg/.test(navigator.userAgent);
-                if (currentDeferredPrompt || isIOS || isChrome || isEdge) {
+                // Mas só mostra se tiver deferredPrompt ou for iOS
+                if (currentDeferredPrompt || isIOS) {
                   setIsInstallable(true);
-                  console.log('Botão de instalação ativado - SW disponível (manifest não verificado)');
+                  console.log('Botão de instalação ativado - SW disponível (manifest não verificado)' + (currentDeferredPrompt ? ' + deferredPrompt disponível' : ' (iOS)'));
                 }
               });
           } else {
@@ -108,8 +109,10 @@ export function usePWAInstall() {
     };
 
     // Para iOS, sempre mostra o botão (instalação manual)
-    if (isIOS && !isInStandaloneMode) {
+    // Mas só se não estiver instalado
+    if (isIOS && !isInStandaloneMode && !isStandalone) {
       setIsInstallable(true);
+      console.log('Botão de instalação ativado para iOS');
     }
 
     // Verifica imediatamente
@@ -184,33 +187,22 @@ export function usePWAInstall() {
       if (isIOS) {
         tryAlternativeInstall();
       } else if (isChrome || isEdge) {
-        // Chrome/Edge: tenta verificar se há uma forma de instalar
-        // Verifica se o app pode ser instalado verificando o manifest
-        fetch('/manifest.webmanifest')
-          .then(res => res.json())
-          .then(manifest => {
-            // Tenta uma última verificação se o evento pode ser disparado
-            // Infelizmente, sem deferredPrompt, não podemos forçar
-            // Mas podemos dar instruções mais específicas
-            const message = 'Para instalar o aplicativo Controle-se:\n\n' +
-              'OPÇÃO 1 (Recomendado):\n' +
-              '• Procure o ícone de instalação (⊕) na barra de endereços do navegador\n' +
-              '• Clique nele para instalar\n\n' +
-              'OPÇÃO 2:\n' +
-              '• Clique no menu do navegador (⋮ no canto superior direito)\n' +
-              '• Procure por "Instalar Controle-se" ou "Instalar aplicativo"\n\n' +
-              'NOTA: Se o ícone não aparecer, pode ser que:\n' +
-              '• Você já rejeitou a instalação antes (tente em uma janela anônima)\n' +
-              '• O aplicativo já está instalado\n' +
-              '• O navegador precisa de mais tempo para detectar o PWA';
-            
-            if (confirm(message + '\n\nDeseja abrir uma nova janela anônima para tentar novamente?')) {
-              window.open(window.location.href, '_blank');
-            }
-          })
-          .catch(() => {
-            alert('Para instalar:\n1. Clique no ícone de instalação (⊕) na barra de endereços\n2. Ou use o menu (⋮) > "Instalar Controle-se"');
-          });
+        // Chrome/Edge: sem deferredPrompt, não podemos instalar programaticamente
+        // Mas podemos dar instruções claras
+        const message = 'Para instalar o aplicativo Controle-se:\n\n' +
+          'OPÇÃO 1 (Recomendado):\n' +
+          '• Procure o ícone de instalação (⊕) na barra de endereços do navegador\n' +
+          '• Clique nele para instalar\n\n' +
+          'OPÇÃO 2:\n' +
+          '• Clique no menu do navegador (⋮ no canto superior direito)\n' +
+          '• Procure por "Instalar Controle-se" ou "Instalar aplicativo"\n\n' +
+          'NOTA: Se o ícone não aparecer, pode ser que:\n' +
+          '• Você já rejeitou a instalação antes (tente em uma janela anônima/privada)\n' +
+          '• O aplicativo já está instalado\n' +
+          '• O navegador precisa de mais tempo para detectar o PWA\n\n' +
+          'Dica: Tente limpar os dados do site e recarregar a página.';
+        
+        alert(message);
       } else {
         tryAlternativeInstall();
       }
