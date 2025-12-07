@@ -181,6 +181,120 @@ else
     echo "✓ SLF4J Simple encontrado"
 fi
 
+# Verifica/baixa Jakarta Validation API (Bean Validation)
+if [ ! -f "lib/jakarta-validation-api.jar" ]; then
+    echo ""
+    echo "Baixando Jakarta Validation API (Bean Validation)..."
+    VALIDATION_API_VERSION="3.1.1"
+    VALIDATION_API_URL="https://repo1.maven.org/maven2/jakarta/validation/jakarta.validation-api/${VALIDATION_API_VERSION}/jakarta.validation-api-${VALIDATION_API_VERSION}.jar"
+    
+    if command -v wget &> /dev/null; then
+        wget -q -O lib/jakarta-validation-api.jar "$VALIDATION_API_URL"
+    elif command -v curl &> /dev/null; then
+        curl -s -L -o lib/jakarta-validation-api.jar "$VALIDATION_API_URL"
+    fi
+    
+    if [ $? -eq 0 ] && [ -f "lib/jakarta-validation-api.jar" ]; then
+        echo "✓ Jakarta Validation API baixado (${VALIDATION_API_VERSION})"
+    else
+        echo "✗ Erro ao baixar Jakarta Validation API"
+        exit 1
+    fi
+else
+    echo "✓ Jakarta Validation API encontrado"
+fi
+
+# Verifica/baixa Hibernate Validator (implementação do Bean Validation)
+if [ ! -f "lib/hibernate-validator.jar" ]; then
+    echo ""
+    echo "Baixando Hibernate Validator..."
+    HIBERNATE_VALIDATOR_VERSION="8.0.1.Final"
+    HIBERNATE_VALIDATOR_URL="https://repo1.maven.org/maven2/org/hibernate/validator/hibernate-validator/${HIBERNATE_VALIDATOR_VERSION}/hibernate-validator-${HIBERNATE_VALIDATOR_VERSION}.jar"
+    
+    if command -v wget &> /dev/null; then
+        wget -q -O lib/hibernate-validator.jar "$HIBERNATE_VALIDATOR_URL"
+    elif command -v curl &> /dev/null; then
+        curl -s -L -o lib/hibernate-validator.jar "$HIBERNATE_VALIDATOR_URL"
+    fi
+    
+    if [ $? -eq 0 ] && [ -f "lib/hibernate-validator.jar" ]; then
+        echo "✓ Hibernate Validator baixado (${HIBERNATE_VALIDATOR_VERSION})"
+    else
+        echo "✗ Erro ao baixar Hibernate Validator"
+        exit 1
+    fi
+else
+    echo "✓ Hibernate Validator encontrado"
+fi
+
+# Verifica/baixa Jakarta EL (Expression Language - dependência do Hibernate Validator)
+if [ ! -f "lib/jakarta-el.jar" ]; then
+    echo ""
+    echo "Baixando Jakarta Expression Language..."
+    EL_VERSION="5.0.1"
+    EL_URL="https://repo1.maven.org/maven2/jakarta/el/jakarta.el-api/${EL_VERSION}/jakarta.el-api-${EL_VERSION}.jar"
+    
+    if command -v wget &> /dev/null; then
+        wget -q -O lib/jakarta-el.jar "$EL_URL"
+    elif command -v curl &> /dev/null; then
+        curl -s -L -o lib/jakarta-el.jar "$EL_URL"
+    fi
+    
+    if [ $? -eq 0 ] && [ -f "lib/jakarta-el.jar" ]; then
+        echo "✓ Jakarta EL baixado (${EL_VERSION})"
+    else
+        echo "✗ Erro ao baixar Jakarta EL"
+        exit 1
+    fi
+else
+    echo "✓ Jakarta EL encontrado"
+fi
+
+# Verifica/baixa Jakarta EL Implementation (dependência do Hibernate Validator)
+if [ ! -f "lib/jakarta-el-impl.jar" ]; then
+    echo ""
+    echo "Baixando Jakarta EL Implementation..."
+    # Tenta versão 5.0.0 primeiro, se falhar tenta 4.0.1
+    EL_IMPL_VERSION="5.0.0"
+    EL_IMPL_URL="https://repo1.maven.org/maven2/org/glassfish/jakarta.el/${EL_IMPL_VERSION}/jakarta.el-${EL_IMPL_VERSION}.jar"
+    EL_IMPL_FALLBACK_VERSION="4.0.1"
+    EL_IMPL_FALLBACK_URL="https://repo1.maven.org/maven2/org/glassfish/jakarta.el/${EL_IMPL_FALLBACK_VERSION}/jakarta.el-${EL_IMPL_FALLBACK_VERSION}.jar"
+    
+    # Tenta baixar versão 5.0.0 primeiro
+    if command -v wget &> /dev/null; then
+        wget -q -O lib/jakarta-el-impl.jar "$EL_IMPL_URL" 2>/dev/null
+    elif command -v curl &> /dev/null; then
+        curl -s -L -o lib/jakarta-el-impl.jar "$EL_IMPL_URL" 2>/dev/null
+    fi
+    
+    # Se falhou, tenta versão alternativa 4.0.1
+    if [ ! -f "lib/jakarta-el-impl.jar" ] || [ ! -s "lib/jakarta-el-impl.jar" ]; then
+        echo "⚠ Versão ${EL_IMPL_VERSION} não encontrada, tentando versão ${EL_IMPL_FALLBACK_VERSION}..."
+        if command -v wget &> /dev/null; then
+            wget -q -O lib/jakarta-el-impl.jar "$EL_IMPL_FALLBACK_URL"
+        elif command -v curl &> /dev/null; then
+            curl -s -L -o lib/jakarta-el-impl.jar "$EL_IMPL_FALLBACK_URL"
+        fi
+    fi
+    
+    if [ $? -eq 0 ] && [ -f "lib/jakarta-el-impl.jar" ] && [ -s "lib/jakarta-el-impl.jar" ]; then
+        if [ -f "lib/jakarta-el-impl.jar" ] && [ $(stat -f%z "lib/jakarta-el-impl.jar" 2>/dev/null || stat -c%s "lib/jakarta-el-impl.jar" 2>/dev/null || echo 0) -gt 0 ]; then
+            echo "✓ Jakarta EL Implementation baixado"
+        else
+            echo "✗ Erro ao baixar Jakarta EL Implementation (arquivo vazio)"
+            exit 1
+        fi
+    else
+        echo "✗ Erro ao baixar Jakarta EL Implementation"
+        echo "  Tentou: $EL_IMPL_URL"
+        echo "  Tentou: $EL_IMPL_FALLBACK_URL"
+        echo "  Baixe manualmente uma das URLs acima"
+        exit 1
+    fi
+else
+    echo "✓ Jakarta EL Implementation encontrado"
+fi
+
 # Limpa compilações anteriores
 echo ""
 echo "Limpando compilações anteriores..."
@@ -200,7 +314,7 @@ if [ -z "$JAVA_FILES" ]; then
 fi
 
 # Compila todos os arquivos de uma vez
-javac -cp ".:lib/postgresql.jar:lib/hikaricp.jar:lib/slf4j-api.jar:lib/slf4j-simple.jar:bin" \
+javac -cp ".:lib/postgresql.jar:lib/hikaricp.jar:lib/slf4j-api.jar:lib/slf4j-simple.jar:lib/jakarta-validation-api.jar:lib/hibernate-validator.jar:lib/jakarta-el.jar:lib/jakarta-el-impl.jar:bin" \
       -d bin \
       -source 11 \
       -target 11 \
@@ -256,7 +370,7 @@ echo "=========================================="
 echo ""
 
 # Executa o servidor
-java -cp ".:lib/postgresql.jar:lib/hikaricp.jar:lib/slf4j-api.jar:lib/slf4j-simple.jar:bin" \
+java -cp ".:lib/postgresql.jar:lib/hikaricp.jar:lib/slf4j-api.jar:lib/slf4j-simple.jar:lib/jakarta-validation-api.jar:lib/hibernate-validator.jar:lib/jakarta-el.jar:lib/jakarta-el-impl.jar:bin" \
      -Dfile.encoding=UTF-8 \
      ControleSeServer
 

@@ -203,6 +203,169 @@ if (-not $needsSlf4jSimpleDownload) {
     Write-Host "[OK] SLF4J Simple encontrado" -ForegroundColor Green
 }
 
+# Verifica/baixa Jakarta Validation API (Bean Validation) se não existir
+$validationApiJarPath = "lib/jakarta-validation-api.jar"
+$needsValidationApiDownload = -not (Test-Path $validationApiJarPath)
+
+if ($needsValidationApiDownload) {
+    Write-Host ""
+    Write-Host "Baixando Jakarta Validation API (Bean Validation)..."
+    $VALIDATION_API_VERSION = "3.1.1"
+    $VALIDATION_API_URL = "https://repo1.maven.org/maven2/jakarta/validation/jakarta.validation-api/$VALIDATION_API_VERSION/jakarta.validation-api-$VALIDATION_API_VERSION.jar"
+    
+    try {
+        $oldErrorAction = $ErrorActionPreference
+        $ErrorActionPreference = "Stop"
+        Invoke-WebRequest -Uri $VALIDATION_API_URL -OutFile $validationApiJarPath -UseBasicParsing
+        $ErrorActionPreference = $oldErrorAction
+        
+        if (Test-Path $validationApiJarPath) {
+            Write-Host "[OK] Jakarta Validation API baixado ($VALIDATION_API_VERSION)" -ForegroundColor Green
+        }
+        else {
+            Write-Host "ERRO: Falha ao baixar Jakarta Validation API" -ForegroundColor Red
+            Write-Host "Baixe manualmente: $VALIDATION_API_URL"
+            exit 1
+        }
+    }
+    catch {
+        Write-Host "ERRO: Falha ao baixar Jakarta Validation API" -ForegroundColor Red
+        Write-Host "Erro: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "Baixe manualmente: $VALIDATION_API_URL"
+        exit 1
+    }
+}
+
+if (-not $needsValidationApiDownload) {
+    Write-Host "[OK] Jakarta Validation API encontrado" -ForegroundColor Green
+}
+
+# Verifica/baixa Hibernate Validator (implementação do Bean Validation) se não existir
+$hibernateValidatorJarPath = "lib/hibernate-validator.jar"
+$needsHibernateValidatorDownload = -not (Test-Path $hibernateValidatorJarPath)
+
+if ($needsHibernateValidatorDownload) {
+    Write-Host ""
+    Write-Host "Baixando Hibernate Validator..."
+    $HIBERNATE_VALIDATOR_VERSION = "8.0.1.Final"
+    $HIBERNATE_VALIDATOR_URL = "https://repo1.maven.org/maven2/org/hibernate/validator/hibernate-validator/$HIBERNATE_VALIDATOR_VERSION/hibernate-validator-$HIBERNATE_VALIDATOR_VERSION.jar"
+    
+    try {
+        $oldErrorAction = $ErrorActionPreference
+        $ErrorActionPreference = "Stop"
+        Invoke-WebRequest -Uri $HIBERNATE_VALIDATOR_URL -OutFile $hibernateValidatorJarPath -UseBasicParsing
+        $ErrorActionPreference = $oldErrorAction
+        
+        if (Test-Path $hibernateValidatorJarPath) {
+            Write-Host "[OK] Hibernate Validator baixado ($HIBERNATE_VALIDATOR_VERSION)" -ForegroundColor Green
+        }
+        else {
+            Write-Host "ERRO: Falha ao baixar Hibernate Validator" -ForegroundColor Red
+            Write-Host "Baixe manualmente: $HIBERNATE_VALIDATOR_URL"
+            exit 1
+        }
+    }
+    catch {
+        Write-Host "ERRO: Falha ao baixar Hibernate Validator" -ForegroundColor Red
+        Write-Host "Erro: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "Baixe manualmente: $HIBERNATE_VALIDATOR_URL"
+        exit 1
+    }
+}
+
+if (-not $needsHibernateValidatorDownload) {
+    Write-Host "[OK] Hibernate Validator encontrado" -ForegroundColor Green
+}
+
+# Verifica/baixa Jakarta EL (Expression Language - dependência do Hibernate Validator) se não existir
+$jakartaElJarPath = "lib/jakarta-el.jar"
+$needsJakartaElDownload = -not (Test-Path $jakartaElJarPath)
+
+if ($needsJakartaElDownload) {
+    Write-Host ""
+    Write-Host "Baixando Jakarta Expression Language..."
+    $EL_VERSION = "5.0.1"
+    $EL_URL = "https://repo1.maven.org/maven2/jakarta/el/jakarta.el-api/$EL_VERSION/jakarta.el-api-$EL_VERSION.jar"
+    
+    try {
+        $oldErrorAction = $ErrorActionPreference
+        $ErrorActionPreference = "Stop"
+        Invoke-WebRequest -Uri $EL_URL -OutFile $jakartaElJarPath -UseBasicParsing
+        $ErrorActionPreference = $oldErrorAction
+        
+        if (Test-Path $jakartaElJarPath) {
+            Write-Host "[OK] Jakarta EL baixado ($EL_VERSION)" -ForegroundColor Green
+        }
+        else {
+            Write-Host "ERRO: Falha ao baixar Jakarta EL" -ForegroundColor Red
+            Write-Host "Baixe manualmente: $EL_URL"
+            exit 1
+        }
+    }
+    catch {
+        Write-Host "ERRO: Falha ao baixar Jakarta EL" -ForegroundColor Red
+        Write-Host "Erro: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "Baixe manualmente: $EL_URL"
+        exit 1
+    }
+}
+
+if (-not $needsJakartaElDownload) {
+    Write-Host "[OK] Jakarta EL encontrado" -ForegroundColor Green
+}
+
+# Verifica/baixa Jakarta EL Implementation (dependência do Hibernate Validator) se não existir
+$jakartaElImplJarPath = "lib/jakarta-el-impl.jar"
+$needsJakartaElImplDownload = -not (Test-Path $jakartaElImplJarPath)
+
+if ($needsJakartaElImplDownload) {
+    Write-Host ""
+    Write-Host "Baixando Jakarta EL Implementation..."
+    # Tenta versão 5.0.0 primeiro, se falhar tenta 4.0.1
+    $EL_IMPL_VERSION = "5.0.0"
+    $EL_IMPL_URL = "https://repo1.maven.org/maven2/org/glassfish/jakarta.el/$EL_IMPL_VERSION/jakarta.el-$EL_IMPL_VERSION.jar"
+    $EL_IMPL_FALLBACK_VERSION = "4.0.1"
+    $EL_IMPL_FALLBACK_URL = "https://repo1.maven.org/maven2/org/glassfish/jakarta.el/$EL_IMPL_FALLBACK_VERSION/jakarta.el-$EL_IMPL_FALLBACK_VERSION.jar"
+    
+    try {
+        $oldErrorAction = $ErrorActionPreference
+        $ErrorActionPreference = "Stop"
+        
+        # Tenta baixar versão 5.0.0 primeiro
+        try {
+            Invoke-WebRequest -Uri $EL_IMPL_URL -OutFile $jakartaElImplJarPath -UseBasicParsing
+            if (Test-Path $jakartaElImplJarPath) {
+                Write-Host "[OK] Jakarta EL Implementation baixado ($EL_IMPL_VERSION)" -ForegroundColor Green
+            }
+        }
+        catch {
+            Write-Host "[AVISO] Versão $EL_IMPL_VERSION não encontrada, tentando versão $EL_IMPL_FALLBACK_VERSION..." -ForegroundColor Yellow
+            # Tenta versão alternativa 4.0.1
+            Invoke-WebRequest -Uri $EL_IMPL_FALLBACK_URL -OutFile $jakartaElImplJarPath -UseBasicParsing
+            if (Test-Path $jakartaElImplJarPath) {
+                Write-Host "[OK] Jakarta EL Implementation baixado ($EL_IMPL_FALLBACK_VERSION)" -ForegroundColor Green
+            }
+            else {
+                throw "Falha ao baixar ambas as versões"
+            }
+        }
+        
+        $ErrorActionPreference = $oldErrorAction
+    }
+    catch {
+        Write-Host "ERRO: Falha ao baixar Jakarta EL Implementation" -ForegroundColor Red
+        Write-Host "Erro: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "Tentou: $EL_IMPL_URL" -ForegroundColor Yellow
+        Write-Host "Tentou: $EL_IMPL_FALLBACK_URL" -ForegroundColor Yellow
+        Write-Host "Baixe manualmente uma das URLs acima e coloque em: $jakartaElImplJarPath" -ForegroundColor Yellow
+        exit 1
+    }
+}
+
+if (-not $needsJakartaElImplDownload) {
+    Write-Host "[OK] Jakarta EL Implementation encontrado" -ForegroundColor Green
+}
+
 # Limpa compilações anteriores
 Write-Host ""
 Write-Host "Limpando compilações anteriores..."
@@ -233,6 +396,18 @@ if (Test-Path "lib/slf4j-api.jar") {
 }
 if (Test-Path "lib/slf4j-simple.jar") {
     $classpath += ";$pwd\lib\slf4j-simple.jar"
+}
+if (Test-Path "lib/jakarta-validation-api.jar") {
+    $classpath += ";$pwd\lib\jakarta-validation-api.jar"
+}
+if (Test-Path "lib/hibernate-validator.jar") {
+    $classpath += ";$pwd\lib\hibernate-validator.jar"
+}
+if (Test-Path "lib/jakarta-el.jar") {
+    $classpath += ";$pwd\lib\jakarta-el.jar"
+}
+if (Test-Path "lib/jakarta-el-impl.jar") {
+    $classpath += ";$pwd\lib\jakarta-el-impl.jar"
 }
 $classpath += ";$pwd\bin"
 & javac -cp $classpath -d bin -source 11 -target 11 -encoding UTF-8 $JAVA_FILES
@@ -310,6 +485,18 @@ if (Test-Path "lib/slf4j-api.jar") {
 }
 if (Test-Path "lib/slf4j-simple.jar") {
     $classpath += ";$pwd\lib\slf4j-simple.jar"
+}
+if (Test-Path "lib/jakarta-validation-api.jar") {
+    $classpath += ";$pwd\lib\jakarta-validation-api.jar"
+}
+if (Test-Path "lib/hibernate-validator.jar") {
+    $classpath += ";$pwd\lib\hibernate-validator.jar"
+}
+if (Test-Path "lib/jakarta-el.jar") {
+    $classpath += ";$pwd\lib\jakarta-el.jar"
+}
+if (Test-Path "lib/jakarta-el-impl.jar") {
+    $classpath += ";$pwd\lib\jakarta-el-impl.jar"
 }
 $classpath += ";$pwd\bin"
 $javaArgs = @(

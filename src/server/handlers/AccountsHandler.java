@@ -6,7 +6,10 @@ import java.util.*;
 import server.model.Conta;
 import server.repository.*;
 import server.utils.*;
+import server.utils.DtoUtil;
+import server.dto.AccountRequest;
 import server.validation.*;
+import server.validation.BeanValidationUtil;
 
 /**
  * Handler para operações com Contas
@@ -226,25 +229,16 @@ public class AccountsHandler implements HttpHandler {
             String requestBody = RequestUtil.readRequestBody(exchange);
             Map<String, Object> data = JsonUtil.parseJsonWithNested(requestBody);
             
-            // Validações robustas
-            ValidationResult validation = new ValidationResult();
+            // Converte para DTO e valida com Bean Validation
+            AccountRequest request = DtoUtil.toAccountRequest(data);
+            ValidationResult beanValidation = BeanValidationUtil.validate(request);
             
-            String name = null;
-            Object nameObj = data.get("name");
-            if (nameObj != null) name = nameObj.toString();
-            if (name == null) {
-                Object nomeObj = data.get("nome");
-                if (nomeObj != null) name = nomeObj.toString();
-            }
-            validation.addErrors(InputValidator.validateName("Nome da conta", name, true).getErrors());
+            // Validações manuais adicionais (complementam Bean Validation)
+            ValidationResult manualValidation = new ValidationResult();
+            manualValidation.addErrors(InputValidator.validateName("Nome da conta", request.getName(), true).getErrors());
             
-            String type = null;
-            Object typeObj = data.get("type");
-            if (typeObj != null) type = typeObj.toString();
-            if (type == null) {
-                Object tipoObj = data.get("tipo");
-                if (tipoObj != null) type = tipoObj.toString();
-            }
+            // Valida tipo (suporta variações)
+            String type = request.getType();
             String[] tiposPermitidos = {
                 "CORRENTE", "POUPANCA", "POUPANÇA", "INVESTIMENTO", 
                 "INVESTIMENTO (CORRETORA)", "CARTAO_CREDITO", "CARTAO DE CREDITO", 
@@ -252,61 +246,25 @@ public class AccountsHandler implements HttpHandler {
                 "OUTROS", "DINHEIRO", "Corrente", "Poupança", "Investimento", 
                 "Cartão de Crédito", "Dinheiro"
             };
-            validation.addErrors(InputValidator.validateEnum("Tipo da conta", type, tiposPermitidos, true).getErrors());
+            manualValidation.addErrors(InputValidator.validateEnum("Tipo da conta", type, tiposPermitidos, true).getErrors());
             
-            // Obtém saldo - pode vir como Number ou String
-            String balanceStr = null;
-            Object balanceObj = data.get("balance");
-            if (balanceObj == null) balanceObj = data.get("saldoInicial");
+            // Valida saldo
+            if (request.getBalance() != null) {
+                manualValidation.addErrors(InputValidator.validateMoney("Saldo inicial", request.getBalance(), true).getErrors());
+            }
             
-            if (balanceObj != null) {
-                if (balanceObj instanceof Number) {
-                    balanceStr = balanceObj.toString();
-                } else {
-                    balanceStr = balanceObj.toString();
-                }
+            // Valida dias opcionais
+            if (request.getDiaFechamento() != null) {
+                manualValidation.addErrors(InputValidator.validateDayOfMonth("Dia de fechamento", request.getDiaFechamento(), false).getErrors());
             }
-            validation.addErrors(InputValidator.validateMoneyString("Saldo inicial", balanceStr, true).getErrors());
+            if (request.getDiaPagamento() != null) {
+                manualValidation.addErrors(InputValidator.validateDayOfMonth("Dia de pagamento", request.getDiaPagamento(), false).getErrors());
+            }
             
-            // Lê campos opcionais de cartão de crédito
-            Integer diaFechamento = null;
-            Integer diaPagamento = null;
-            Object diaFechamentoObj = data.get("diaFechamento");
-            if (diaFechamentoObj != null) {
-                try {
-                    if (diaFechamentoObj instanceof Number) {
-                        diaFechamento = ((Number) diaFechamentoObj).intValue();
-                    } else {
-                        String diaFechamentoStr = diaFechamentoObj.toString();
-                        if (!diaFechamentoStr.isEmpty()) {
-                            diaFechamento = Integer.parseInt(diaFechamentoStr);
-                        }
-                    }
-                    if (diaFechamento != null) {
-                        validation.addErrors(InputValidator.validateDayOfMonth("Dia de fechamento", diaFechamento, false).getErrors());
-                    }
-                } catch (NumberFormatException e) {
-                    validation.addError("Dia de fechamento deve ser um número válido");
-                }
-            }
-            Object diaPagamentoObj = data.get("diaPagamento");
-            if (diaPagamentoObj != null) {
-                try {
-                    if (diaPagamentoObj instanceof Number) {
-                        diaPagamento = ((Number) diaPagamentoObj).intValue();
-                    } else {
-                        String diaPagamentoStr = diaPagamentoObj.toString();
-                        if (!diaPagamentoStr.isEmpty()) {
-                            diaPagamento = Integer.parseInt(diaPagamentoStr);
-                        }
-                    }
-                    if (diaPagamento != null) {
-                        validation.addErrors(InputValidator.validateDayOfMonth("Dia de pagamento", diaPagamento, false).getErrors());
-                    }
-                } catch (NumberFormatException e) {
-                    validation.addError("Dia de pagamento deve ser um número válido");
-                }
-            }
+            // Combina validações
+            ValidationResult validation = new ValidationResult();
+            validation.addErrors(beanValidation.getErrors());
+            validation.addErrors(manualValidation.getErrors());
             
             // Se houver erros de validação, retorna
             if (!validation.isValid()) {
@@ -318,7 +276,8 @@ public class AccountsHandler implements HttpHandler {
             }
             
             // Sanitiza e converte valores
-            name = InputValidator.sanitizeInput(name);
+            String name = InputValidator.sanitizeInput(request.getName());
+            // type já foi declarado acima na linha 241, apenas reutiliza
             
             // Normaliza o tipo: se for cartão de crédito, converte para CARTAO_CREDITO
             if (type != null) {
@@ -334,22 +293,9 @@ public class AccountsHandler implements HttpHandler {
                 }
             }
             
-            double balance;
-            try {
-                // Se já veio como Number, usa diretamente
-                if (balanceObj instanceof Number) {
-                    balance = ((Number) balanceObj).doubleValue();
-                } else {
-                    // Se veio como String, usa NumberUtil para tratar formato brasileiro (aceita vírgula e ponto)
-                    balance = NumberUtil.parseDoubleBrazilian(balanceStr);
-                }
-            } catch (NumberFormatException e) {
-                Map<String, Object> response = new HashMap<>();
-                response.put("success", false);
-                response.put("message", "Saldo inicial deve ser um número válido: " + e.getMessage());
-                ResponseUtil.sendJsonResponse(exchange, 400, response);
-                return;
-            }
+            double balance = request.getBalance();
+            Integer diaFechamento = request.getDiaFechamento();
+            Integer diaPagamento = request.getDiaPagamento();
             
             // Obtém o ID do usuário autenticado do token JWT
             int userId;

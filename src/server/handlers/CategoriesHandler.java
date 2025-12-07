@@ -5,7 +5,10 @@ import java.io.*;
 import java.util.*;
 import server.model.Categoria;
 import server.utils.*;
+import server.utils.DtoUtil;
+import server.dto.CategoryRequest;
 import server.validation.*;
+import server.validation.BeanValidationUtil;
 import server.repository.*;
 
 /**
@@ -73,17 +76,13 @@ public class CategoriesHandler implements HttpHandler {
             String requestBody = RequestUtil.readRequestBody(exchange);
             Map<String, Object> data = JsonUtil.parseJsonWithNested(requestBody);
             
-            // Validações robustas
-            ValidationResult validation = new ValidationResult();
+            // Converte para DTO e valida com Bean Validation
+            CategoryRequest request = DtoUtil.toCategoryRequest(data);
+            ValidationResult beanValidation = BeanValidationUtil.validate(request);
             
-            String name = null;
-            Object nameObj = data.get("name");
-            if (nameObj != null) name = nameObj.toString();
-            if (name == null) {
-                Object nomeObj = data.get("nome");
-                if (nomeObj != null) name = nomeObj.toString();
-            }
-            validation.addErrors(InputValidator.validateName("Nome da categoria", name, true).getErrors());
+            // Validações manuais adicionais
+            ValidationResult manualValidation = new ValidationResult();
+            manualValidation.addErrors(InputValidator.validateName("Nome da categoria", request.getName(), true).getErrors());
             
             // Obtém o ID do usuário autenticado do token JWT
             // NÃO aceita userId do body da requisição para prevenir que usuários criem categorias para outros
@@ -98,6 +97,11 @@ public class CategoriesHandler implements HttpHandler {
                 return;
             }
             
+            // Combina validações
+            ValidationResult validation = new ValidationResult();
+            validation.addErrors(beanValidation.getErrors());
+            validation.addErrors(manualValidation.getErrors());
+            
             if (!validation.isValid()) {
                 Map<String, Object> response = new HashMap<>();
                 response.put("success", false);
@@ -107,52 +111,27 @@ public class CategoriesHandler implements HttpHandler {
             }
             
             // Sanitiza nome
-            name = InputValidator.sanitizeInput(name);
+            String name = InputValidator.sanitizeInput(request.getName());
             
             // Verifica se foi enviado um orçamento
-            String budgetStr = null;
-            Object budgetObj = data.get("budget");
-            if (budgetObj != null) budgetStr = budgetObj.toString();
+            Double budgetValue = request.getBudget();
             int categoryId;
             
-            if (budgetStr != null && !budgetStr.isEmpty() && !budgetStr.equals("null")) {
-                try {
-                    double budgetValue;
-                    if (budgetObj instanceof Number) {
-                        budgetValue = ((Number) budgetObj).doubleValue();
-                    } else {
-                        budgetValue = Double.parseDouble(budgetStr);
-                    }
-                    if (budgetValue > 0) {
-                        // Valida valor do orçamento
-                        ValidationResult budgetValidation = InputValidator.validateMoney("Valor do orçamento", budgetValue, true);
-                        if (!budgetValidation.isValid()) {
-                            Map<String, Object> response = new HashMap<>();
-                            response.put("success", false);
-                            response.put("message", budgetValidation.getErrorMessage());
-                            ResponseUtil.sendJsonResponse(exchange, 400, response);
-                            return;
-                        }
-                        
-                        // Cadastra categoria e orçamento atomicamente na mesma transação
-                        categoryId = categoryRepository.cadastrarCategoriaComOrcamento(name, userId, budgetValue, "MENSAL");
-                    } else {
-                        // Se o valor é 0 ou negativo, cadastra apenas a categoria
-                        categoryId = categoryRepository.cadastrarCategoria(name, userId);
-                    }
-                } catch (NumberFormatException e) {
-                    // Se não conseguir converter, cadastra apenas a categoria
-                    categoryId = categoryRepository.cadastrarCategoria(name, userId);
-                } catch (Exception e) {
-                    // Se houver erro ao cadastrar com orçamento, retorna erro
+            if (budgetValue != null && budgetValue > 0) {
+                // Valida valor do orçamento
+                ValidationResult budgetValidation = InputValidator.validateMoney("Valor do orçamento", budgetValue, true);
+                if (!budgetValidation.isValid()) {
                     Map<String, Object> response = new HashMap<>();
                     response.put("success", false);
-                    response.put("message", "Erro ao cadastrar categoria com orçamento: " + e.getMessage());
+                    response.put("message", budgetValidation.getErrorMessage());
                     ResponseUtil.sendJsonResponse(exchange, 400, response);
                     return;
                 }
+                
+                // Cadastra categoria e orçamento atomicamente na mesma transação
+                categoryId = categoryRepository.cadastrarCategoriaComOrcamento(name, userId, budgetValue, "MENSAL");
             } else {
-                // Sem orçamento, cadastra apenas a categoria
+                // Se o valor é 0, negativo ou null, cadastra apenas a categoria
                 categoryId = categoryRepository.cadastrarCategoria(name, userId);
             }
             

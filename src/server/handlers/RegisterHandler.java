@@ -8,8 +8,11 @@ import server.security.JwtUtil;
 import server.utils.JsonUtil;
 import server.utils.RequestUtil;
 import server.utils.ResponseUtil;
+import server.utils.DtoUtil;
+import server.dto.RegisterRequest;
 import server.validation.InputValidator;
 import server.validation.ValidationResult;
+import server.validation.BeanValidationUtil;
 
 import java.io.IOException;
 import java.util.HashMap;
@@ -37,22 +40,30 @@ public class RegisterHandler implements HttpHandler {
             String requestBody = RequestUtil.readRequestBody(exchange);
             Map<String, String> data = JsonUtil.parseJson(requestBody);
             
-            String name = data.get("name");
-            String email = data.get("email");
-            String password = data.get("password");
+            // Converte para DTO e valida com Bean Validation
+            RegisterRequest request = DtoUtil.toRegisterRequest(data);
+            ValidationResult beanValidation = BeanValidationUtil.validate(request);
             
+            // Validações manuais adicionais (complementam Bean Validation)
+            ValidationResult manualValidation = new ValidationResult();
+            manualValidation.addErrors(InputValidator.validateName("Nome", request.getName(), true).getErrors());
+            manualValidation.addErrors(InputValidator.validateEmail(request.getEmail(), true).getErrors());
+            manualValidation.addErrors(InputValidator.validatePassword(request.getPassword(), true).getErrors());
+            
+            // Combina validações
             ValidationResult validation = new ValidationResult();
-            validation.addErrors(InputValidator.validateName("Nome", name, true).getErrors());
-            validation.addErrors(InputValidator.validateEmail(email, true).getErrors());
-            validation.addErrors(InputValidator.validatePassword(password, true).getErrors());
+            validation.addErrors(beanValidation.getErrors());
+            validation.addErrors(manualValidation.getErrors());
             
             if (!validation.isValid()) {
                 ResponseUtil.sendErrorResponse(exchange, 400, validation.getErrorMessage());
                 return;
             }
             
-            name = InputValidator.sanitizeInput(name);
-            String emailNormalizado = email.toLowerCase().trim();
+            // Sanitiza entrada
+            String name = InputValidator.sanitizeInput(request.getName());
+            String emailNormalizado = request.getEmail().toLowerCase().trim();
+            String password = request.getPassword();
             
             try {
                 int userId = userRepository.cadastrarUsuario(name, emailNormalizado, password);

@@ -26,12 +26,17 @@ RUN npm run build
 FROM eclipse-temurin:17-jdk AS backend-build
 WORKDIR /app
 
-# Download PostgreSQL JDBC Driver, HikariCP and SLF4J (required by HikariCP)
+# Download PostgreSQL JDBC Driver, HikariCP, SLF4J and Bean Validation dependencies
 RUN mkdir -p lib && \
     curl -L -o lib/postgresql.jar https://repo1.maven.org/maven2/org/postgresql/postgresql/42.7.1/postgresql-42.7.1.jar && \
     curl -L -o lib/hikaricp.jar https://repo1.maven.org/maven2/com/zaxxer/HikariCP/5.1.0/HikariCP-5.1.0.jar && \
     curl -L -o lib/slf4j-api.jar https://repo1.maven.org/maven2/org/slf4j/slf4j-api/2.0.9/slf4j-api-2.0.9.jar && \
-    curl -L -o lib/slf4j-simple.jar https://repo1.maven.org/maven2/org/slf4j/slf4j-simple/2.0.9/slf4j-simple-2.0.9.jar
+    curl -L -o lib/slf4j-simple.jar https://repo1.maven.org/maven2/org/slf4j/slf4j-simple/2.0.9/slf4j-simple-2.0.9.jar && \
+    curl -L -o lib/jakarta-validation-api.jar https://repo1.maven.org/maven2/jakarta/validation/jakarta.validation-api/3.1.1/jakarta.validation-api-3.1.1.jar && \
+    curl -L -o lib/hibernate-validator.jar https://repo1.maven.org/maven2/org/hibernate/validator/hibernate-validator/8.0.1.Final/hibernate-validator-8.0.1.Final.jar && \
+    curl -L -o lib/jakarta-el.jar https://repo1.maven.org/maven2/jakarta/el/jakarta.el-api/5.0.1/jakarta.el-api-5.0.1.jar && \
+    curl -L -o lib/jakarta-el-impl.jar https://repo1.maven.org/maven2/org/glassfish/jakarta.el/4.0.1/jakarta.el-4.0.1.jar || \
+    curl -L -o lib/jakarta-el-impl.jar https://repo1.maven.org/maven2/org/glassfish/jakarta.el/5.0.0/jakarta.el-5.0.0.jar
 
 # Copy Java source code
 COPY src/ src/
@@ -41,7 +46,7 @@ RUN mkdir -p bin
 
 # Compile Java Code
 # Compile all Java files, javac will resolve dependencies automatically
-RUN javac -cp "lib/postgresql.jar:lib/hikaricp.jar:lib/slf4j-api.jar" -d bin -sourcepath src $(find src -name "*.java")
+RUN javac -cp "lib/postgresql.jar:lib/hikaricp.jar:lib/slf4j-api.jar:lib/jakarta-validation-api.jar:lib/hibernate-validator.jar:lib/jakarta-el.jar:lib/jakarta-el-impl.jar" -d bin -sourcepath src $(find src -name "*.java")
 
 # ==========================================
 # Stage 3: Runtime Environment
@@ -68,4 +73,4 @@ EXPOSE 8080
 
 # Start the server
 # Modificado para priorizar variáveis de ambiente do sistema, usando .env apenas se existir e variáveis não estiverem definidas
-CMD ["sh", "-c", "if [ -f .env ]; then echo 'Carregando .env...'; export $(cat .env | grep -v '^#' | xargs); fi; java -cp bin:lib/postgresql.jar:lib/hikaricp.jar:lib/slf4j-api.jar:lib/slf4j-simple.jar ControleSeServer"]
+CMD ["sh", "-c", "if [ -f .env ]; then echo 'Carregando .env...'; export $(cat .env | grep -v '^#' | xargs); fi; java -cp bin:lib/postgresql.jar:lib/hikaricp.jar:lib/slf4j-api.jar:lib/slf4j-simple.jar:lib/jakarta-validation-api.jar:lib/hibernate-validator.jar:lib/jakarta-el.jar:lib/jakarta-el-impl.jar ControleSeServer"]

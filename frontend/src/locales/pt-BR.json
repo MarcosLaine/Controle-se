@@ -288,6 +288,7 @@
     "return": "Retorno",
     "category": "Categoria",
     "asset": "Ativo",
+    "assetAllocation": "Alocação de Ativos",
     "qty": "Qtd.",
     "subtitle": "Acompanhe seus investimentos",
     "loadingEvolution": "Obtendo informações. Isso pode demorar um pouco...",

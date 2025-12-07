@@ -10,8 +10,11 @@ import server.security.LoginAttemptTracker;
 import server.utils.JsonUtil;
 import server.utils.RequestUtil;
 import server.utils.ResponseUtil;
+import server.utils.DtoUtil;
+import server.dto.LoginRequest;
 import server.validation.InputValidator;
 import server.validation.ValidationResult;
+import server.validation.BeanValidationUtil;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -48,22 +51,30 @@ public class LoginHandler implements HttpHandler {
             
             Map<String, String> data = JsonUtil.parseJson(requestBody);
             
-            String email = data.get("email");
-            String password = data.get("password");
-            String captchaToken = data.get("captchaToken");
+            // Converte para DTO e valida com Bean Validation
+            LoginRequest request = DtoUtil.toLoginRequest(data);
+            ValidationResult beanValidation = BeanValidationUtil.validate(request);
             
-            ValidationResult validation = new ValidationResult();
-            validation.addErrors(InputValidator.validateEmail(email, true).getErrors());
-            if (password == null || password.isEmpty()) {
-                validation.addError("Senha é obrigatória");
+            // Validações manuais adicionais
+            ValidationResult manualValidation = new ValidationResult();
+            manualValidation.addErrors(InputValidator.validateEmail(request.getEmail(), true).getErrors());
+            if (request.getPassword() == null || request.getPassword().isEmpty()) {
+                manualValidation.addError("Senha é obrigatória");
             }
+            
+            // Combina validações
+            ValidationResult validation = new ValidationResult();
+            validation.addErrors(beanValidation.getErrors());
+            validation.addErrors(manualValidation.getErrors());
             
             if (!validation.isValid()) {
                 ResponseUtil.sendErrorResponse(exchange, 400, validation.getErrorMessage());
                 return;
             }
             
-            email = email.toLowerCase().trim();
+            String email = request.getEmail().toLowerCase().trim();
+            String password = request.getPassword();
+            String captchaToken = request.getCaptchaToken();
             
             if (captchaToken != null) {
                 LOGGER.info(String.format("CAPTCHA token recebido (tamanho: %d caracteres)", captchaToken.length()));
