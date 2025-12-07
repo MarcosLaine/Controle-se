@@ -152,29 +152,33 @@ export function usePWAInstall() {
                   icons: manifest.icons?.length >= 2
                 });
                 
-                // Mostra botão APENAS se:
-                // 1. Tem deferredPrompt (melhor caso - instalação direta)
+                // Só mostra botão se:
+                // 1. Tem deferredPrompt (instalação direta possível)
                 // 2. É iOS (instalação manual sempre disponível)
-                // NÃO mostra apenas por ter SW + Manifest, pois sem deferredPrompt não podemos instalar
+                // NÃO mostra apenas por ter PWA configurado, pois sem deferredPrompt não podemos instalar
                 if (currentDeferredPrompt || isIOS) {
                   setIsInstallable(true);
-                  console.log('Botão de instalação ativado - SW + Manifest válidos' + (currentDeferredPrompt ? ' + deferredPrompt disponível' : ' (iOS)'));
+                  if (currentDeferredPrompt) {
+                    console.log('✅ Botão de instalação ativado - deferredPrompt disponível (instalação direta)');
+                  } else if (isIOS) {
+                    console.log('✅ Botão de instalação ativado - iOS (instalação manual)');
+                  }
                 } else {
-                  console.log('PWA configurado mas deferredPrompt não disponível - botão não será mostrado');
-                  console.log('Dica: O beforeinstallprompt pode não aparecer se:');
-                  console.log('  - O usuário já rejeitou o prompt antes');
-                  console.log('  - O app já está instalado');
-                  console.log('  - O navegador precisa de mais tempo para avaliar o PWA');
+                  console.log('⚠️ PWA configurado mas deferredPrompt não disponível - botão não será mostrado');
+                  console.log('   O beforeinstallprompt pode não aparecer se:');
+                  console.log('   - O usuário já rejeitou o prompt antes');
+                  console.log('   - O app já está instalado');
+                  console.log('   - O navegador ainda está avaliando o PWA');
                 }
               })
               .catch(err => {
                 console.warn('Erro ao verificar manifest (não crítico):', err.message);
                 // Mesmo com erro no manifest, se tem SW pode tentar
                 // O manifest pode não estar acessível, mas o PWA ainda pode funcionar
-                // Mas só mostra se tiver deferredPrompt ou for iOS
+                // Mas só mostra botão se tiver deferredPrompt ou for iOS
                 if (currentDeferredPrompt || isIOS) {
                   setIsInstallable(true);
-                  console.log('Botão de instalação ativado - SW disponível (manifest não verificado)' + (currentDeferredPrompt ? ' + deferredPrompt disponível' : ' (iOS)'));
+                  console.log('✅ Botão de instalação ativado - SW disponível (manifest não verificado)' + (currentDeferredPrompt ? ' + deferredPrompt disponível' : ' (iOS)'));
                 }
               });
           } else {
@@ -188,11 +192,11 @@ export function usePWAInstall() {
       }
     };
 
-    // Para iOS, sempre mostra o botão (instalação manual)
+    // Para iOS, sempre mostra o botão (instalação manual sempre disponível)
     // Mas só se não estiver instalado
     if (isIOS && !isInStandaloneMode && !isStandalone) {
       setIsInstallable(true);
-      console.log('Botão de instalação ativado para iOS');
+      console.log('✅ Botão de instalação ativado para iOS (instalação manual disponível)');
     }
 
     // Verifica imediatamente
@@ -275,36 +279,21 @@ export function usePWAInstall() {
         tryAlternativeInstall();
       }
     } else {
-      console.log('Nenhum prompt disponível, tentando verificar se pode instalar diretamente...');
-      
-      // Tenta verificar se o navegador pode instalar mesmo sem deferredPrompt
-      const isChrome = /Chrome/.test(navigator.userAgent) && /Google Inc/.test(navigator.vendor);
-      const isEdge = /Edg/.test(navigator.userAgent);
-      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-      
-      if (isIOS) {
-        tryAlternativeInstall();
-      } else if (isChrome || isEdge) {
-        // Chrome/Edge: sem deferredPrompt, não podemos instalar programaticamente
-        // Mas podemos dar instruções claras
-        const message = 'Para instalar o aplicativo Controle-se:\n\n' +
-          'OPÇÃO 1 (Recomendado):\n' +
-          '• Procure o ícone de instalação (⊕) na barra de endereços do navegador\n' +
-          '• Clique nele para instalar\n\n' +
-          'OPÇÃO 2:\n' +
-          '• Clique no menu do navegador (⋮ no canto superior direito)\n' +
-          '• Procure por "Instalar Controle-se" ou "Instalar aplicativo"\n\n' +
-          'NOTA: Se o ícone não aparecer, pode ser que:\n' +
-          '• Você já rejeitou a instalação antes (tente em uma janela anônima/privada)\n' +
-          '• O aplicativo já está instalado\n' +
-          '• O navegador precisa de mais tempo para detectar o PWA\n\n' +
-          'Dica: Tente limpar os dados do site e recarregar a página.';
+        // Sem deferredPrompt, não podemos instalar programaticamente
+        // Se chegou aqui, o botão não deveria estar visível, mas por segurança
+        // verificamos se é iOS (único caso onde podemos mostrar instruções)
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
         
-        alert(message);
-      } else {
-        tryAlternativeInstall();
+        if (isIOS) {
+          // iOS sempre permite instalação manual
+          tryAlternativeInstall();
+        } else {
+          // Para outros navegadores, sem deferredPrompt não há como instalar
+          // O botão não deveria estar visível neste caso
+          console.warn('⚠️ Tentativa de instalação sem deferredPrompt em navegador não-iOS');
+          console.warn('   O botão não deveria estar visível. Verifique a lógica de exibição.');
+        }
       }
-    }
   };
 
   const checkIfCanInstall = () => {
@@ -324,8 +313,20 @@ export function usePWAInstall() {
     const isSafari = /Safari/.test(navigator.userAgent) && !isChrome;
 
     if (isIOS) {
-      // iOS: mostra instruções
-      alert('Para instalar no iOS:\n1. Toque no botão de compartilhar (□↑)\n2. Selecione "Adicionar à Tela de Início"');
+      // iOS: mostra instruções detalhadas
+      const message = '📱 Para instalar o aplicativo Controle-se no iOS:\n\n' +
+        'PASSO 1:\n' +
+        '• Toque no botão de compartilhar na parte inferior da tela\n' +
+        '• (Ícone com quadrado e seta para cima: □↑)\n\n' +
+        'PASSO 2:\n' +
+        '• Role para baixo no menu de compartilhamento\n' +
+        '• Procure e toque em "Adicionar à Tela de Início"\n' +
+        '• (Ícone com um "+")\n\n' +
+        'PASSO 3:\n' +
+        '• Confirme o nome do aplicativo (opcional)\n' +
+        '• Toque em "Adicionar" no canto superior direito\n\n' +
+        '✅ Pronto! O aplicativo aparecerá na sua tela inicial.';
+      alert(message);
     } else if (isChrome || isEdge) {
       // Chrome/Edge: tenta abrir o menu de instalação
       // Infelizmente não há API direta, mas podemos mostrar instruções
