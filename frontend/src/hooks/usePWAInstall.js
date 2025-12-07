@@ -25,8 +25,49 @@ export function usePWAInstall() {
       deferredPromptRef.current = window.__deferredPrompt;
       setDeferredPrompt(window.__deferredPrompt);
       setIsInstallable(true);
-      console.log('deferredPrompt encontrado no window.__deferredPrompt (capturado no script inline)');
+      console.log('✅ deferredPrompt encontrado no window.__deferredPrompt (capturado no script inline)');
     }
+    
+    // Função de diagnóstico para verificar critérios do PWA
+    const diagnosePWA = async () => {
+      console.log('🔍 Diagnóstico PWA:');
+      const diagnostics = {
+        https: window.location.protocol === 'https:',
+        serviceWorker: 'serviceWorker' in navigator,
+        manifest: false,
+        icons: false,
+        standalone: window.matchMedia('(display-mode: standalone)').matches
+      };
+      
+      try {
+        const manifestRes = await fetch('/manifest.webmanifest', { cache: 'no-cache' });
+        if (manifestRes.ok) {
+          const manifest = await manifestRes.json();
+          diagnostics.manifest = !!manifest;
+          diagnostics.icons = manifest.icons && manifest.icons.length >= 2;
+          console.log('  ✅ Manifest:', manifest.name);
+          console.log('  ✅ Ícones:', manifest.icons?.length || 0);
+        }
+      } catch (e) {
+        console.error('  ❌ Erro ao verificar manifest:', e);
+      }
+      
+      if ('serviceWorker' in navigator) {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        console.log('  ✅ Service Workers registrados:', registrations.length);
+        registrations.forEach((reg, i) => {
+          console.log(`    SW ${i + 1}:`, reg.active?.state || 'unknown');
+        });
+      }
+      
+      console.log('Critérios atendidos:', diagnostics);
+      console.log('Status:', Object.values(diagnostics).filter(v => v).length, 'de', Object.keys(diagnostics).length);
+      
+      return diagnostics;
+    };
+    
+    // Executa diagnóstico após um delay
+    setTimeout(diagnosePWA, 2000);
 
     const handler = (e) => {
       e.preventDefault();
@@ -35,7 +76,11 @@ export function usePWAInstall() {
       setDeferredPrompt(e);
       window.__deferredPrompt = e; // Armazena também no window
       setIsInstallable(true);
-      console.log('PWA install prompt disponível - deferredPrompt capturado e salvo');
+      console.log('✅ PWA install prompt disponível - deferredPrompt capturado e salvo');
+      console.log('Event details:', {
+        platforms: e.platforms,
+        userChoice: 'pending'
+      });
     };
 
     // Listener para evento customizado do script inline
@@ -48,14 +93,24 @@ export function usePWAInstall() {
     window.addEventListener('beforeinstallprompt', handler);
     window.addEventListener('pwa-install-available', customHandler);
 
-    // Verifica se o service worker está registrado
+    // Verifica se o service worker está registrado e ATIVO
     const checkPWAInstallable = () => {
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.getRegistrations().then(registrations => {
           if (registrations.length > 0) {
+            const registration = registrations[0];
             console.log('Service Worker registrado, PWA disponível');
+            console.log('Service Worker state:', registration.active?.state || 'unknown');
+            
+            // Verifica se o SW está ativo (não apenas registrado)
+            if (registration.active && registration.active.state === 'activated') {
+              console.log('Service Worker está ATIVO');
+            } else {
+              console.warn('Service Worker registrado mas não está ativo ainda');
+            }
+            
             // Verifica se tem manifest válido (mas não bloqueia se falhar)
-            fetch('/manifest.webmanifest')
+            fetch('/manifest.webmanifest', { cache: 'no-cache' })
               .then(res => {
                 if (res.ok) {
                   const contentType = res.headers.get('content-type');
@@ -71,10 +126,31 @@ export function usePWAInstall() {
               })
               .then(manifest => {
                 console.log('Manifest válido encontrado:', manifest.name);
-                // Se tem service worker E manifest, pode ser instalável
-                // Mostra botão mesmo sem deferredPrompt (o navegador pode mostrar prompt ao clicar)
-                const isChrome = /Chrome/.test(navigator.userAgent) && /Google Inc/.test(navigator.vendor);
-                const isEdge = /Edg/.test(navigator.userAgent);
+                console.log('Manifest icons:', manifest.icons?.length || 0);
+                
+                // Verifica se os ícones estão acessíveis
+                if (manifest.icons && manifest.icons.length > 0) {
+                  const icon192 = manifest.icons.find(icon => icon.sizes === '192x192');
+                  const icon512 = manifest.icons.find(icon => icon.sizes === '512x512');
+                  
+                  if (icon192 && icon512) {
+                    console.log('Ícones válidos encontrados: 192x192 e 512x512');
+                  } else {
+                    console.warn('Ícones obrigatórios não encontrados no manifest');
+                  }
+                }
+                
+                // Verifica critérios para beforeinstallprompt
+                const hasValidStartUrl = manifest.start_url && manifest.start_url.startsWith('/');
+                const hasValidScope = manifest.scope && manifest.scope.startsWith('/');
+                const hasValidDisplay = manifest.display && ['standalone', 'fullscreen'].includes(manifest.display);
+                
+                console.log('Critérios PWA:', {
+                  start_url: hasValidStartUrl,
+                  scope: hasValidScope,
+                  display: hasValidDisplay,
+                  icons: manifest.icons?.length >= 2
+                });
                 
                 // Mostra botão APENAS se:
                 // 1. Tem deferredPrompt (melhor caso - instalação direta)
@@ -85,6 +161,10 @@ export function usePWAInstall() {
                   console.log('Botão de instalação ativado - SW + Manifest válidos' + (currentDeferredPrompt ? ' + deferredPrompt disponível' : ' (iOS)'));
                 } else {
                   console.log('PWA configurado mas deferredPrompt não disponível - botão não será mostrado');
+                  console.log('Dica: O beforeinstallprompt pode não aparecer se:');
+                  console.log('  - O usuário já rejeitou o prompt antes');
+                  console.log('  - O app já está instalado');
+                  console.log('  - O navegador precisa de mais tempo para avaliar o PWA');
                 }
               })
               .catch(err => {
@@ -119,10 +199,13 @@ export function usePWAInstall() {
     checkPWAInstallable();
 
     // Verifica novamente após delays (o beforeinstallprompt pode demorar)
+    // O evento pode levar até 30 segundos para ser disparado em alguns casos
     const timeout1 = setTimeout(() => {
       checkPWAInstallable();
       if (currentDeferredPrompt) {
         console.log('deferredPrompt encontrado após 1s');
+      } else {
+        console.log('Aguardando beforeinstallprompt... (1s)');
       }
     }, 1000);
     
@@ -131,15 +214,30 @@ export function usePWAInstall() {
       if (currentDeferredPrompt) {
         console.log('deferredPrompt encontrado após 3s');
       } else {
-        console.log('deferredPrompt ainda não disponível após 3s');
+        console.log('Aguardando beforeinstallprompt... (3s)');
       }
     }, 3000);
+    
+    const timeout3 = setTimeout(() => {
+      checkPWAInstallable();
+      if (currentDeferredPrompt) {
+        console.log('deferredPrompt encontrado após 10s');
+      } else {
+        console.log('deferredPrompt ainda não disponível após 10s');
+        console.log('Possíveis causas:');
+        console.log('  1. Usuário já rejeitou o prompt antes (tente janela anônima)');
+        console.log('  2. App já está instalado');
+        console.log('  3. Navegador ainda está avaliando o PWA');
+        console.log('  4. Algum critério do PWA não foi atendido');
+      }
+    }, 10000);
 
     return () => {
       window.removeEventListener('beforeinstallprompt', handler);
       window.removeEventListener('pwa-install-available', customHandler);
       clearTimeout(timeout1);
       clearTimeout(timeout2);
+      clearTimeout(timeout3);
     };
   }, []);
 
