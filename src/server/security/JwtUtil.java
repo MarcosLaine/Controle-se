@@ -16,7 +16,8 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 
 public final class JwtUtil {
-    private static final long EXPIRATION_SECONDS = 60L * 60L * 24L; // 24 hours
+    private static final long ACCESS_TOKEN_EXPIRATION_SECONDS = 60L * 15L; // 15 minutes
+    private static final long REFRESH_TOKEN_EXPIRATION_SECONDS = 60L * 60L * 24L * 7L; // 7 days
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final String SECRET = initializeSecret();
     private static final Base64.Encoder BASE64_URL_ENCODER = Base64.getUrlEncoder().withoutPadding();
@@ -50,9 +51,12 @@ public final class JwtUtil {
         return generatedSecret;
     }
 
-    public static String generateToken(Usuario usuario) {
+    /**
+     * Gera um access token JWT de curta duração (15 minutos)
+     */
+    public static String generateAccessToken(Usuario usuario) {
         long issuedAt = Instant.now().getEpochSecond();
-        long expiresAt = issuedAt + EXPIRATION_SECONDS;
+        long expiresAt = issuedAt + ACCESS_TOKEN_EXPIRATION_SECONDS;
 
         String headerJson = "{\"alg\":\"HS256\",\"typ\":\"JWT\"}";
         String payloadJson = new StringBuilder("{")
@@ -60,7 +64,8 @@ public final class JwtUtil {
             .append("\"email\":\"").append(escape(usuario.getEmail())).append("\",")
             .append("\"name\":\"").append(escape(usuario.getNome())).append("\",")
             .append("\"iat\":").append(issuedAt).append(',')
-            .append("\"exp\":").append(expiresAt)
+            .append("\"exp\":").append(expiresAt).append(',')
+            .append("\"type\":\"access\"")
             .append('}')
             .toString();
 
@@ -73,6 +78,32 @@ public final class JwtUtil {
             throw new IllegalStateException("Falha ao assinar token JWT", e);
         }
         return header + "." + payload + "." + signature;
+    }
+    
+    /**
+     * Gera um refresh token aleatório (não é JWT, apenas string aleatória)
+     * @return Token aleatório seguro
+     */
+    public static String generateRefreshToken() {
+        byte[] randomBytes = new byte[64];
+        RANDOM.nextBytes(randomBytes);
+        return BASE64_URL_ENCODER.encodeToString(randomBytes);
+    }
+    
+    /**
+     * Retorna a expiração do refresh token em segundos
+     */
+    public static long getRefreshTokenExpirationSeconds() {
+        return REFRESH_TOKEN_EXPIRATION_SECONDS;
+    }
+    
+    /**
+     * @deprecated Use generateAccessToken() em vez disso
+     * Mantido para compatibilidade temporária
+     */
+    @Deprecated
+    public static String generateToken(Usuario usuario) {
+        return generateAccessToken(usuario);
     }
 
     public static JwtValidationResult validateToken(String token) {

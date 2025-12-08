@@ -22,14 +22,21 @@ public class AuthUtil {
         }
         
         String token = authHeader.substring("Bearer ".length()).trim();
-        // System.out.println("[DEBUG] AuthUtil.requireUserId: Token recebido (primeiros 50 chars): " + 
-        //                   (token.length() > 50 ? token.substring(0, 50) + "..." : token));
+        
+        // Valida se o token tem formato básico antes de tentar validar
+        if (token.isEmpty()) {
+            throw new UnauthorizedException("Token de autenticação vazio");
+        }
         
         JwtUtil.JwtValidationResult result = JwtUtil.validateToken(token);
         
         if (!result.isValid()) {
-            System.err.println("[ERRO] AuthUtil.requireUserId: Token inválido - " + result.getMessage());
-            throw new UnauthorizedException(result.getMessage());
+            // Só loga como erro se não for apenas ausência de token (que é esperado em alguns casos)
+            String errorMsg = result.getMessage();
+            if (!errorMsg.contains("ausente") && !errorMsg.contains("vazio")) {
+                System.err.println("[ERRO] AuthUtil.requireUserId: Token inválido - " + errorMsg);
+            }
+            throw new UnauthorizedException(errorMsg);
         }
         
         int userId = result.getUserId();

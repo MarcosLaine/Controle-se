@@ -2,6 +2,7 @@ package server.handlers;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
+import server.repository.RefreshTokenRepository;
 import server.repository.UserRepository;
 import server.utils.AuthUtil;
 import server.utils.JsonUtil;
@@ -17,9 +18,16 @@ import java.util.logging.Logger;
 public class ChangePasswordHandler implements HttpHandler {
     private static final Logger LOGGER = Logger.getLogger(ChangePasswordHandler.class.getName());
     private final UserRepository userRepository;
+    private final RefreshTokenRepository refreshTokenRepository;
 
     public ChangePasswordHandler(UserRepository userRepository) {
         this.userRepository = userRepository;
+        this.refreshTokenRepository = new RefreshTokenRepository();
+    }
+    
+    public ChangePasswordHandler(UserRepository userRepository, RefreshTokenRepository refreshTokenRepository) {
+        this.userRepository = userRepository;
+        this.refreshTokenRepository = refreshTokenRepository;
     }
 
     @Override
@@ -47,10 +55,13 @@ public class ChangePasswordHandler implements HttpHandler {
             }
 
             userRepository.atualizarSenhaUsuario(userId, currentPassword, newPassword);
+            
+            // Revoga todos os refresh tokens do usuário por segurança (possível comprometimento)
+            refreshTokenRepository.revokeAllUserTokens(userId);
 
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);
-            response.put("message", "Senha atualizada com sucesso");
+            response.put("message", "Senha atualizada com sucesso. Faça login novamente.");
             ResponseUtil.sendJsonResponse(exchange, 200, response);
         } catch (AuthUtil.UnauthorizedException e) {
             ResponseUtil.sendErrorResponse(exchange, 401, e.getMessage());

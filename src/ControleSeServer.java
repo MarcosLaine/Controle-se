@@ -358,6 +358,7 @@ public class ControleSeServer {
     private static void setupRoutes() {
         // Initialize repositories
         server.repository.UserRepository userRepository = new server.repository.UserRepository();
+        server.repository.RefreshTokenRepository refreshTokenRepository = new server.repository.RefreshTokenRepository();
         server.repository.AccountRepository accountRepository = new server.repository.AccountRepository();
         server.repository.CategoryRepository categoryRepository = new server.repository.CategoryRepository();
         server.repository.ExpenseRepository expenseRepository = new server.repository.ExpenseRepository();
@@ -369,11 +370,13 @@ public class ControleSeServer {
         // API Routes básicas (devem vir antes do StaticFileHandler)
         // Endpoints de autenticação com proteção especial
         server.createContext("/api/auth/login", 
-            withRateLimit(new server.handlers.LoginHandler(userRepository, loginAttemptTracker, captchaValidator), "/api/auth/login", authCircuitBreaker));
+            withRateLimit(new server.handlers.LoginHandler(userRepository, loginAttemptTracker, captchaValidator, refreshTokenRepository), "/api/auth/login", authCircuitBreaker));
+        server.createContext("/api/auth/refresh", 
+            withRateLimit(new server.handlers.RefreshTokenHandler(refreshTokenRepository, userRepository), "/api/auth/refresh", authCircuitBreaker));
         server.createContext("/api/auth/register", 
-            withRateLimit(new server.handlers.RegisterHandler(userRepository), "/api/auth/register", authCircuitBreaker));
+            withRateLimit(new server.handlers.RegisterHandler(userRepository, refreshTokenRepository), "/api/auth/register", authCircuitBreaker));
         server.createContext("/api/auth/change-password", 
-            withRateLimit(secure(new server.handlers.ChangePasswordHandler(userRepository)), "/api/auth/change-password", authCircuitBreaker));
+            withRateLimit(secure(new server.handlers.ChangePasswordHandler(userRepository, refreshTokenRepository)), "/api/auth/change-password", authCircuitBreaker));
         server.createContext("/api/auth/user", 
             withRateLimit(secure(new server.handlers.DeleteUserHandler(userRepository)), "/api/auth/user", authCircuitBreaker));
         
@@ -450,8 +453,12 @@ public class ControleSeServer {
     }
     
     private static void handleUnauthorized(HttpExchange exchange, UnauthorizedException e) throws IOException {
-        LOGGER.warning("Requisição não autorizada: " + e.getMessage());
-        ResponseUtil.sendErrorResponse(exchange, 401, e.getMessage());
+        // Só loga como warning se não for apenas ausência de token (esperado quando usuário não está autenticado)
+        String message = e.getMessage();
+        if (message != null && !message.contains("ausente") && !message.contains("vazio")) {
+            LOGGER.warning("Requisição não autorizada: " + message);
+        }
+        ResponseUtil.sendErrorResponse(exchange, 401, message);
     }
     
     private static HttpHandler secure(HttpHandler delegate) {
@@ -460,7 +467,7 @@ public class ControleSeServer {
                 int userId = AuthUtil.requireUserId(exchange);
                 exchange.setAttribute("userId", userId);
                 delegate.handle(exchange);
-            } catch (UnauthorizedException e) {
+            } catch (AuthUtil.UnauthorizedException e) {
                 handleUnauthorized(exchange, e);
             }
         };

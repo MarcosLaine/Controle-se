@@ -3,8 +3,10 @@ package server.handlers;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import server.model.Usuario;
+import server.repository.RefreshTokenRepository;
 import server.repository.UserRepository;
 import server.security.JwtUtil;
+import java.time.Instant;
 import server.utils.JsonUtil;
 import server.utils.RequestUtil;
 import server.utils.ResponseUtil;
@@ -24,9 +26,16 @@ public class RegisterHandler implements HttpHandler {
     private static final Logger LOGGER = Logger.getLogger(RegisterHandler.class.getName());
     
     private final UserRepository userRepository;
+    private final RefreshTokenRepository refreshTokenRepository;
 
     public RegisterHandler(UserRepository userRepository) {
         this.userRepository = userRepository;
+        this.refreshTokenRepository = new RefreshTokenRepository();
+    }
+    
+    public RegisterHandler(UserRepository userRepository, RefreshTokenRepository refreshTokenRepository) {
+        this.userRepository = userRepository;
+        this.refreshTokenRepository = refreshTokenRepository;
     }
 
     @Override
@@ -100,8 +109,13 @@ public class RegisterHandler implements HttpHandler {
                 
                 LOGGER.info("Novo usuário cadastrado: " + emailNormalizado);
                 
-                // Gera token JWT para login automático após cadastro
-                String token = JwtUtil.generateToken(usuario);
+                // Gera access token (15 minutos)
+                String accessToken = JwtUtil.generateAccessToken(usuario);
+                
+                // Gera refresh token (7 dias)
+                String refreshToken = JwtUtil.generateRefreshToken();
+                Instant expiresAt = Instant.now().plusSeconds(JwtUtil.getRefreshTokenExpirationSeconds());
+                refreshTokenRepository.saveRefreshToken(usuario.getIdUsuario(), refreshToken, expiresAt);
                 
                 Map<String, Object> response = new HashMap<>();
                 response.put("success", true);
@@ -109,9 +123,11 @@ public class RegisterHandler implements HttpHandler {
                 response.put("user", Map.of(
                     "id", usuario.getIdUsuario(),
                     "name", usuario.getNome(),
-                    "email", usuario.getEmail(),
-                    "token", token
+                    "email", usuario.getEmail()
                 ));
+                response.put("token", accessToken); // Mantém compatibilidade com código antigo
+                response.put("accessToken", accessToken);
+                response.put("refreshToken", refreshToken);
                 
                 ResponseUtil.sendJsonResponse(exchange, 201, response);
                 

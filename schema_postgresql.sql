@@ -278,6 +278,24 @@ CREATE INDEX IF NOT EXISTS idx_compound_interest_usuario ON compound_interest_ca
 CREATE INDEX IF NOT EXISTS idx_compound_interest_ativo ON compound_interest_calculations(ativo);
 CREATE INDEX IF NOT EXISTS idx_compound_interest_data ON compound_interest_calculations(data_calculo);
 
+-- Tabela: refresh_tokens
+CREATE TABLE IF NOT EXISTS refresh_tokens (
+    id_refresh_token SERIAL PRIMARY KEY,
+    id_usuario INTEGER NOT NULL,
+    token_hash VARCHAR(500) NOT NULL,
+    expires_at TIMESTAMP NOT NULL,
+    revoked BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (id_usuario) REFERENCES usuarios(id_usuario) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_refresh_tokens_usuario ON refresh_tokens(id_usuario);
+CREATE INDEX IF NOT EXISTS idx_refresh_tokens_token_hash ON refresh_tokens(token_hash);
+CREATE INDEX IF NOT EXISTS idx_refresh_tokens_expires_at ON refresh_tokens(expires_at);
+CREATE INDEX IF NOT EXISTS idx_refresh_tokens_revoked ON refresh_tokens(revoked);
+-- Índice composto para otimizar queries de tokens válidos por usuário
+CREATE INDEX IF NOT EXISTS idx_refresh_tokens_usuario_valid ON refresh_tokens(id_usuario, revoked, expires_at) WHERE revoked = FALSE;
+
 -- =====================================================
 -- TRIGGERS PARA UPDATED_AT
 -- =====================================================
@@ -368,4 +386,5 @@ COMMENT ON TABLE categoria_gasto IS 'Relacionamento N:N entre categorias e gasto
 COMMENT ON TABLE transacao_tag IS 'Relacionamento N:N entre transações (gastos/receitas) e tags';
 COMMENT ON TABLE gasto_observacoes IS 'Observações multivaloradas dos gastos';
 COMMENT ON TABLE compound_interest_calculations IS 'Cálculos de juros compostos salvos pelos usuários';
+COMMENT ON TABLE refresh_tokens IS 'Refresh tokens para renovação de autenticação JWT';
 

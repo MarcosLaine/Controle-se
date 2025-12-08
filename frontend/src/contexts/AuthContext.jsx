@@ -41,8 +41,15 @@ export const AuthProvider = ({ children }) => {
       
       const response = await api.post('/auth/login', payload);
       if (response.success) {
-        setUser(response.user);
-        localStorage.setItem('controle-se-user', JSON.stringify(response.user));
+        // Combina dados do usuário com tokens
+        const userData = {
+          ...response.user,
+          token: response.token || response.accessToken, // Mantém compatibilidade
+          accessToken: response.accessToken || response.token,
+          refreshToken: response.refreshToken
+        };
+        setUser(userData);
+        localStorage.setItem('controle-se-user', JSON.stringify(userData));
         toast.success(t('auth.loginSuccess'));
         return { success: true };
       } else {
@@ -81,8 +88,15 @@ export const AuthProvider = ({ children }) => {
       if (response.success) {
         // Faz login automático após cadastro bem-sucedido
         if (response.user) {
-          setUser(response.user);
-          localStorage.setItem('controle-se-user', JSON.stringify(response.user));
+          // Combina dados do usuário com tokens se disponíveis
+          const userData = {
+            ...response.user,
+            token: response.token || response.accessToken,
+            accessToken: response.accessToken || response.token,
+            refreshToken: response.refreshToken
+          };
+          setUser(userData);
+          localStorage.setItem('controle-se-user', JSON.stringify(userData));
         }
         toast.success(t('auth.registerSuccess'));
         return { success: true };
