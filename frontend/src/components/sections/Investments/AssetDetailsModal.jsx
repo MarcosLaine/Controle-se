@@ -67,16 +67,18 @@ export default function AssetDetailsModal({ isOpen, onClose, assetGroup, onEdit,
               // For Sells: Return is (Sell Price - Avg Price) * Qty ? Or just show transaction details.
               // Let's simplify: Show transaction value.
               
-              // Original calc for Buys:
-              let aporteReturn = (aporte.valorAtual || 0) - (aporte.valorAporte || 0);
+              // Original calc for Buys: usa valores convertidos para BRL quando disponíveis
+              const valorAporte = aporte.valorAporteBRL || aporte.valorAporte || 0;
+              const valorAtual = aporte.valorAtual || 0; // valorAtual já vem convertido do backend
+              let aporteReturn = valorAtual - valorAporte;
               
               // For Sells, "valorAporte" from backend is negative (qty * price).
               // "valorAtual" is also negative (qty * currentPrice).
               // This logic might be confusing for sells.
               // Let's just show: "Venda" | Qty | Price | Total Received.
               
-              const aporteReturnPercent = aporte.valorAporte !== 0 
-                ? (aporteReturn / aporte.valorAporte) * 100 
+              const aporteReturnPercent = valorAporte !== 0 
+                ? (aporteReturn / Math.abs(valorAporte)) * 100 
                 : 0;
               const isAportePositive = aporteReturn >= 0;
 

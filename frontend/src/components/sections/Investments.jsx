@@ -96,8 +96,12 @@ const computeHoldingStats = (transactions = []) => {
     }
 
     if (qty > 0) {
-      // Para compras, valorAporte deve ser positivo, mas usamos Math.abs para garantir
-      const unitCost = qty !== 0 ? Math.abs(trade.valorAporte || 0) / qty : 0;
+      // Para compras, usa valor convertido para BRL se disponível, senão usa original
+      // Isso garante que todos os valores sejam comparáveis na mesma moeda
+      const valorAporte = trade.valorAporteBRL || trade.valorAporte || 0;
+      const corretagem = trade.corretagemBRL || trade.corretagem || 0;
+      const valorTotal = Math.abs(valorAporte) + corretagem;
+      const unitCost = qty !== 0 ? valorTotal / qty : 0;
       buyLayers.push({ qty, unitCost });
     } else {
       let remaining = Math.abs(qty);
@@ -117,9 +121,12 @@ const computeHoldingStats = (transactions = []) => {
       }
 
       if (matchedQty > 0) {
-        const grossRevenue = Math.abs(trade.valorAporte || 0);
+        // Para vendas, também usa valores convertidos para BRL
+        const valorAporte = trade.valorAporteBRL || trade.valorAporte || 0;
+        const corretagem = trade.corretagemBRL || trade.corretagem || 0;
+        const grossRevenue = Math.abs(valorAporte);
         const revenuePortion = grossRevenue * (matchedQty / Math.abs(qty));
-        const netRevenuePortion = revenuePortion - (trade.corretagem || 0);
+        const netRevenuePortion = revenuePortion - corretagem;
         realizedProfit += netRevenuePortion - costBasis;
         realizedCostBasis += costBasis;
       }
