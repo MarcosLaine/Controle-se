@@ -83,7 +83,13 @@ public class InvestmentsHandler implements HttpHandler {
                     double valorAporteBRL = inv.getValorAporte();
                 
                     if (!"BRL".equals(inv.getMoeda())) {
-                        double exchangeRate = quoteService.getExchangeRate(inv.getMoeda(), "BRL");
+                        // Usa taxa de câmbio manual se disponível, senão busca da API
+                        double exchangeRate;
+                        if (inv.getTaxaCambio() != null && inv.getTaxaCambio() > 0) {
+                            exchangeRate = inv.getTaxaCambio();
+                        } else {
+                            exchangeRate = quoteService.getExchangeRate(inv.getMoeda(), "BRL");
+                        }
                         valorAporteBRL *= exchangeRate;
                     }
                 
@@ -141,7 +147,13 @@ public class InvestmentsHandler implements HttpHandler {
                     double corretagemBRL = inv.getCorretagem();
                 
                 if (!"BRL".equals(inv.getMoeda())) {
-                    double exchangeRate = quoteService.getExchangeRate(inv.getMoeda(), "BRL");
+                    // Usa taxa de câmbio manual se disponível, senão busca da API
+                    double exchangeRate;
+                    if (inv.getTaxaCambio() != null && inv.getTaxaCambio() > 0) {
+                        exchangeRate = inv.getTaxaCambio();
+                    } else {
+                        exchangeRate = quoteService.getExchangeRate(inv.getMoeda(), "BRL");
+                    }
                     valorAporteBRL *= exchangeRate;
                     precoAporteBRL *= exchangeRate;
                     corretagemBRL *= exchangeRate;
@@ -212,6 +224,9 @@ public class InvestmentsHandler implements HttpHandler {
                 invData.put("corretora", inv.getCorretora());
                 invData.put("dataAporte", inv.getDataAporte().toString());
                 invData.put("moeda", inv.getMoeda());
+                if (inv.getTaxaCambio() != null) {
+                    invData.put("taxaCambio", inv.getTaxaCambio());
+                }
                 invData.put("precoAtual", currentPrice);
                 invData.put("valorAtual", currentValue);
                 invData.put("retorno", returnValue);
@@ -295,6 +310,26 @@ public class InvestmentsHandler implements HttpHandler {
             int accountId = ((Number) data.get("accountId")).intValue();
             String moeda = (String) data.getOrDefault("moeda", "BRL");
             
+            // Taxa de câmbio manual opcional
+            Double taxaCambioManual = null;
+            if (data.containsKey("taxaCambio")) {
+                Object taxaObj = data.get("taxaCambio");
+                if (taxaObj != null) {
+                    if (taxaObj instanceof Number) {
+                        taxaCambioManual = ((Number) taxaObj).doubleValue();
+                    } else if (taxaObj instanceof String) {
+                        String taxaStr = ((String) taxaObj).trim();
+                        if (!taxaStr.isEmpty() && !taxaStr.equalsIgnoreCase("null")) {
+                            try {
+                                taxaCambioManual = Double.parseDouble(taxaStr);
+                            } catch (NumberFormatException e) {
+                                // Ignora valores inválidos
+                            }
+                        }
+                    }
+                }
+            }
+            
             // Valida se a conta é do tipo "Investimento" e pertence ao usuário
             Conta conta = accountRepository.buscarConta(accountId);
             if (conta == null) {
@@ -355,7 +390,19 @@ public class InvestmentsHandler implements HttpHandler {
                 
                 // Converte para moeda do investimento se necessário
                 if (!moeda.equals(quote.currency)) {
-                    double exchangeRate = quoteService.getExchangeRate(quote.currency, moeda);
+                    double exchangeRate;
+                    // Usa taxa manual se fornecida, senão busca da API
+                    if (taxaCambioManual != null && taxaCambioManual > 0) {
+                        // Se a cotação está em outra moeda e queremos converter para BRL, usa a taxa manual
+                        if (moeda.equals("BRL")) {
+                            exchangeRate = taxaCambioManual;
+                        } else {
+                            // Para outras conversões, ainda usa a API
+                            exchangeRate = quoteService.getExchangeRate(quote.currency, moeda);
+                        }
+                    } else {
+                        exchangeRate = quoteService.getExchangeRate(quote.currency, moeda);
+                    }
                     precoAporte *= exchangeRate;
                 }
             }
@@ -438,7 +485,7 @@ public class InvestmentsHandler implements HttpHandler {
             int investmentId = investmentRepository.cadastrarInvestimento(nome, nomeAtivo, categoria, quantidade, 
                                                                   precoAporte, corretagem, corretoraFinal,
                                                                   dataAporte, userId, accountId, moeda,
-                                                                  tipoInvestimento, tipoRentabilidade, indice, percentualIndice, taxaFixa, dataVencimento);
+                                                                  tipoInvestimento, tipoRentabilidade, indice, percentualIndice, taxaFixa, dataVencimento, taxaCambioManual);
             
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);
@@ -502,6 +549,26 @@ public class InvestmentsHandler implements HttpHandler {
             LocalDate dataAporte = LocalDate.parse(dataAporteStr);
             String moeda = (String) data.getOrDefault("moeda", "BRL");
             
+            // Taxa de câmbio manual opcional
+            Double taxaCambioManual = null;
+            if (data.containsKey("taxaCambio")) {
+                Object taxaObj = data.get("taxaCambio");
+                if (taxaObj != null) {
+                    if (taxaObj instanceof Number) {
+                        taxaCambioManual = ((Number) taxaObj).doubleValue();
+                    } else if (taxaObj instanceof String) {
+                        String taxaStr = ((String) taxaObj).trim();
+                        if (!taxaStr.isEmpty() && !taxaStr.equalsIgnoreCase("null")) {
+                            try {
+                                taxaCambioManual = Double.parseDouble(taxaStr);
+                            } catch (NumberFormatException e) {
+                                // Ignora valores inválidos
+                            }
+                        }
+                    }
+                }
+            }
+            
             // Busca cotação se necessário
             double precoAporte = data.containsKey("precoAporte") ? 
                 ((Number) data.get("precoAporte")).doubleValue() : 0.0;
@@ -549,7 +616,7 @@ public class InvestmentsHandler implements HttpHandler {
             }
             
             investmentRepository.atualizarInvestimento(idInvestimento, nome, nomeAtivo, categoria, quantidade,
-                                                precoAporte, corretagem, corretora, dataAporte, moeda, accountId);
+                                                precoAporte, corretagem, corretora, dataAporte, moeda, accountId, taxaCambioManual);
             
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);

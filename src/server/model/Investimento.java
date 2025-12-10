@@ -25,6 +25,7 @@ public class Investimento implements Serializable {
     private Double percentualIndice;
     private Double taxaFixa;
     private LocalDate dataVencimento;
+    private Double taxaCambio; // Taxa de câmbio manual informada pelo usuário
     
     public Investimento(int idInvestimento, String nome, String categoria, double quantidade, 
                        double precoAporte, double corretagem, String corretora, 
@@ -119,6 +120,9 @@ public class Investimento implements Serializable {
     
     public LocalDate getDataVencimento() { return dataVencimento; }
     public void setDataVencimento(LocalDate dataVencimento) { this.dataVencimento = dataVencimento; }
+    
+    public Double getTaxaCambio() { return taxaCambio; }
+    public void setTaxaCambio(Double taxaCambio) { this.taxaCambio = taxaCambio; }
     
     @Override
     public String toString() {

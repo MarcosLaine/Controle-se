@@ -85,7 +85,7 @@ public class InvestmentRepository {
                                     double precoAporte, double corretagem, String corretora,
                                     LocalDate dataAporte, int idUsuario, int idConta, String moeda,
                                     String tipoInvestimento, String tipoRentabilidade, String indice, 
-                                    Double percentualIndice, Double taxaFixa, LocalDate dataVencimento) {
+                                    Double percentualIndice, Double taxaFixa, LocalDate dataVencimento, Double taxaCambio) {
         validateInput("Nome do investimento", nome, 50);
         validateId("ID do usuário", idUsuario);
         validateId("ID da conta", idConta);
@@ -105,8 +105,8 @@ public class InvestmentRepository {
             
             String sql = "INSERT INTO investimentos (nome, nome_ativo, categoria, quantidade, preco_aporte, " +
                         "corretagem, corretora, data_aporte, id_usuario, id_conta, moeda, tipo_investimento, " +
-                        "tipo_rentabilidade, indice, percentual_indice, taxa_fixa, data_vencimento, ativo) " +
-                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE) RETURNING id_investimento";
+                        "tipo_rentabilidade, indice, percentual_indice, taxa_fixa, data_vencimento, taxa_cambio, ativo) " +
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE) RETURNING id_investimento";
             
             int idInvestimento;
             try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
@@ -128,6 +128,7 @@ public class InvestmentRepository {
                 pstmt.setObject(15, percentualIndice);
                 pstmt.setObject(16, taxaFixa);
                 pstmt.setObject(17, dataVencimento != null ? java.sql.Date.valueOf(dataVencimento) : null);
+                pstmt.setObject(18, taxaCambio);
                 
                 ResultSet rs = pstmt.executeQuery();
                 if (!rs.next()) throw new RuntimeException("Erro ao cadastrar investimento");
@@ -151,7 +152,7 @@ public class InvestmentRepository {
     public int cadastrarInvestimento(String nome, String categoria, double quantidade, 
                                      double precoAporte, double corretagem, String corretora, 
                                      LocalDate dataAporte, int idUsuario, int idConta, String moeda) {
-        return cadastrarInvestimento(nome, null, categoria, quantidade, precoAporte, corretagem, corretora, dataAporte, idUsuario, idConta, moeda, null, null, null, null, null, null);
+        return cadastrarInvestimento(nome, null, categoria, quantidade, precoAporte, corretagem, corretora, dataAporte, idUsuario, idConta, moeda, null, null, null, null, null, null, null);
     }
 
     public Investimento buscarInvestimento(int idInvestimento) {
@@ -292,8 +293,8 @@ public class InvestmentRepository {
 
     public void atualizarInvestimento(int idInvestimento, String nome, String nomeAtivo, String categoria, 
                                       double quantidade, double precoAporte, double corretagem, 
-                                      String corretora, LocalDate dataAporte, String moeda, Integer accountId) {
-        String sql = "UPDATE investimentos SET nome = ?, nome_ativo = ?, categoria = ?, quantidade = ?, preco_aporte = ?, corretagem = ?, corretora = ?, data_aporte = ?, moeda = ?";
+                                      String corretora, LocalDate dataAporte, String moeda, Integer accountId, Double taxaCambio) {
+        String sql = "UPDATE investimentos SET nome = ?, nome_ativo = ?, categoria = ?, quantidade = ?, preco_aporte = ?, corretagem = ?, corretora = ?, data_aporte = ?, moeda = ?, taxa_cambio = ?";
         if (accountId != null && accountId > 0) {
             sql += ", id_conta = ?";
         }
@@ -312,6 +313,7 @@ public class InvestmentRepository {
                 pstmt.setString(paramIndex++, corretora);
                 pstmt.setDate(paramIndex++, java.sql.Date.valueOf(dataAporte));
                 pstmt.setString(paramIndex++, moeda);
+                pstmt.setObject(paramIndex++, taxaCambio);
                 if (accountId != null && accountId > 0) {
                     pstmt.setInt(paramIndex++, accountId);
                 }
@@ -483,6 +485,9 @@ public class InvestmentRepository {
             
             Object taxa = rs.getObject("taxa_fixa");
             if (taxa != null) inv.setTaxaFixa(((Number) taxa).doubleValue());
+            
+            Object taxaCambio = rs.getObject("taxa_cambio");
+            if (taxaCambio != null) inv.setTaxaCambio(((Number) taxaCambio).doubleValue());
             
             java.sql.Date venc = rs.getDate("data_vencimento");
             if (venc != null) inv.setDataVencimento(venc.toLocalDate());

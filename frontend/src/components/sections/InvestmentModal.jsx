@@ -26,7 +26,8 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
     brokerage: '0',
     accountId: '',
     currency: 'BRL',
-    price: ''
+    price: '',
+    exchangeRate: '' // Cotação manual opcional
   });
 
   // Fixed Income State
@@ -103,7 +104,8 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
         brokerage: inv.corretagem ? inv.corretagem.toString() : '0',
         accountId: inv.accountId ? inv.accountId.toString() : '',
         currency: inv.moeda || 'BRL',
-        price: inv.precoAporte ? inv.precoAporte.toString() : ''
+        price: inv.precoAporte ? inv.precoAporte.toString() : '',
+        exchangeRate: inv.taxaCambio ? inv.taxaCambio.toString() : ''
       });
     }
   };
@@ -195,7 +197,8 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
         quantity: quantity,
         brokerage: parseFloatBrazilian(variableForm.brokerage) || 0,
         accountId: parseIntBrazilian(variableForm.accountId),
-        userId: user.id
+        userId: user.id,
+        exchangeRate: variableForm.exchangeRate ? parseFloatBrazilian(variableForm.exchangeRate) : null
       };
       
       // Backend expects "nome" not "symbol"
@@ -210,6 +213,11 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
         moeda: data.currency || 'BRL',
         userId: data.userId
       };
+
+      // Adiciona taxa de câmbio manual se fornecida
+      if (data.exchangeRate && data.exchangeRate > 0) {
+        payload.taxaCambio = data.exchangeRate;
+      }
 
       if (manualPrice !== null) {
         payload.precoAporte = manualPrice;
@@ -373,7 +381,8 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
       brokerage: '0',
       accountId: '',
       currency: 'BRL',
-      price: ''
+      price: '',
+      exchangeRate: ''
     });
     setFixedForm({
       name: '',
@@ -554,7 +563,7 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
               <select
                 className="input"
                 value={variableForm.currency}
-                onChange={e => setVariableForm({...variableForm, currency: e.target.value})}
+                onChange={e => setVariableForm({...variableForm, currency: e.target.value, exchangeRate: ''})}
               >
                 <option value="BRL">{t('investments.currencies.BRL')}</option>
                 <option value="USD">{t('investments.currencies.USD')}</option>
@@ -562,6 +571,26 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
               </select>
             </div>
           </div>
+
+          {variableForm.currency !== 'BRL' && (
+            <div>
+              <label className="label">
+                {t('investments.manualExchangeRate')} ({t('common.optional')})
+              </label>
+              <input
+                type="number"
+                className="input"
+                step="0.0001"
+                min="0"
+                value={variableForm.exchangeRate}
+                onChange={e => setVariableForm({...variableForm, exchangeRate: e.target.value})}
+                placeholder={t('investments.manualExchangeRatePlaceholder', { currency: variableForm.currency })}
+              />
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                {t('investments.manualExchangeRateInfo', { currency: variableForm.currency })}
+              </p>
+            </div>
+          )}
 
           <div>
             <label className="label">{t('investments.investmentAccount')}</label>
