@@ -789,7 +789,13 @@ public class InvestmentEvolutionHandler implements HttpHandler {
             // Converte valorAporte para BRL se necessário (igual ao InvestmentsHandler)
             double valorAporteBRL = inv.getValorAporte();
             if (!"BRL".equals(inv.getMoeda())) {
-                double exchangeRate = quoteService.getExchangeRate(inv.getMoeda(), "BRL");
+                // Usa taxa de câmbio manual se disponível, senão busca da API
+                double exchangeRate;
+                if (inv.getTaxaCambio() != null && inv.getTaxaCambio() > 0) {
+                    exchangeRate = inv.getTaxaCambio();
+                } else {
+                    exchangeRate = quoteService.getExchangeRate(inv.getMoeda(), "BRL");
+                }
                 valorAporteBRL *= exchangeRate;
             }
             
