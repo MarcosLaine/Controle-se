@@ -222,6 +222,7 @@
     "price": "Price",
     "date": "Date",
     "brokerage": "Brokerage",
+    "brokerageCurrencyInfo": "Brokerage must be entered in {{currency}}",
     "account": "Account",
     "currency": "Currency",
     "investmentType": "Investment Type",

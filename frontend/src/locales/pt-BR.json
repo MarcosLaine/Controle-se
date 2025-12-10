@@ -233,6 +233,7 @@
     "price": "Preço",
     "date": "Data",
     "brokerage": "Corretagem",
+    "brokerageCurrencyInfo": "A corretagem deve ser informada em {{currency}}",
     "account": "Conta",
     "currency": "Moeda",
     "investmentType": "Tipo de Investimento",

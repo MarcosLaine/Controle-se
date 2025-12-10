@@ -138,11 +138,13 @@ public class InvestmentsHandler implements HttpHandler {
                     // Converte valor do aporte para BRL se o investimento foi registrado em outra moeda
                     double valorAporteBRL = inv.getValorAporte();
                     double precoAporteBRL = inv.getPrecoAporte();
+                    double corretagemBRL = inv.getCorretagem();
                 
                 if (!"BRL".equals(inv.getMoeda())) {
                     double exchangeRate = quoteService.getExchangeRate(inv.getMoeda(), "BRL");
                     valorAporteBRL *= exchangeRate;
                     precoAporteBRL *= exchangeRate;
+                    corretagemBRL *= exchangeRate;
                 }
                 
                 // Para renda fixa, calcula valor atual baseado nos índices
@@ -206,7 +208,7 @@ public class InvestmentsHandler implements HttpHandler {
                 invData.put("quantidade", inv.getQuantidade());
                 invData.put("precoAporte", precoAporteBRL);
                 invData.put("valorAporte", valorAporteBRL);
-                invData.put("corretagem", inv.getCorretagem());
+                invData.put("corretagem", corretagemBRL);
                 invData.put("corretora", inv.getCorretora());
                 invData.put("dataAporte", inv.getDataAporte().toString());
                 invData.put("moeda", inv.getMoeda());

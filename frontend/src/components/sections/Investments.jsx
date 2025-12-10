@@ -288,6 +288,16 @@ const buildEvolutionSeries = (transactions, startDate, endDate, t) => {
   };
 };
 
+// Mapeamento de cores consistente para todas as categorias
+const getCategoryColors = () => ({
+  'ACAO': { border: '#3b82f6', background: 'rgba(59, 130, 246, 0.1)', solid: '#3b82f6' },
+  'STOCK': { border: '#8b5cf6', background: 'rgba(139, 92, 246, 0.1)', solid: '#8b5cf6' },
+  'CRYPTO': { border: '#f59e0b', background: 'rgba(245, 158, 11, 0.1)', solid: '#f59e0b' },
+  'FII': { border: '#10b981', background: 'rgba(16, 185, 129, 0.1)', solid: '#10b981' },
+  'RENDA_FIXA': { border: '#06b6d4', background: 'rgba(6, 182, 212, 0.1)', solid: '#06b6d4' },
+  'OUTROS': { border: '#6b7280', background: 'rgba(107, 114, 128, 0.1)', solid: '#6b7280' }
+});
+
 const buildChartDataFromSeries = (series, t) => {
   if (!series || !series.labels || !series.current || !series.current.length) {
     return null;
@@ -303,14 +313,7 @@ const buildChartDataFromSeries = (series, t) => {
   };
 
   // Cores para cada categoria
-  const categoryColors = {
-    'ACAO': { border: '#3b82f6', background: 'rgba(59, 130, 246, 0.1)' },
-    'STOCK': { border: '#8b5cf6', background: 'rgba(139, 92, 246, 0.1)' },
-    'CRYPTO': { border: '#f59e0b', background: 'rgba(245, 158, 11, 0.1)' },
-    'FII': { border: '#10b981', background: 'rgba(16, 185, 129, 0.1)' },
-    'RENDA_FIXA': { border: '#06b6d4', background: 'rgba(6, 182, 212, 0.1)' },
-    'OUTROS': { border: '#6b7280', background: 'rgba(107, 114, 128, 0.1)' }
-  };
+  const categoryColors = getCategoryColors();
 
   const datasets = [
     {
@@ -782,6 +785,7 @@ const {
       if (catTotal > 0) {
           allocationData.push({
               category: categoryNames[cat] || cat,
+              categoryKey: cat, // Mantém a chave original para mapear cores
               value: catTotal
           });
       }
@@ -1526,9 +1530,11 @@ const {
                   labels: allocationData.map(d => d.category),
                   datasets: [{
                     data: allocationData.map(d => d.value),
-                    backgroundColor: [
-                      '#3b82f6', '#ef4444', '#fbbf24', '#10b981', '#8b5cf6', '#6b7280'
-                    ],
+                    backgroundColor: allocationData.map(d => {
+                      const categoryColors = getCategoryColors();
+                      const colors = categoryColors[d.categoryKey] || categoryColors['OUTROS'];
+                      return colors.solid;
+                    }),
                     borderWidth: 0
                   }]
                 }}

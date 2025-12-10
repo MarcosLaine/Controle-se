@@ -519,14 +519,22 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
             </div>
             <div>
               <label className="label">{t('investments.brokerage')}</label>
-              <input
-                type="number"
-                className="input"
-                step="0.01"
-                min="0"
-                value={variableForm.brokerage}
-                onChange={e => setVariableForm({...variableForm, brokerage: e.target.value})}
-              />
+              <div className="relative">
+                <input
+                  type="number"
+                  className="input pr-12"
+                  step="0.01"
+                  min="0"
+                  value={variableForm.brokerage}
+                  onChange={e => setVariableForm({...variableForm, brokerage: e.target.value})}
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-500 dark:text-gray-400 pointer-events-none">
+                  {variableForm.currency}
+                </span>
+              </div>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                {t('investments.brokerageCurrencyInfo', { currency: variableForm.currency })}
+              </p>
             </div>
           </div>
 
