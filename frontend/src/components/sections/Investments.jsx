@@ -98,10 +98,9 @@ const computeHoldingStats = (transactions = []) => {
     if (qty > 0) {
       // Para compras, usa valor convertido para BRL se disponível, senão usa original
       // Isso garante que todos os valores sejam comparáveis na mesma moeda
+      // Nota: valorAporte já inclui a corretagem, então não precisa somar novamente
       const valorAporte = trade.valorAporteBRL || trade.valorAporte || 0;
-      const corretagem = trade.corretagemBRL || trade.corretagem || 0;
-      const valorTotal = Math.abs(valorAporte) + corretagem;
-      const unitCost = qty !== 0 ? valorTotal / qty : 0;
+      const unitCost = qty !== 0 ? Math.abs(valorAporte) / Math.abs(qty) : 0;
       buyLayers.push({ qty, unitCost });
     } else {
       let remaining = Math.abs(qty);
