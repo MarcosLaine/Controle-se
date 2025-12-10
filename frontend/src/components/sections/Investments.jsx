@@ -31,6 +31,7 @@ import toast from 'react-hot-toast';
 import Spinner from '../common/Spinner';
 import * as XLSX from 'xlsx';
 import { useAuth } from '../../contexts/AuthContext';
+import { useData } from '../../contexts/DataContext';
 import { useLanguage } from '../../contexts/LanguageContext';
 import api from '../../services/api';
 import { formatCurrency, formatDate, parseFloatBrazilian } from '../../utils/formatters';
@@ -381,6 +382,7 @@ const buildChartDataFromSeries = (series, t) => {
 
 export default function Investments() {
   const { user } = useAuth();
+  const { fetchAccounts } = useData();
   const { t } = useLanguage();
   const [investments, setInvestments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -476,8 +478,10 @@ export default function Investments() {
 
   useEffect(() => {
     if (user) {
-      loadInvestments();
-      loadAccounts();
+      // Carrega investimentos e contas em paralelo para melhor performance
+      Promise.all([loadInvestments(), loadAccounts()]).catch(error => {
+        console.error('Erro ao carregar dados iniciais:', error);
+      });
     }
   }, [user]);
 
@@ -546,10 +550,12 @@ export default function Investments() {
 
   const loadAccounts = async () => {
     try {
-      const response = await api.get(`/accounts?userId=${user.id}`);
-      if (response.success) {
-        setAccounts(response.data || []);
-      }
+      // Usa cache do DataContext
+      const accountsData = await fetchAccounts(user.id).catch(err => {
+        console.error('Erro ao carregar contas:', err);
+        return [];
+      });
+      setAccounts(accountsData || []);
     } catch (error) {
       console.error('Erro ao carregar contas:', error);
     }

@@ -1,0 +1,79 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e4]:
+  - banner [ref=e5]:
+    - generic [ref=e6]:
+      - generic [ref=e7]:
+        - img [ref=e9]
+        - heading "Controle-se" [level=1] [ref=e13]
+      - generic [ref=e14]:
+        - button "Select language" [ref=e16] [cursor=pointer]:
+          - img [ref=e17]
+        - button "Toggle theme" [ref=e20] [cursor=pointer]:
+          - img [ref=e21]
+        - button "Usuário Teste 1765398188409-ebe4" [ref=e23] [cursor=pointer]:
+          - img [ref=e25]
+          - generic [ref=e28]: Usuário Teste 1765398188409-ebe4
+        - button "Logout" [ref=e29] [cursor=pointer]:
+          - img [ref=e30]
+  - generic [ref=e33]:
+    - complementary [ref=e34]:
+      - navigation [ref=e35]:
+        - button "Overview" [ref=e36] [cursor=pointer]:
+          - img [ref=e37]
+          - generic [ref=e42]: Overview
+        - button "Transactions" [ref=e43] [cursor=pointer]:
+          - img [ref=e44]
+          - generic [ref=e47]: Transactions
+        - button "Investments" [ref=e48] [cursor=pointer]:
+          - img [ref=e49]
+          - generic [ref=e52]: Investments
+        - button "Categories and Tags" [ref=e53] [cursor=pointer]:
+          - img [ref=e54]
+          - generic [ref=e56]: Categories and Tags
+        - button "Accounts" [ref=e57] [cursor=pointer]:
+          - img [ref=e58]
+          - generic [ref=e62]: Accounts
+        - button "Reports" [ref=e63] [cursor=pointer]:
+          - img [ref=e64]
+          - generic [ref=e67]: Reports
+        - button "Tools" [ref=e68] [cursor=pointer]:
+          - img [ref=e69]
+          - generic [ref=e71]: Tools
+    - main [ref=e72]:
+      - generic [ref=e74]:
+        - generic [ref=e75]:
+          - generic [ref=e76]:
+            - heading "Accounts" [level=2] [ref=e77]
+            - paragraph [ref=e78]: Manage your bank accounts
+          - button "New Account" [active] [ref=e79] [cursor=pointer]:
+            - img [ref=e80]
+            - text: New Account
+        - generic [ref=e81]:
+          - img [ref=e82]
+          - paragraph [ref=e86]: No accounts registered
+        - generic [ref=e88]:
+          - generic [ref=e89]:
+            - heading "Add Account" [level=3] [ref=e90]
+            - button [ref=e91] [cursor=pointer]:
+              - img [ref=e92]
+          - generic [ref=e96]:
+            - generic [ref=e97]:
+              - generic [ref=e98]: Account Name
+              - 'textbox "Ex: Itaú, Caixa, Binance, Avenue..." [ref=e99]'
+            - generic [ref=e100]:
+              - generic [ref=e101]: Account Type
+              - combobox [ref=e102]:
+                - option "Checking" [selected]
+                - option "Savings"
+                - option "Investment (Brokerage)"
+                - option "Cash"
+                - option "Credit Card"
+            - generic [ref=e103]:
+              - generic [ref=e104]: Initial Balance
+              - textbox "0,00" [ref=e105]
+            - generic [ref=e106]:
+              - button "Cancel" [ref=e107] [cursor=pointer]
+              - button "Create" [ref=e108] [cursor=pointer]
+```

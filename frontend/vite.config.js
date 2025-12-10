@@ -121,9 +121,31 @@ export default defineConfig({
     sourcemap: false,
     rollupOptions: {
       output: {
-        manualChunks: {
-          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
-          'chart-vendor': ['chart.js', 'react-chartjs-2'],
+        manualChunks: (id) => {
+          // React e dependências relacionadas
+          if (id.includes('react') || id.includes('react-dom') || id.includes('react-router')) {
+            return 'react-vendor';
+          }
+          // Chart.js e dependências relacionadas
+          if (id.includes('chart.js') || id.includes('react-chartjs-2')) {
+            return 'chart-vendor';
+          }
+          // Bibliotecas de PDF/Excel (carregadas sob demanda)
+          if (id.includes('jspdf') || id.includes('xlsx')) {
+            return 'export-vendor';
+          }
+          // Outras bibliotecas de UI
+          if (id.includes('lucide-react')) {
+            return 'icons-vendor';
+          }
+          // date-fns
+          if (id.includes('date-fns')) {
+            return 'date-vendor';
+          }
+          // node_modules restantes
+          if (id.includes('node_modules')) {
+            return 'vendor';
+          }
         }
       }
     }

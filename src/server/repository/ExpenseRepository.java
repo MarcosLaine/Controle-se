@@ -228,18 +228,28 @@ public class ExpenseRepository {
                     "proxima_recorrencia, id_gasto_original, ativo, data_entrada_fatura " +
                     "FROM gastos WHERE id_usuario = ? AND ativo = TRUE ORDER BY data DESC";
         List<Gasto> gastos = new ArrayList<>();
+        List<Integer> idsGastos = new ArrayList<>();
         try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setInt(1, idUsuario);
             ResultSet rs = pstmt.executeQuery();
             while (rs.next()) {
                 Gasto gasto = mapGasto(rs);
-                gasto.setObservacoes(buscarObservacoesGasto(gasto.getIdGasto()));
+                idsGastos.add(gasto.getIdGasto());
                 gastos.add(gasto);
             }
         } catch (SQLException e) {
             throw new RuntimeException("Erro ao buscar gastos: " + e.getMessage(), e);
         }
+        
+        // Busca observações em lote para evitar N+1 queries
+        if (!idsGastos.isEmpty()) {
+            Map<Integer, String[]> observacoesMap = buscarObservacoesDeGastos(idsGastos);
+            for (Gasto gasto : gastos) {
+                gasto.setObservacoes(observacoesMap.getOrDefault(gasto.getIdGasto(), new String[0]));
+            }
+        }
+        
         return gastos;
     }
 
@@ -516,6 +526,7 @@ public class ExpenseRepository {
         params.add(offset);
         
         List<Gasto> gastos = new ArrayList<>();
+        List<Integer> idsGastos = new ArrayList<>();
         try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql.toString())) {
             int paramIndex = 1;
@@ -530,12 +541,21 @@ public class ExpenseRepository {
             ResultSet rs = pstmt.executeQuery();
             while (rs.next()) {
                 Gasto gasto = mapGasto(rs);
-                gasto.setObservacoes(buscarObservacoesGasto(gasto.getIdGasto()));
+                idsGastos.add(gasto.getIdGasto());
                 gastos.add(gasto);
             }
         } catch (SQLException e) {
             throw new RuntimeException("Erro ao buscar gastos com filtros: " + e.getMessage(), e);
         }
+        
+        // Busca observações em lote para evitar N+1 queries
+        if (!idsGastos.isEmpty()) {
+            Map<Integer, String[]> observacoesMap = buscarObservacoesDeGastos(idsGastos);
+            for (Gasto gasto : gastos) {
+                gasto.setObservacoes(observacoesMap.getOrDefault(gasto.getIdGasto(), new String[0]));
+            }
+        }
+        
         return gastos;
     }
 
@@ -885,18 +905,28 @@ public class ExpenseRepository {
                     "AND proxima_recorrencia <= ? " +
                     "AND ativo = TRUE";
         List<Gasto> gastos = new ArrayList<>();
+        List<Integer> idsGastos = new ArrayList<>();
         try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setDate(1, java.sql.Date.valueOf(hoje));
             ResultSet rs = pstmt.executeQuery();
             while (rs.next()) {
                 Gasto gasto = mapGasto(rs);
-                gasto.setObservacoes(buscarObservacoesGasto(gasto.getIdGasto()));
+                idsGastos.add(gasto.getIdGasto());
                 gastos.add(gasto);
             }
         } catch (SQLException e) {
             throw new RuntimeException("Erro ao buscar gastos recorrentes: " + e.getMessage(), e);
         }
+        
+        // Busca observações em lote para evitar N+1 queries
+        if (!idsGastos.isEmpty()) {
+            Map<Integer, String[]> observacoesMap = buscarObservacoesDeGastos(idsGastos);
+            for (Gasto gasto : gastos) {
+                gasto.setObservacoes(observacoesMap.getOrDefault(gasto.getIdGasto(), new String[0]));
+            }
+        }
+        
         return gastos;
     }
 
@@ -979,18 +1009,28 @@ public class ExpenseRepository {
                     "WHERE id_grupo_parcela = ? AND ativo = TRUE " +
                     "ORDER BY numero_parcela ASC";
         List<Gasto> gastos = new ArrayList<>();
+        List<Integer> idsGastos = new ArrayList<>();
         try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setInt(1, idGrupoParcela);
             ResultSet rs = pstmt.executeQuery();
             while (rs.next()) {
                 Gasto gasto = mapGasto(rs);
-                gasto.setObservacoes(buscarObservacoesGasto(gasto.getIdGasto()));
+                idsGastos.add(gasto.getIdGasto());
                 gastos.add(gasto);
             }
         } catch (SQLException e) {
             throw new RuntimeException("Erro ao buscar gastos do grupo de parcelas: " + e.getMessage(), e);
         }
+        
+        // Busca observações em lote para evitar N+1 queries
+        if (!idsGastos.isEmpty()) {
+            Map<Integer, String[]> observacoesMap = buscarObservacoesDeGastos(idsGastos);
+            for (Gasto gasto : gastos) {
+                gasto.setObservacoes(observacoesMap.getOrDefault(gasto.getIdGasto(), new String[0]));
+            }
+        }
+        
         return gastos;
     }
     

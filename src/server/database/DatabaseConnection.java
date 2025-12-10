@@ -72,9 +72,10 @@ public class DatabaseConnection {
         config.setUsername(username);
         config.setPassword(password);
         
-        // Optimizations for limited resources (e.g. free tier database)
-        config.setMaximumPoolSize(5);
-        config.setMinimumIdle(2);
+        // Optimizations for better performance
+        // Aumentado de 5 para 12 para melhor throughput sob carga
+        config.setMaximumPoolSize(12);
+        config.setMinimumIdle(4);
         
         // Timeouts ajustados para evitar conexões quebradas
         // maxLifetime deve ser menor que qualquer timeout do servidor PostgreSQL

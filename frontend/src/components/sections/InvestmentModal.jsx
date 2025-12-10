@@ -2,6 +2,7 @@ import { Info } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../contexts/AuthContext';
+import { useData } from '../../contexts/DataContext';
 import { useLanguage } from '../../contexts/LanguageContext';
 import api from '../../services/api';
 import Modal from '../common/Modal';
@@ -10,6 +11,7 @@ import Spinner from '../common/Spinner';
 
 export default function InvestmentModal({ isOpen, onClose, onSuccess, investmentToEdit }) {
   const { user } = useAuth();
+  const { fetchAccounts } = useData();
   const { t } = useLanguage();
   const [mode, setMode] = useState('VARIABLE'); // VARIABLE or FIXED
   const [accounts, setAccounts] = useState([]);
@@ -112,18 +114,21 @@ export default function InvestmentModal({ isOpen, onClose, onSuccess, investment
 
   const loadAccounts = async () => {
     try {
-      const response = await api.get(`/accounts?userId=${user.id}`);
-      if (response.success) {
-        // Filter only investment accounts (including variations like "Investimento (Corretora)")
-        const investmentAccounts = response.data.filter(
-          acc => acc.tipo && acc.tipo.toLowerCase().includes('investimento')
-        );
-        setAccounts(investmentAccounts);
-        
-        if (investmentAccounts.length === 0) {
-          toast.error(t('investments.needInvestmentAccount'));
-          onClose();
-        }
+      // Usa cache do DataContext
+      const accountsData = await fetchAccounts(user.id).catch(err => {
+        console.error(t('investments.errorLoadingAccounts'), err);
+        toast.error(t('investments.errorLoadingAccounts'));
+        return [];
+      });
+      // Filter only investment accounts (including variations like "Investimento (Corretora)")
+      const investmentAccounts = (accountsData || []).filter(
+        acc => acc.tipo && acc.tipo.toLowerCase().includes('investimento')
+      );
+      setAccounts(investmentAccounts);
+      
+      if (investmentAccounts.length === 0 && accountsData && accountsData.length > 0) {
+        toast.error(t('investments.needInvestmentAccount'));
+        onClose();
       }
     } catch (error) {
       console.error(t('investments.errorLoadingAccounts'), error);

@@ -2,6 +2,7 @@ import { Building2, Edit, Plus, Trash2 } from 'lucide-react';
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../contexts/AuthContext';
+import { useData } from '../../contexts/DataContext';
 import { useLanguage } from '../../contexts/LanguageContext';
 import api from '../../services/api';
 import axios from 'axios';
@@ -12,6 +13,7 @@ import Spinner from '../common/Spinner';
 
 export default function Accounts() {
   const { user } = useAuth();
+  const { fetchAccounts } = useData();
   const { t } = useLanguage();
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -66,8 +68,10 @@ export default function Accounts() {
     
     setLoading(true);
     try {
-      const response = await api.get(`/accounts?userId=${user.id}`, {
-        signal: abortController.signal
+      // Usa cache do DataContext
+      const accountsData = await fetchAccounts(user.id).catch(err => {
+        console.error('Erro ao carregar contas:', err);
+        return [];
       });
       
       // Verifica se a requisição foi cancelada antes de processar a resposta
@@ -75,9 +79,7 @@ export default function Accounts() {
         return;
       }
       
-      if (response.success) {
-        setAccounts(response.data || []);
-      }
+      setAccounts(accountsData || []);
     } catch (error) {
       // Ignora erros de cancelamento
       if (axios.isCancel && axios.isCancel(error)) {

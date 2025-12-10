@@ -3,14 +3,35 @@ package server.utils;
 import com.sun.net.httpserver.*;
 import java.io.*;
 import java.util.*;
+import java.util.zip.GZIPOutputStream;
 
 /**
  * Utilitários para manipulação de respostas HTTP
  */
 public class ResponseUtil {
+    private static final int MIN_SIZE_FOR_COMPRESSION = 1024; // 1KB
     
     /**
-     * Envia uma resposta JSON de sucesso
+     * Verifica se o cliente aceita compressão GZIP
+     */
+    private static boolean acceptsGzip(HttpExchange exchange) {
+        String acceptEncoding = exchange.getRequestHeaders().getFirst("Accept-Encoding");
+        return acceptEncoding != null && acceptEncoding.contains("gzip");
+    }
+    
+    /**
+     * Comprime dados usando GZIP
+     */
+    private static byte[] compressGzip(byte[] data) throws IOException {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        try (GZIPOutputStream gzos = new GZIPOutputStream(baos)) {
+            gzos.write(data);
+        }
+        return baos.toByteArray();
+    }
+    
+    /**
+     * Envia uma resposta JSON de sucesso com compressão opcional
      */
     public static void sendJsonResponse(HttpExchange exchange, int statusCode, Object data) throws IOException {
         String jsonResponse;
@@ -25,19 +46,31 @@ public class ResponseUtil {
             jsonResponse = JsonUtil.toJson(response);
         }
         
-        exchange.getResponseHeaders().set("Content-Type", "application/json");
+        byte[] responseBytes = jsonResponse.getBytes("UTF-8");
+        boolean shouldCompress = acceptsGzip(exchange) && responseBytes.length >= MIN_SIZE_FOR_COMPRESSION;
+        
+        exchange.getResponseHeaders().set("Content-Type", "application/json; charset=UTF-8");
         exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
         exchange.getResponseHeaders().set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
         exchange.getResponseHeaders().set("Access-Control-Allow-Headers", "Content-Type, Authorization");
         
-        exchange.sendResponseHeaders(statusCode, jsonResponse.getBytes().length);
-        try (OutputStream os = exchange.getResponseBody()) {
-            os.write(jsonResponse.getBytes());
+        if (shouldCompress) {
+            byte[] compressed = compressGzip(responseBytes);
+            exchange.getResponseHeaders().set("Content-Encoding", "gzip");
+            exchange.sendResponseHeaders(statusCode, compressed.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(compressed);
+            }
+        } else {
+            exchange.sendResponseHeaders(statusCode, responseBytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(responseBytes);
+            }
         }
     }
     
     /**
-     * Envia uma resposta de erro
+     * Envia uma resposta de erro com compressão opcional
      */
     public static void sendErrorResponse(HttpExchange exchange, int statusCode, String message) throws IOException {
         Map<String, Object> response = new HashMap<>();
@@ -45,12 +78,24 @@ public class ResponseUtil {
         response.put("message", message);
         String jsonResponse = JsonUtil.toJson(response);
         
-        exchange.getResponseHeaders().set("Content-Type", "application/json");
+        byte[] responseBytes = jsonResponse.getBytes("UTF-8");
+        boolean shouldCompress = acceptsGzip(exchange) && responseBytes.length >= MIN_SIZE_FOR_COMPRESSION;
+        
+        exchange.getResponseHeaders().set("Content-Type", "application/json; charset=UTF-8");
         exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
         
-        exchange.sendResponseHeaders(statusCode, jsonResponse.getBytes().length);
-        try (OutputStream os = exchange.getResponseBody()) {
-            os.write(jsonResponse.getBytes());
+        if (shouldCompress) {
+            byte[] compressed = compressGzip(responseBytes);
+            exchange.getResponseHeaders().set("Content-Encoding", "gzip");
+            exchange.sendResponseHeaders(statusCode, compressed.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(compressed);
+            }
+        } else {
+            exchange.sendResponseHeaders(statusCode, responseBytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(responseBytes);
+            }
         }
     }
 }

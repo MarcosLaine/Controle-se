@@ -14,7 +14,7 @@ import ImportTransactionsModal from './ImportTransactionsModal';
 
 export default function Transactions() {
   const { user } = useAuth();
-  const { invalidateCache } = useData();
+  const { invalidateCache, fetchCategories, fetchAccounts, fetchTags, getCategories, getAccounts, getTags } = useData();
   const { t } = useLanguage();
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -88,11 +88,21 @@ export default function Transactions() {
         transactionsUrl += `&type=${filters.type}`;
       }
 
-      const [transRes, catRes, accRes, tagRes] = await Promise.all([
+      // Usa cache do DataContext para categories, accounts e tags
+      const [transRes, catData, accData, tagData] = await Promise.all([
         api.get(transactionsUrl, { signal: abortController.signal }),
-        api.get(`/categories?userId=${user.id}`, { signal: abortController.signal }),
-        api.get(`/accounts?userId=${user.id}`, { signal: abortController.signal }),
-        api.get(`/tags?userId=${user.id}`, { signal: abortController.signal }),
+        fetchCategories(user.id).catch(err => {
+          console.error('Erro ao carregar categorias:', err);
+          return [];
+        }),
+        fetchAccounts(user.id).catch(err => {
+          console.error('Erro ao carregar contas:', err);
+          return [];
+        }),
+        fetchTags(user.id).catch(err => {
+          console.error('Erro ao carregar tags:', err);
+          return [];
+        }),
       ]);
 
       // Verifica se a requisição foi cancelada antes de processar a resposta
@@ -137,9 +147,9 @@ export default function Transactions() {
           setOffset(prev => prev + 12);
         }
       }
-      if (catRes.success) setCategories(catRes.data || []);
-      if (accRes.success) setAccounts(accRes.data || []);
-      if (tagRes.success) setTags(tagRes.data || []);
+      setCategories(catData || []);
+      setAccounts(accData || []);
+      setTags(tagData || []);
     } catch (error) {
       // Ignora erros de cancelamento - não atualiza o estado se foi cancelado
       if (axios.isCancel && axios.isCancel(error)) {

@@ -10,6 +10,9 @@ import server.services.QuoteService;
 import java.io.IOException;
 import java.time.LocalDate;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.stream.Collectors;
 
 public class OverviewHandler implements HttpHandler {
     private final ExpenseRepository expenseRepository;
@@ -81,49 +84,77 @@ public class OverviewHandler implements HttpHandler {
             Map<String, Object> cartoesInfo = null;
             Double valorFaturaAPagar = null;
             if (!contasCartao.isEmpty()) {
+                // Paraleliza cálculos de faturas para melhor performance
+                List<CompletableFuture<Map<String, Object>>> faturaFutures = contasCartao.stream()
+                    .map(cartao -> CompletableFuture.supplyAsync(() -> {
+                        try {
+                            Map<String, Object> faturaInfo = CreditCardUtil.calcularInfoFatura(cartao.getDiaFechamento(), cartao.getDiaPagamento());
+                            long diasAtePagamento = (Long) faturaInfo.get("diasAtePagamento");
+                            long diasAteFechamento = (Long) faturaInfo.get("diasAteFechamento");
+                            
+                            // Calcula o valor da fatura a pagar para este cartão
+                            LocalDate ultimoFechamento = LocalDate.parse((String) faturaInfo.get("ultimoFechamento"));
+                            LocalDate proximoFechamento = LocalDate.parse((String) faturaInfo.get("proximoFechamento"));
+                            LocalDate proximoPagamento = LocalDate.parse((String) faturaInfo.get("proximoPagamento"));
+                            
+                            double valorFaturaAtual = expenseRepository.calcularValorFaturaAtual(
+                                cartao.getIdConta(), 
+                                userId,
+                                ultimoFechamento, 
+                                proximoFechamento
+                            );
+                            
+                            // Pagamentos são contados até a data de pagamento, não até o fechamento
+                            double totalJaPago = incomeRepository.calcularTotalPagoFatura(
+                                userId, 
+                                cartao.getIdConta(), 
+                                ultimoFechamento, 
+                                proximoPagamento,
+                                expenseRepository
+                            );
+                            
+                            double valorAPagar = valorFaturaAtual - totalJaPago;
+                            if (valorAPagar < 0) {
+                                valorAPagar = 0;
+                            }
+                            
+                            Map<String, Object> result = new HashMap<>();
+                            result.put("diasAteFechamento", diasAteFechamento);
+                            result.put("diasAtePagamento", diasAtePagamento);
+                            result.put("proximoPagamento", proximoPagamento);
+                            result.put("proximoFechamento", proximoFechamento);
+                            result.put("valorAPagar", valorAPagar);
+                            
+                            return result;
+                        } catch (Exception e) {
+                            // Em caso de erro, retorna null para ser ignorado
+                            return null;
+                        }
+                    }))
+                    .collect(Collectors.toList());
+                
+                // Aguarda todas as futures e processa resultados
                 LocalDate proximoPagamentoMaisProximo = null;
                 LocalDate proximoFechamentoMaisProximo = null;
                 long menorDiasAtePagamento = Long.MAX_VALUE;
                 long menorDiasAteFechamento = Long.MAX_VALUE;
                 
-                for (Conta cartao : contasCartao) {
-                    Map<String, Object> faturaInfo = CreditCardUtil.calcularInfoFatura(cartao.getDiaFechamento(), cartao.getDiaPagamento());
-                    long diasAtePagamento = (Long) faturaInfo.get("diasAtePagamento");
-                    long diasAteFechamento = (Long) faturaInfo.get("diasAteFechamento");
-                    
-                    // Calcula o valor da fatura a pagar para este cartão
-                    LocalDate ultimoFechamento = LocalDate.parse((String) faturaInfo.get("ultimoFechamento"));
-                    LocalDate proximoFechamento = LocalDate.parse((String) faturaInfo.get("proximoFechamento"));
-                    LocalDate proximoPagamento = LocalDate.parse((String) faturaInfo.get("proximoPagamento"));
-                    
-                    double valorFaturaAtual = expenseRepository.calcularValorFaturaAtual(
-                        cartao.getIdConta(), 
-                        userId,
-                        ultimoFechamento, 
-                        proximoFechamento
-                    );
-                    
-                    // Pagamentos são contados até a data de pagamento, não até o fechamento
-                    double totalJaPago = incomeRepository.calcularTotalPagoFatura(
-                        userId, 
-                        cartao.getIdConta(), 
-                        ultimoFechamento, 
-                        proximoPagamento,
-                        expenseRepository
-                    );
-                    
-                    double valorAPagar = valorFaturaAtual - totalJaPago;
-                    if (valorAPagar < 0) {
-                        valorAPagar = 0;
-                    }
-                    
-                    // Encontra a fatura mais próxima do fechamento (menor diasAteFechamento)
-                    if (diasAteFechamento < menorDiasAteFechamento) {
-                        menorDiasAteFechamento = diasAteFechamento;
-                        menorDiasAtePagamento = diasAtePagamento;
-                        proximoPagamentoMaisProximo = LocalDate.parse((String) faturaInfo.get("proximoPagamento"));
-                        proximoFechamentoMaisProximo = LocalDate.parse((String) faturaInfo.get("proximoFechamento"));
-                        valorFaturaAPagar = valorAPagar;
+                for (CompletableFuture<Map<String, Object>> future : faturaFutures) {
+                    try {
+                        Map<String, Object> result = future.get();
+                        if (result != null) {
+                            long diasAteFechamento = (Long) result.get("diasAteFechamento");
+                            if (diasAteFechamento < menorDiasAteFechamento) {
+                                menorDiasAteFechamento = diasAteFechamento;
+                                menorDiasAtePagamento = (Long) result.get("diasAtePagamento");
+                                proximoPagamentoMaisProximo = (LocalDate) result.get("proximoPagamento");
+                                proximoFechamentoMaisProximo = (LocalDate) result.get("proximoFechamento");
+                                valorFaturaAPagar = (Double) result.get("valorAPagar");
+                            }
+                        }
+                    } catch (InterruptedException | ExecutionException e) {
+                        // Ignora erros e continua processando outras faturas
+                        Thread.currentThread().interrupt();
                     }
                 }
                 
@@ -147,19 +178,37 @@ public class OverviewHandler implements HttpHandler {
                 if (!investments.isEmpty()) {
                     QuoteService quoteService = QuoteService.getInstance();
                     
-                    for (Investimento inv : investments) {
-                        QuoteService.QuoteResult quote = quoteService.getQuote(inv.getNome(), inv.getCategoria(), null);
-                        double currentPrice = quote != null && quote.success ? quote.price : inv.getPrecoAporte();
-                        
-                        if (quote != null && quote.success && !"BRL".equals(quote.currency)) {
-                            double exchangeRate = quoteService.getExchangeRate(quote.currency, "BRL");
-                            currentPrice *= exchangeRate;
-                        } else if (!"BRL".equals(inv.getMoeda())) {
-                            double exchangeRate = quoteService.getExchangeRate(inv.getMoeda(), "BRL");
-                            currentPrice *= exchangeRate;
+                    // Paraleliza buscas de cotações para melhor performance
+                    List<CompletableFuture<Double>> quoteFutures = investments.stream()
+                        .map(inv -> CompletableFuture.supplyAsync(() -> {
+                            try {
+                                QuoteService.QuoteResult quote = quoteService.getQuote(inv.getNome(), inv.getCategoria(), null);
+                                double currentPrice = quote != null && quote.success ? quote.price : inv.getPrecoAporte();
+                                
+                                if (quote != null && quote.success && !"BRL".equals(quote.currency)) {
+                                    double exchangeRate = quoteService.getExchangeRate(quote.currency, "BRL");
+                                    currentPrice *= exchangeRate;
+                                } else if (!"BRL".equals(inv.getMoeda())) {
+                                    double exchangeRate = quoteService.getExchangeRate(inv.getMoeda(), "BRL");
+                                    currentPrice *= exchangeRate;
+                                }
+                                
+                                return inv.getQuantidade() * currentPrice;
+                            } catch (Exception e) {
+                                // Em caso de erro, usa preço de aporte como fallback
+                                return inv.getQuantidade() * inv.getPrecoAporte();
+                            }
+                        }))
+                        .collect(Collectors.toList());
+                    
+                    // Aguarda todas as futures e soma os valores
+                    for (CompletableFuture<Double> future : quoteFutures) {
+                        try {
+                            totalInvestmentsValue += future.get();
+                        } catch (InterruptedException | ExecutionException e) {
+                            // Em caso de erro, ignora este investimento
+                            Thread.currentThread().interrupt();
                         }
-                        
-                        totalInvestmentsValue += inv.getQuantidade() * currentPrice;
                     }
                 }
                 

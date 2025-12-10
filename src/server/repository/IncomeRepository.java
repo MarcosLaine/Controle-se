@@ -236,18 +236,28 @@ public class IncomeRepository {
                     "AND descricao NOT LIKE '[SISTEMA]%' " +
                     "ORDER BY data DESC";
         List<Receita> receitas = new ArrayList<>();
+        List<Integer> idsReceitas = new ArrayList<>();
         try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setInt(1, idUsuario);
             ResultSet rs = pstmt.executeQuery();
             while (rs.next()) {
                 Receita receita = mapReceita(rs);
-                receita.setObservacoes(buscarObservacoesReceita(receita.getIdReceita()));
+                idsReceitas.add(receita.getIdReceita());
                 receitas.add(receita);
             }
         } catch (SQLException e) {
             throw new RuntimeException("Erro ao buscar receitas: " + e.getMessage(), e);
         }
+        
+        // Busca observações em lote para evitar N+1 queries
+        if (!idsReceitas.isEmpty()) {
+            Map<Integer, String[]> observacoesMap = buscarObservacoesDeReceitas(idsReceitas);
+            for (Receita receita : receitas) {
+                receita.setObservacoes(observacoesMap.getOrDefault(receita.getIdReceita(), new String[0]));
+            }
+        }
+        
         return receitas;
     }
 
@@ -346,6 +356,7 @@ public class IncomeRepository {
         sql.append(" LIMIT ? OFFSET ?");
         
         List<Receita> receitas = new ArrayList<>();
+        List<Integer> idsReceitas = new ArrayList<>();
         try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql.toString())) {
             int paramIndex = 1;
@@ -363,12 +374,21 @@ public class IncomeRepository {
             ResultSet rs = pstmt.executeQuery();
             while (rs.next()) {
                 Receita receita = mapReceita(rs);
-                receita.setObservacoes(buscarObservacoesReceita(receita.getIdReceita()));
+                idsReceitas.add(receita.getIdReceita());
                 receitas.add(receita);
             }
         } catch (SQLException e) {
             throw new RuntimeException("Erro ao buscar receitas com filtros: " + e.getMessage(), e);
         }
+        
+        // Busca observações em lote para evitar N+1 queries
+        if (!idsReceitas.isEmpty()) {
+            Map<Integer, String[]> observacoesMap = buscarObservacoesDeReceitas(idsReceitas);
+            for (Receita receita : receitas) {
+                receita.setObservacoes(observacoesMap.getOrDefault(receita.getIdReceita(), new String[0]));
+            }
+        }
+        
         return receitas;
     }
 
@@ -552,18 +572,28 @@ public class IncomeRepository {
                     "AND proxima_recorrencia <= ? " +
                     "AND ativo = TRUE";
         List<Receita> receitas = new ArrayList<>();
+        List<Integer> idsReceitas = new ArrayList<>();
         try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setDate(1, java.sql.Date.valueOf(hoje));
             ResultSet rs = pstmt.executeQuery();
             while (rs.next()) {
                 Receita receita = mapReceita(rs);
-                receita.setObservacoes(buscarObservacoesReceita(receita.getIdReceita()));
+                idsReceitas.add(receita.getIdReceita());
                 receitas.add(receita);
             }
         } catch (SQLException e) {
             throw new RuntimeException("Erro ao buscar receitas recorrentes: " + e.getMessage(), e);
         }
+        
+        // Busca observações em lote para evitar N+1 queries
+        if (!idsReceitas.isEmpty()) {
+            Map<Integer, String[]> observacoesMap = buscarObservacoesDeReceitas(idsReceitas);
+            for (Receita receita : receitas) {
+                receita.setObservacoes(observacoesMap.getOrDefault(receita.getIdReceita(), new String[0]));
+            }
+        }
+        
         return receitas;
     }
 
@@ -648,18 +678,28 @@ public class IncomeRepository {
                     "WHERE id_grupo_parcela = ? AND ativo = TRUE " +
                     "ORDER BY numero_parcela ASC";
         List<Receita> receitas = new ArrayList<>();
+        List<Integer> idsReceitas = new ArrayList<>();
         try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setInt(1, idGrupoParcela);
             ResultSet rs = pstmt.executeQuery();
             while (rs.next()) {
                 Receita receita = mapReceita(rs);
-                receita.setObservacoes(buscarObservacoesReceita(receita.getIdReceita()));
+                idsReceitas.add(receita.getIdReceita());
                 receitas.add(receita);
             }
         } catch (SQLException e) {
             throw new RuntimeException("Erro ao buscar receitas do grupo de parcelas: " + e.getMessage(), e);
         }
+        
+        // Busca observações em lote para evitar N+1 queries
+        if (!idsReceitas.isEmpty()) {
+            Map<Integer, String[]> observacoesMap = buscarObservacoesDeReceitas(idsReceitas);
+            for (Receita receita : receitas) {
+                receita.setObservacoes(observacoesMap.getOrDefault(receita.getIdReceita(), new String[0]));
+            }
+        }
+        
         return receitas;
     }
     

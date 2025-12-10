@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Plus, Edit, Trash2, Tag, TrendingUp, Info } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useData } from '../../contexts/DataContext';
 import { useLanguage } from '../../contexts/LanguageContext';
 import api from '../../services/api';
 import axios from 'axios';
@@ -12,6 +13,7 @@ import Spinner from '../common/Spinner';
 
 export default function CategoriesAndTags() {
   const { user } = useAuth();
+  const { fetchCategories, fetchTags, fetchData } = useData();
   const { t } = useLanguage();
   const [categories, setCategories] = useState([]);
   const [tags, setTags] = useState([]);
@@ -58,10 +60,26 @@ export default function CategoriesAndTags() {
 
     setLoading(true);
     try {
-      const [categoriesRes, tagsRes, budgetsRes] = await Promise.all([
-        api.get(`/categories?userId=${user.id}`, { signal: abortController.signal }),
-        api.get(`/tags?userId=${user.id}`, { signal: abortController.signal }),
-        api.get(`/budgets?userId=${user.id}`, { signal: abortController.signal }),
+      // Usa cache do DataContext para categories e tags
+      const [categoriesData, tagsData, budgetsRes] = await Promise.all([
+        fetchCategories(user.id).catch(err => {
+          console.error('Erro ao carregar categorias:', err);
+          return [];
+        }),
+        fetchTags(user.id).catch(err => {
+          console.error('Erro ao carregar tags:', err);
+          return [];
+        }),
+        fetchData(
+          `budgets_${user.id}`,
+          async () => {
+            const res = await api.get(`/budgets?userId=${user.id}`, { signal: abortController.signal });
+            return res.success ? (res.data || []) : [];
+          }
+        ).catch(err => {
+          console.error('Erro ao carregar orçamentos:', err);
+          return [];
+        }),
       ]);
       
       // Verifica se a requisição foi cancelada antes de processar a resposta
@@ -69,9 +87,9 @@ export default function CategoriesAndTags() {
         return;
       }
       
-      if (categoriesRes.success) setCategories(categoriesRes.data || []);
-      if (tagsRes.success) setTags(tagsRes.data || []);
-      if (budgetsRes.success) setBudgets(budgetsRes.data || []);
+      setCategories(categoriesData || []);
+      setTags(tagsData || []);
+      setBudgets(budgetsRes || []);
     } catch (error) {
       // Ignora erros de cancelamento
       if (axios.isCancel && axios.isCancel(error)) {

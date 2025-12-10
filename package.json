@@ -5,10 +5,20 @@
   "type": "module",
   "scripts": {
     "test:e2e": "node --test tests/e2e/sequence.test.mjs",
+    "test:e2e:comprehensive": "node --test tests/e2e/comprehensive.test.mjs",
+    "test:e2e:comprehensive:watch": "node --test --watch --reporter=spec tests/e2e/comprehensive.test.mjs",
+    "test:e2e:comprehensive:verbose": "node --test --reporter=spec tests/e2e/comprehensive.test.mjs",
+    "test:e2e:all": "node --test tests/e2e/*.test.mjs",
+    "test:visual": "playwright test tests/e2e/visual.test.mjs",
+    "test:visual:ui": "playwright test --ui",
+    "test:visual:headed": "playwright test tests/e2e/visual.test.mjs --headed",
+    "test:visual:debug": "playwright test tests/e2e/visual.test.mjs --debug",
     "build": "cd frontend && npm run build"
   },
   "dependencies": {
     "axios": "^1.6.8"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.57.0"
   }
 }
-
