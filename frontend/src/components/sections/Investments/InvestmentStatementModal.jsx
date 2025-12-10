@@ -113,8 +113,9 @@ export default function InvestmentStatementModal({ isOpen, onClose, investments,
   };
 
   const getOperationTotals = (inv) => {
-    const grossValue = Math.abs(inv.valorAporte || 0);
-    const brokerage = inv.corretagem || 0;
+    // Usa valores convertidos para BRL se disponíveis, senão usa originais
+    const grossValue = Math.abs(inv.valorAporteBRL || inv.valorAporte || 0);
+    const brokerage = inv.corretagemBRL || inv.corretagem || 0;
     const isBuy = inv.quantidade > 0;
     const total = isBuy
       ? grossValue + brokerage
@@ -348,8 +349,8 @@ export default function InvestmentStatementModal({ isOpen, onClose, investments,
           categoryNames[inv.categoria] || inv.categoria,
           inv.quantidade > 0 ? t('investments.buyLabel') : t('investments.sellLabel'),
           Math.abs(inv.quantidade).toFixed(6),
-          formatCurrency(inv.precoAporte || 0),
-          formatCurrency(inv.corretagem || 0),
+          formatCurrency(inv.precoAporteBRL || inv.precoAporte || 0),
+          formatCurrency(inv.corretagemBRL || inv.corretagem || 0),
           formatCurrency(total),
           inv.corretora || '-',
           inv.quantidade < 0 ? formatCurrency(inv.realizedPnL || 0) : '-',
@@ -404,7 +405,7 @@ export default function InvestmentStatementModal({ isOpen, onClose, investments,
       } else {
         doc.text(`${t('investments.avgOperationsPerDay')} ${(filteredInvestments.length / Math.max(1, filteredInvestments.length)).toFixed(1)}`, margin, yPos);
         yPos += 6;
-        doc.text(`${t('investments.largestOperation')} ${formatCurrency(Math.max(...filteredInvestments.map(inv => Math.abs(inv.valorAporte || 0))))}`, margin, yPos);
+        doc.text(`${t('investments.largestOperation')} ${formatCurrency(Math.max(...filteredInvestments.map(inv => Math.abs(inv.valorAporteBRL || inv.valorAporte || 0))))}`, margin, yPos);
         yPos += 6;
         doc.text(t('investments.realizedProfitNote'), margin, yPos);
         yPos += 6;
@@ -444,8 +445,8 @@ export default function InvestmentStatementModal({ isOpen, onClose, investments,
         [t('investments.categoryLabel')]: categoryNames[inv.categoria] || inv.categoria,
         [t('investments.typeLabel')]: inv.quantidade > 0 ? t('investments.buyLabel') : t('investments.sellLabel'),
         [t('investments.quantityLabel')]: Math.abs(inv.quantidade),
-        [t('investments.unitPrice')]: inv.precoAporte || 0,
-        [t('investments.brokerageLabel')]: inv.corretagem || 0,
+        [t('investments.unitPrice')]: inv.precoAporteBRL || inv.precoAporte || 0,
+        [t('investments.brokerageLabel')]: inv.corretagemBRL || inv.corretagem || 0,
         [t('investments.totalValueLabel')]: total,
         [t('investments.brokerageLabel')]: inv.corretora || '-',
         [t('investments.realizedPnL')]: inv.quantidade < 0 ? inv.realizedPnL || 0 : null,
@@ -492,8 +493,8 @@ export default function InvestmentStatementModal({ isOpen, onClose, investments,
         categoryNames[inv.categoria] || inv.categoria,
         inv.quantidade > 0 ? 'Compra' : 'Venda',
         Math.abs(inv.quantidade),
-        inv.precoAporte || 0,
-        inv.corretagem || 0,
+        inv.precoAporteBRL || inv.precoAporte || 0,
+        inv.corretagemBRL || inv.corretagem || 0,
         total,
         inv.corretora || '-',
         inv.quantidade < 0 ? inv.realizedPnL || 0 : '',
@@ -630,7 +631,7 @@ export default function InvestmentStatementModal({ isOpen, onClose, investments,
                           {inv.corretora && ` • ${inv.corretora}`}
                         </div>
                         <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                          {t('investments.qty')} {Math.abs(inv.quantidade).toFixed(6)} • {t('investments.price')} {formatCurrency(inv.precoAporte || 0)}
+                          {t('investments.qty')} {Math.abs(inv.quantidade).toFixed(6)} • {t('investments.price')} {formatCurrency(inv.precoAporteBRL || inv.precoAporte || 0)}
                         </div>
                       </div>
                       <div className="text-right">

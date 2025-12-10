@@ -56,7 +56,9 @@ export default function InvestmentDetailsModal({ isOpen, onClose, investment, on
         <div className="space-y-3 text-sm">
           <div className="flex justify-between py-2 border-b border-gray-100 dark:border-gray-700">
             <span className="text-gray-600 dark:text-gray-400">{t('investments.investedValueLabel')}</span>
-            <span className="font-medium text-gray-900 dark:text-white">{formatCurrency(investment.valorAporte || 0)}</span>
+            <span className="font-medium text-gray-900 dark:text-white">
+              {formatCurrency(investment.valorAporteBRL || investment.valorAporte || 0)}
+            </span>
           </div>
           
           {investment.quantidade > 0 && (
@@ -71,7 +73,9 @@ export default function InvestmentDetailsModal({ isOpen, onClose, investment, on
           {investment.precoAporte > 0 && (
             <div className="flex justify-between py-2 border-b border-gray-100 dark:border-gray-700">
               <span className="text-gray-600 dark:text-gray-400">{t('investments.averagePriceLabel')}</span>
-              <span className="font-medium text-gray-900 dark:text-white">{formatCurrency(investment.precoAporte)}</span>
+              <span className="font-medium text-gray-900 dark:text-white">
+                {formatCurrency(investment.precoAporteBRL || investment.precoAporte)}
+              </span>
             </div>
           )}
 

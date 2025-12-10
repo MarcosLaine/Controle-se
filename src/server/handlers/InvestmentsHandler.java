@@ -218,9 +218,17 @@ public class InvestmentsHandler implements HttpHandler {
                 invData.put("nomeAtivo", nomeAtivoFinal);
                 invData.put("categoria", inv.getCategoria());
                 invData.put("quantidade", inv.getQuantidade());
-                invData.put("precoAporte", precoAporteBRL);
-                invData.put("valorAporte", valorAporteBRL);
-                invData.put("corretagem", corretagemBRL);
+                
+                // Retorna valores originais (na moeda original) para edição
+                invData.put("precoAporte", inv.getPrecoAporte());
+                invData.put("valorAporte", inv.getValorAporte());
+                invData.put("corretagem", inv.getCorretagem());
+                
+                // Retorna também valores convertidos para BRL (para exibição)
+                invData.put("precoAporteBRL", precoAporteBRL);
+                invData.put("valorAporteBRL", valorAporteBRL);
+                invData.put("corretagemBRL", corretagemBRL);
+                
                 invData.put("corretora", inv.getCorretora());
                 invData.put("dataAporte", inv.getDataAporte().toString());
                 invData.put("moeda", inv.getMoeda());

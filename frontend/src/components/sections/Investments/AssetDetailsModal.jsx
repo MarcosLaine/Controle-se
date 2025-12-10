@@ -106,7 +106,7 @@ export default function AssetDetailsModal({ isOpen, onClose, assetGroup, onEdit,
                     </div>
                     <div>
                       <p className="text-xs text-gray-500">{t('investments.unitPrice')}</p>
-                      <p className="font-medium">{formatCurrency(aporte.precoAporte)}</p>
+                      <p className="font-medium">{formatCurrency(aporte.precoAporteBRL || aporte.precoAporte)}</p>
                     </div>
                   </div>
 
@@ -114,7 +114,7 @@ export default function AssetDetailsModal({ isOpen, onClose, assetGroup, onEdit,
                     <div className="text-right">
                       <p className="text-xs text-gray-500">{isSell ? t('investments.valueReceived') : t('investments.investedValueLabel')}</p>
                       <p className={`font-bold ${isSell ? 'text-green-600' : 'text-gray-900 dark:text-white'}`}>
-                        {formatCurrency(Math.abs(aporte.valorAporte))}
+                        {formatCurrency(Math.abs(aporte.valorAporteBRL || aporte.valorAporte))}
                       </p>
                     </div>
                     <div className="flex gap-1">
