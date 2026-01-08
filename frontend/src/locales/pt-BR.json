@@ -81,7 +81,8 @@
     "compoundInterestCalculator": "Calculadora de Juros Compostos",
     "loginSuccess": "Login realizado com sucesso!",
     "registerSuccess": "Cadastro realizado com sucesso!",
-    "logoutSuccess": "Logout realizado com sucesso!"
+    "logoutSuccess": "Logout realizado com sucesso!",
+    "inactivityLogout": "Você foi deslogado por inatividade."
   },
   "sidebar": {
     "overview": "Visão Geral",

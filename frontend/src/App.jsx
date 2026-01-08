@@ -9,6 +9,7 @@ import CompoundInterestCalculatorPage from './pages/CompoundInterestCalculatorPa
 import SkeletonScreen from './components/common/SkeletonScreen';
 import ThemeProvider from './contexts/ThemeContext';
 import LanguageProvider from './contexts/LanguageContext';
+import InactivityMonitor from './components/InactivityMonitor';
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -62,6 +63,7 @@ function App() {
           <DataProvider>
             <Router>
               <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+                <InactivityMonitor />
                 <AppRoutes />
                 <Toaster
                 position="top-center"

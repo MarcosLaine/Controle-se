@@ -70,7 +70,8 @@
     "passwordsDontMatch": "Passwords do not match",
     "captchaRequired": "For security, please complete the CAPTCHA below:",
     "freeTools": "Or access our free tools",
-    "compoundInterestCalculator": "Compound Interest Calculator"
+    "compoundInterestCalculator": "Compound Interest Calculator",
+    "inactivityLogout": "You were logged out due to inactivity."
   },
   "sidebar": {
     "overview": "Overview",

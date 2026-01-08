@@ -1,7 +1,7 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Wallet, Mail, Lock, User, Moon, Sun, Calculator, TrendingUp, Globe, Download } from 'lucide-react';
+import { Wallet, Mail, Lock, User, Moon, Sun, Calculator, TrendingUp, Globe, Download, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useTheme } from '../contexts/ThemeContext';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -19,12 +19,14 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const { login, register } = useAuth();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { theme, toggleTheme } = useTheme();
   const { language, changeLanguage, t } = useLanguage();
   const { isInstallable, handleInstall } = usePWAInstall();
   const redirectTo = searchParams.get('redirect') || '/dashboard';
   const [isLanguageMenuOpen, setIsLanguageMenuOpen] = useState(false);
+  const [showInactivityMessage, setShowInactivityMessage] = useState(false);
+  const inactivityTimeoutRef = useRef(null);
 
   // Login form state
   const [loginEmail, setLoginEmail] = useState('');
@@ -37,6 +39,64 @@ export default function LoginPage() {
   const [registerName, setRegisterName] = useState('');
   const [registerEmail, setRegisterEmail] = useState('');
   const [registerPassword, setRegisterPassword] = useState('');
+
+  // Verifica se veio de logout por inatividade
+  useEffect(() => {
+    const isInactivity = searchParams.get('inactivity') === 'true';
+    if (isInactivity) {
+      setShowInactivityMessage(true);
+      // Remove o parâmetro da URL
+      setSearchParams((params) => {
+        params.delete('inactivity');
+        return params;
+      });
+    }
+  }, [searchParams, setSearchParams]);
+
+  // Monitora atividade na página para esconder a mensagem após 10 segundos
+  useEffect(() => {
+    if (!showInactivityMessage) return;
+
+    const hideMessage = () => {
+      if (inactivityTimeoutRef.current) {
+        clearTimeout(inactivityTimeoutRef.current);
+      }
+      inactivityTimeoutRef.current = setTimeout(() => {
+        setShowInactivityMessage(false);
+      }, 10000); // 10 segundos
+    };
+
+    // Eventos que indicam atividade
+    const events = [
+      'mousedown',
+      'mousemove',
+      'keypress',
+      'scroll',
+      'touchstart',
+      'click',
+      'keydown',
+      'input',
+      'change'
+    ];
+
+    // Inicia o timer
+    hideMessage();
+
+    // Adiciona listeners
+    events.forEach((event) => {
+      window.addEventListener(event, hideMessage, true);
+    });
+
+    // Cleanup
+    return () => {
+      events.forEach((event) => {
+        window.removeEventListener(event, hideMessage, true);
+      });
+      if (inactivityTimeoutRef.current) {
+        clearTimeout(inactivityTimeoutRef.current);
+      }
+    };
+  }, [showInactivityMessage]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -160,6 +220,25 @@ export default function LoginPage() {
       </div>
 
       <div className="w-full max-w-md">
+        {/* Mensagem de inatividade */}
+        {showInactivityMessage && (
+          <div className="mb-4 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg shadow-md relative">
+            <button
+              onClick={() => setShowInactivityMessage(false)}
+              className="absolute top-2 right-2 p-1 rounded-full hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors"
+              aria-label={t('common.close')}
+            >
+              <X className="w-4 h-4 text-amber-700 dark:text-amber-400" />
+            </button>
+            <p className="text-sm text-amber-800 dark:text-amber-300 pr-6">
+              {t('auth.inactivityLogout', {
+                en: 'You were logged out due to inactivity.',
+                pt: 'Você foi deslogado por inatividade.'
+              })}
+            </p>
+          </div>
+        )}
+
         {/* Logo */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 bg-primary-600 rounded-2xl mb-4 shadow-lg">

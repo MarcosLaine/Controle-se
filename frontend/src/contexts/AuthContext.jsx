@@ -115,10 +115,14 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const logout = () => {
+  const logout = (isInactivity = false) => {
     setUser(null);
     localStorage.removeItem('controle-se-user');
-    toast.success(t('auth.logoutSuccess'));
+    if (!isInactivity) {
+      toast.success(t('auth.logoutSuccess'));
+    }
+    // Retorna um flag indicando se foi por inatividade
+    return { isInactivity };
   };
 
   const changePassword = async (currentPassword, newPassword) => {
