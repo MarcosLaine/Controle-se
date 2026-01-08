@@ -68,22 +68,23 @@ public class DtoUtil {
             request.setType(typeObj.toString());
         }
         
-        // Balance (suporta "balance" e "saldo")
+        // Balance (suporta "balance", "saldo" e "saldoInicial")
         Object balanceObj = data.get("balance");
         if (balanceObj == null) {
             balanceObj = data.get("saldo");
+        }
+        if (balanceObj == null) {
+            balanceObj = data.get("saldoInicial");
         }
         if (balanceObj != null) {
             if (balanceObj instanceof Number) {
                 request.setBalance(((Number) balanceObj).doubleValue());
             } else {
                 try {
-                    String balanceStr = balanceObj.toString().trim()
-                        .replace(".", "")
-                        .replace(",", ".");
-                    request.setBalance(Double.parseDouble(balanceStr));
+                    String balanceStr = balanceObj.toString().trim();
+                    request.setBalance(NumberUtil.parseDoubleBrazilian(balanceStr));
                 } catch (NumberFormatException e) {
-                    // Ignora
+                    // Ignora - a validação será feita no handler
                 }
             }
         }

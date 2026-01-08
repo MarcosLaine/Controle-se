@@ -2,7 +2,6 @@ package server.dto;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Max;
@@ -21,8 +20,6 @@ public class AccountRequest {
     private String name;
     
     @NotBlank(message = "Tipo da conta é obrigatório")
-    @Pattern(regexp = "^(CORRENTE|POUPANCA|CARTAO_CREDITO|INVESTIMENTO)$", 
-             message = "Tipo deve ser CORRENTE, POUPANCA, CARTAO_CREDITO ou INVESTIMENTO")
     private String type;
     
     @NotNull(message = "Saldo inicial é obrigatório")

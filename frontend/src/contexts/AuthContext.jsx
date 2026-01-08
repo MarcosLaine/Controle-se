@@ -50,7 +50,12 @@ export const AuthProvider = ({ children }) => {
         };
         setUser(userData);
         localStorage.setItem('controle-se-user', JSON.stringify(userData));
-        toast.success(t('auth.loginSuccess'));
+        toast.success(
+          t('auth.loginSuccess', {
+            en: 'Login successful!',
+            pt: 'Login realizado com sucesso!'
+          })
+        );
         return { success: true };
       } else {
         // Verifica se precisa de CAPTCHA
