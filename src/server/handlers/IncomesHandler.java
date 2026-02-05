@@ -303,7 +303,7 @@ public class IncomesHandler implements HttpHandler {
             Map<Integer, String[]> observacoesPorReceita = new HashMap<>();
             
             if (!idsReceitas.isEmpty()) {
-                tagsPorReceita = tagRepository.buscarTagsPorReceitas(idsReceitas);
+                tagsPorReceita = tagRepository.buscarTagsDeReceitas(idsReceitas);
                 observacoesPorReceita = incomeRepository.buscarObservacoesDeReceitas(idsReceitas);
             }
             

@@ -221,7 +221,7 @@ public class ExpensesHandler implements HttpHandler {
                 TagRepository tagRepository = new TagRepository();
                 
                 categoriasPorGasto = categoryRepository.buscarCategoriasPorGastos(idsGastos);
-                tagsPorGasto = tagRepository.buscarTagsPorGastos(idsGastos);
+                tagsPorGasto = tagRepository.buscarTagsDeGastos(idsGastos);
                 observacoesPorGasto = expenseRepository.buscarObservacoesDeGastos(idsGastos);
             }
             
