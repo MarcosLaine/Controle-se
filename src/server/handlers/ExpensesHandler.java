@@ -217,10 +217,9 @@ public class ExpensesHandler implements HttpHandler {
             Map<Integer, String[]> observacoesPorGasto = new HashMap<>();
             
             if (!idsGastos.isEmpty()) {
-                CategoryRepository categoryRepository = new CategoryRepository();
                 TagRepository tagRepository = new TagRepository();
                 
-                categoriasPorGasto = categoryRepository.buscarCategoriasPorGastos(idsGastos);
+                categoriasPorGasto = expenseRepository.buscarCategoriasDeGastos(idsGastos);
                 tagsPorGasto = tagRepository.buscarTagsDeGastos(idsGastos);
                 observacoesPorGasto = expenseRepository.buscarObservacoesDeGastos(idsGastos);
             }
