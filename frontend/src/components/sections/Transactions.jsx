@@ -31,6 +31,8 @@ export default function Transactions() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState(new Set());
+  const [groupInstallmentsCache, setGroupInstallmentsCache] = useState(new Map());
+  const [loadingGroups, setLoadingGroups] = useState(new Set());
   
   // Ref para armazenar o AbortController da requisição atual
   const abortControllerRef = useRef(null);
@@ -387,8 +389,80 @@ export default function Transactions() {
     return grouped;
   };
 
+  // Busca todas as parcelas de um grupo (incluindo pagas)
+  const fetchGroupInstallments = async (groupId, type) => {
+    if (groupInstallmentsCache.has(groupId)) {
+      return groupInstallmentsCache.get(groupId);
+    }
+
+    setLoadingGroups(prev => new Set(prev).add(groupId));
+    try {
+      // Busca todas as transações, incluindo parcelas pagas
+      // Usa filtro de tipo "parceladas" para garantir que todas as parcelas sejam retornadas
+      const response = await api.get(`/transactions?userId=${user.id}&type=parceladas&limit=1000&offset=0`);
+      
+      if (response.success) {
+        // Filtra apenas as parcelas deste grupo específico
+        const groupInstallments = (response.data || []).filter(t => 
+          t.idGrupoParcela === groupId && 
+          t.type === type &&
+          t.numeroParcela && 
+          t.totalParcelas
+        );
+        
+        // Se não encontrou todas as parcelas, tenta buscar sem filtro de tipo
+        if (totalParcelas && groupInstallments.length < totalParcelas) {
+          const responseAll = await api.get(`/transactions?userId=${user.id}&limit=1000&offset=0`);
+          if (responseAll.success) {
+            const allGroupInstallments = (responseAll.data || []).filter(t => 
+              t.idGrupoParcela === groupId && 
+              t.type === type &&
+              t.numeroParcela && 
+              t.totalParcelas
+            );
+            
+            // Combina e remove duplicatas
+            const existingIds = new Set(groupInstallments.map(t => t.id));
+            const additional = allGroupInstallments.filter(t => !existingIds.has(t.id));
+            groupInstallments.push(...additional);
+          }
+        }
+        
+        // Ordena por número da parcela
+        groupInstallments.sort((a, b) => (a.numeroParcela || 0) - (b.numeroParcela || 0));
+        
+        // Cacheia o resultado
+        setGroupInstallmentsCache(prev => {
+          const next = new Map(prev);
+          next.set(groupId, groupInstallments);
+          return next;
+        });
+        
+        return groupInstallments;
+      }
+    } catch (error) {
+      console.error('Erro ao buscar parcelas do grupo:', error);
+      toast.error(t('transactions.errorLoadingInstallments') || 'Erro ao carregar parcelas');
+    } finally {
+      setLoadingGroups(prev => {
+        const next = new Set(prev);
+        next.delete(groupId);
+        return next;
+      });
+    }
+    
+    return [];
+  };
+
   // Toggle para expandir/colapsar grupo
-  const toggleGroup = (groupId) => {
+  const toggleGroup = async (groupId, type, totalParcelas) => {
+    const isCurrentlyExpanded = expandedGroups.has(groupId);
+    
+    if (!isCurrentlyExpanded) {
+      // Se está expandindo, busca todas as parcelas do grupo
+      await fetchGroupInstallments(groupId, type, totalParcelas);
+    }
+    
     setExpandedGroups(prev => {
       const next = new Set(prev);
       if (next.has(groupId)) {
@@ -798,7 +872,7 @@ export default function Transactions() {
                   {/* Cabeçalho do grupo */}
                   <div 
                     className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 cursor-pointer"
-                    onClick={() => toggleGroup(item.idGrupoParcela)}
+                    onClick={() => toggleGroup(item.idGrupoParcela, item.type, item.totalParcelas)}
                   >
                     <div className="flex items-center gap-4 w-full sm:w-auto">
                       <div
@@ -848,14 +922,17 @@ export default function Transactions() {
                         </div>
                       </div>
                       <button
-                        onClick={(e) => {
+                        onClick={async (e) => {
                           e.stopPropagation();
-                          toggleGroup(item.idGrupoParcela);
+                          await toggleGroup(item.idGrupoParcela, item.type, item.totalParcelas);
                         }}
                         className="shrink-0 p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
                         type="button"
+                        disabled={loadingGroups.has(item.idGrupoParcela)}
                       >
-                        {isExpanded ? (
+                        {loadingGroups.has(item.idGrupoParcela) ? (
+                          <Spinner size={16} className="text-gray-500" />
+                        ) : isExpanded ? (
                           <ChevronUp className="w-5 h-5 text-gray-500" />
                         ) : (
                           <ChevronDown className="w-5 h-5 text-gray-500" />
@@ -877,28 +954,43 @@ export default function Transactions() {
                   </div>
                   
                   {/* Parcelas expandidas */}
-                  {isExpanded && (
-                    <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700 space-y-2">
-                      {item.transactions.map((transaction) => (
-                        <TransactionItem
-                          key={transaction.id}
-                          transaction={transaction}
-                          isParcelaPaga={isParcelaPaga}
-                          isParcelaExcluida={isParcelaExcluida}
-                          formatCurrency={formatCurrency}
-                          formatDate={formatDate}
-                          t={t}
-                          onPayInstallment={(t) => {
-                            setSelectedInstallment(t);
-                            setShowPayInstallmentModal(true);
-                          }}
-                          onDelete={handleDelete}
-                          deletingIds={deletingIds}
-                          isNested={true}
-                        />
-                      ))}
-                    </div>
-                  )}
+                  {isExpanded && (() => {
+                    // Usa as parcelas do cache se disponível, senão usa as que já estão no grupo
+                    const allInstallments = groupInstallmentsCache.get(item.idGrupoParcela) || item.transactions;
+                    
+                    return (
+                      <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700 space-y-2">
+                        {loadingGroups.has(item.idGrupoParcela) ? (
+                          <div className="flex justify-center py-4">
+                            <Spinner size={20} className="text-gray-500" />
+                          </div>
+                        ) : allInstallments.length === 0 ? (
+                          <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-4">
+                            {t('transactions.noInstallments') || 'Nenhuma parcela encontrada'}
+                          </p>
+                        ) : (
+                          allInstallments.map((transaction) => (
+                            <TransactionItem
+                              key={transaction.id}
+                              transaction={transaction}
+                              isParcelaPaga={isParcelaPaga}
+                              isParcelaExcluida={isParcelaExcluida}
+                              formatCurrency={formatCurrency}
+                              formatDate={formatDate}
+                              t={t}
+                              onPayInstallment={(t) => {
+                                setSelectedInstallment(t);
+                                setShowPayInstallmentModal(true);
+                              }}
+                              onDelete={handleDelete}
+                              deletingIds={deletingIds}
+                              isNested={true}
+                            />
+                          ))
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               );
             }

@@ -672,10 +672,12 @@ public class IncomeRepository {
      * Busca receitas de um grupo de parcelas
      */
     public List<Receita> buscarReceitasPorGrupoParcela(int idGrupoParcela) {
+        // Retorna todas as parcelas do grupo, incluindo as pagas (inativas)
+        // Parcelas excluídas (inativas com data futura) não são retornadas
         String sql = "SELECT id_receita, descricao, valor, data, frequencia, id_usuario, id_conta, " +
                     "proxima_recorrencia, id_receita_original, ativo, id_grupo_parcela, numero_parcela, total_parcelas " +
                     "FROM receitas " +
-                    "WHERE id_grupo_parcela = ? AND ativo = TRUE " +
+                    "WHERE id_grupo_parcela = ? AND (ativo = TRUE OR (ativo = FALSE AND data <= CURRENT_DATE)) " +
                     "ORDER BY numero_parcela ASC";
         List<Receita> receitas = new ArrayList<>();
         List<Integer> idsReceitas = new ArrayList<>();

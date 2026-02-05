@@ -1003,10 +1003,12 @@ public class ExpenseRepository {
      * Busca gastos de um grupo de parcelas
      */
     public List<Gasto> buscarGastosPorGrupoParcela(int idGrupoParcela) {
+        // Retorna todas as parcelas do grupo, incluindo as pagas (inativas)
+        // Parcelas excluídas (inativas com data futura) não são retornadas
         String sql = "SELECT id_gasto, descricao, valor, data, frequencia, id_usuario, id_conta, " +
-                    "proxima_recorrencia, id_gasto_original, ativo, id_grupo_parcela, numero_parcela, total_parcelas " +
+                    "proxima_recorrencia, id_gasto_original, ativo, id_grupo_parcela, numero_parcela, total_parcelas, data_entrada_fatura " +
                     "FROM gastos " +
-                    "WHERE id_grupo_parcela = ? AND ativo = TRUE " +
+                    "WHERE id_grupo_parcela = ? AND (ativo = TRUE OR (ativo = FALSE AND data <= CURRENT_DATE)) " +
                     "ORDER BY numero_parcela ASC";
         List<Gasto> gastos = new ArrayList<>();
         List<Integer> idsGastos = new ArrayList<>();
