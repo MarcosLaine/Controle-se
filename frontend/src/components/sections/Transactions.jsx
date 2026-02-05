@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Plus, Minus, Trash2, ArrowUp, ArrowDown, Filter, CreditCard, Search, Upload } from 'lucide-react';
+import { Plus, Minus, Trash2, ArrowUp, ArrowDown, Filter, CreditCard, Search, Upload, ChevronDown, ChevronUp } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useData } from '../../contexts/DataContext';
 import { useLanguage } from '../../contexts/LanguageContext';
@@ -30,6 +30,7 @@ export default function Transactions() {
   const [offset, setOffset] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [expandedGroups, setExpandedGroups] = useState(new Set());
   
   // Ref para armazenar o AbortController da requisição atual
   const abortControllerRef = useRef(null);
@@ -312,6 +313,315 @@ export default function Transactions() {
     return false;
   };
 
+  // Função para agrupar transações parceladas
+  const groupInstallments = (transactions) => {
+    const grouped = [];
+    const installmentGroups = new Map();
+    const processedIds = new Set();
+
+    // Primeiro, agrupa todas as transações parceladas
+    transactions.forEach(transaction => {
+      if (transaction.idGrupoParcela && transaction.numeroParcela && transaction.totalParcelas) {
+        const groupId = transaction.idGrupoParcela;
+        
+        if (!installmentGroups.has(groupId)) {
+          installmentGroups.set(groupId, {
+            idGrupoParcela: groupId,
+            transactions: [],
+            description: transaction.description,
+            totalParcelas: transaction.totalParcelas,
+            type: transaction.type,
+            category: transaction.category,
+            categoryIds: transaction.categoryIds,
+            tags: transaction.tags || [],
+            observacoes: transaction.observacoes || [],
+            accountId: transaction.accountId,
+            diaFechamento: transaction.diaFechamento,
+            diaPagamento: transaction.diaPagamento,
+          });
+        }
+        
+        installmentGroups.get(groupId).transactions.push(transaction);
+        processedIds.add(transaction.id);
+      }
+    });
+
+    // Adiciona grupos de parcelas ordenados
+    installmentGroups.forEach((group) => {
+      // Ordena as parcelas por número
+      group.transactions.sort((a, b) => (a.numeroParcela || 0) - (b.numeroParcela || 0));
+      
+      // Calcula o valor total do grupo
+      group.valorTotal = group.transactions.reduce((sum, t) => sum + (parseFloat(t.value) || 0), 0);
+      
+      // Encontra a primeira data (parcela mais antiga)
+      const firstTransaction = group.transactions[0];
+      group.date = firstTransaction.date;
+      
+      // Calcula estatísticas do grupo
+      const parcelasPagas = group.transactions.filter(t => isParcelaPaga(t)).length;
+      const parcelasExcluidas = group.transactions.filter(t => isParcelaExcluida(t)).length;
+      const parcelasPendentes = group.transactions.filter(t => !isParcelaPaga(t) && !isParcelaExcluida(t)).length;
+      
+      group.parcelasPagas = parcelasPagas;
+      group.parcelasExcluidas = parcelasExcluidas;
+      group.parcelasPendentes = parcelasPendentes;
+      
+      grouped.push(group);
+    });
+
+    // Adiciona transações não parceladas
+    transactions.forEach(transaction => {
+      if (!processedIds.has(transaction.id)) {
+        grouped.push(transaction);
+      }
+    });
+
+    // Ordena por data (mais recente primeiro)
+    grouped.sort((a, b) => {
+      const dateA = a.date || (a.transactions && a.transactions[0]?.date) || '';
+      const dateB = b.date || (b.transactions && b.transactions[0]?.date) || '';
+      return dateB.localeCompare(dateA);
+    });
+
+    return grouped;
+  };
+
+  // Toggle para expandir/colapsar grupo
+  const toggleGroup = (groupId) => {
+    setExpandedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(groupId)) {
+        next.delete(groupId);
+      } else {
+        next.add(groupId);
+      }
+      return next;
+    });
+  };
+
+  // Componente para renderizar item de transação individual
+  const TransactionItem = ({ transaction, isParcelaPaga, isParcelaExcluida, formatCurrency, formatDate, t, onPayInstallment, onDelete, deletingIds, isNested }) => {
+    return (
+      <div
+        className={`flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${isNested ? 'pl-4 border-l-2 border-gray-200 dark:border-gray-700' : 'card'}`}
+      >
+        {!isNested && (
+          <div className="flex items-center gap-4 w-full sm:w-auto">
+            <div
+              className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${
+                transaction.type === 'income'
+                  ? 'bg-green-100 dark:bg-green-900/30 text-green-600'
+                  : 'bg-red-100 dark:bg-red-900/30 text-red-600'
+              }`}
+            >
+              {transaction.type === 'income' ? (
+                <ArrowUp className="w-6 h-6" />
+              ) : (
+                <ArrowDown className="w-6 h-6" />
+              )}
+            </div>
+          </div>
+        )}
+        <div className={`flex items-center gap-4 w-full sm:w-auto ${isNested ? 'flex-1' : ''}`}>
+          {isNested && (
+            <div
+              className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                transaction.type === 'income'
+                  ? 'bg-green-100 dark:bg-green-900/30 text-green-600'
+                  : 'bg-red-100 dark:bg-red-900/30 text-red-600'
+              }`}
+            >
+              {transaction.type === 'income' ? (
+                <ArrowUp className="w-4 h-4" />
+              ) : (
+                <ArrowDown className="w-4 h-4" />
+              )}
+            </div>
+          )}
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <p className={`font-semibold truncate ${
+                isParcelaPaga(transaction)
+                  ? 'line-through opacity-60 text-gray-600 dark:text-gray-400'
+                  : isParcelaExcluida(transaction)
+                  ? 'line-through opacity-40 text-gray-400 dark:text-gray-600'
+                  : 'text-gray-900 dark:text-white'
+              }`}>
+                {transaction.description}
+              </p>
+              {transaction.numeroParcela && transaction.totalParcelas && (
+                <span className={`px-2 py-0.5 text-xs font-medium rounded-full shrink-0 ${
+                  isParcelaPaga(transaction)
+                    ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 line-through opacity-60'
+                    : isParcelaExcluida(transaction)
+                    ? 'bg-gray-200 dark:bg-gray-800 text-gray-500 dark:text-gray-600 line-through opacity-40'
+                    : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
+                }`}>
+                  {transaction.numeroParcela}/{transaction.totalParcelas}
+                  {isParcelaPaga(transaction) && ' ✓'}
+                  {isParcelaExcluida(transaction) && ' ✕'}
+                </span>
+              )}
+            </div>
+            <p className={`text-sm truncate ${
+              isParcelaPaga(transaction)
+                ? 'text-gray-400 dark:text-gray-500 line-through opacity-60'
+                : isParcelaExcluida(transaction)
+                ? 'text-gray-400 dark:text-gray-600 line-through opacity-40'
+                : 'text-gray-500 dark:text-gray-400'
+            }`}>
+              {formatDate(transaction.date)}
+              {transaction.category && transaction.category !== 'Sem Categoria' && (
+                <> - {transaction.category}</>
+              )}
+            </p>
+            {transaction.dataEntradaFatura && transaction.type === 'expense' && (() => {
+              try {
+                const purchaseDate = new Date(transaction.date);
+                const invoiceDate = new Date(transaction.dataEntradaFatura);
+                
+                if (invoiceDate.getTime() !== purchaseDate.getTime()) {
+                  let invoiceMonthToShow = invoiceDate.getMonth();
+                  let invoiceYearToShow = invoiceDate.getFullYear();
+                  
+                  if (transaction.diaFechamento && transaction.diaPagamento) {
+                    const diaFechamento = transaction.diaFechamento;
+                    const diaPagamento = transaction.diaPagamento;
+                    
+                    const invoiceDateObj = new Date(invoiceDate);
+                    invoiceDateObj.setHours(0, 0, 0, 0);
+                    
+                    let fechamentoEsteMes = new Date(invoiceDateObj.getFullYear(), invoiceDateObj.getMonth(), diaFechamento);
+                    fechamentoEsteMes.setHours(0, 0, 0, 0);
+                    
+                    let fechamentoFatura;
+                    if (invoiceDateObj > fechamentoEsteMes) {
+                      fechamentoFatura = new Date(invoiceDateObj.getFullYear(), invoiceDateObj.getMonth() + 1, diaFechamento);
+                    } else {
+                      fechamentoFatura = fechamentoEsteMes;
+                    }
+                    
+                    let pagamentoFatura = new Date(fechamentoFatura.getFullYear(), fechamentoFatura.getMonth(), diaPagamento);
+                    pagamentoFatura.setHours(0, 0, 0, 0);
+                    
+                    if (fechamentoFatura >= pagamentoFatura) {
+                      pagamentoFatura = new Date(fechamentoFatura.getFullYear(), fechamentoFatura.getMonth() + 1, diaPagamento);
+                    }
+                    
+                    invoiceMonthToShow = pagamentoFatura.getMonth();
+                    invoiceYearToShow = pagamentoFatura.getFullYear();
+                  }
+                  
+                  const monthNames = [
+                    t('common.january') || 'Janeiro',
+                    t('common.february') || 'Fevereiro',
+                    t('common.march') || 'Março',
+                    t('common.april') || 'Abril',
+                    t('common.may') || 'Maio',
+                    t('common.june') || 'Junho',
+                    t('common.july') || 'Julho',
+                    t('common.august') || 'Agosto',
+                    t('common.september') || 'Setembro',
+                    t('common.october') || 'Outubro',
+                    t('common.november') || 'Novembro',
+                    t('common.december') || 'Dezembro'
+                  ];
+                  const monthName = monthNames[invoiceMonthToShow] || `${invoiceMonthToShow + 1}/${invoiceYearToShow}`;
+                  return (
+                    <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                      {t('transactions.enteredInvoiceMonth', { month: `${monthName} ${invoiceYearToShow}` })}
+                    </p>
+                  );
+                }
+              } catch (e) {
+                console.error('Erro ao calcular mês da fatura:', e);
+              }
+              return null;
+            })()}
+            {transaction.tags && transaction.tags.length > 0 && (
+              <div className="flex flex-wrap gap-2 mt-2">
+                {transaction.tags.map((tag) => (
+                  <span
+                    key={tag.idTag}
+                    className="text-xs px-2 py-1 rounded-full text-white"
+                    style={{ backgroundColor: tag.cor }}
+                  >
+                    {tag.nome}
+                  </span>
+                ))}
+              </div>
+            )}
+            {transaction.observacoes && transaction.observacoes.length > 0 && (
+              <div className="mt-2">
+                <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">{t('transactions.notes')}</p>
+                <ul className="text-xs text-gray-600 dark:text-gray-300 list-disc list-inside mt-1">
+                  {Array.isArray(transaction.observacoes) 
+                    ? transaction.observacoes.map((obs, idx) => (
+                        <li key={idx}>{obs}</li>
+                      ))
+                    : <li>{transaction.observacoes}</li>
+                  }
+                </ul>
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center justify-between sm:justify-end gap-4 w-full sm:w-auto border-t sm:border-t-0 pt-4 sm:pt-0 border-gray-100 dark:border-gray-700">
+          <span
+            className={`text-lg font-bold ${
+              isParcelaPaga(transaction)
+                ? 'line-through opacity-60 text-green-600 dark:text-green-500'
+                : isParcelaExcluida(transaction)
+                ? 'line-through opacity-40 text-gray-400 dark:text-gray-600'
+                : transaction.type === 'income'
+                ? 'text-green-600 dark:text-green-400'
+                : 'text-red-600 dark:text-red-400'
+            }`}
+          >
+            {transaction.type === 'income' ? '+' : '-'}
+            {formatCurrency(transaction.value || 0)}
+          </span>
+          <div className="flex items-center gap-2">
+            {transaction.type === 'expense' && transaction.numeroParcela && transaction.totalParcelas && !isParcelaPaga(transaction) && !isParcelaExcluida(transaction) && (
+              <button
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onPayInstallment(transaction);
+                }}
+                className="btn-secondary shrink-0 flex items-center gap-1 px-2 py-1.5 relative z-10"
+                title={t('transactions.registerAdvancePayment')}
+                type="button"
+                style={{ pointerEvents: 'auto' }}
+              >
+                <CreditCard className="w-4 h-4" />
+                <span className="text-xs hidden sm:inline">{t('transactions.register')}</span>
+              </button>
+            )}
+            <button
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onDelete(transaction.id, transaction.type);
+              }}
+              className="btn-danger shrink-0 relative z-10"
+              disabled={deletingIds.has(transaction.id)}
+              type="button"
+              style={{ pointerEvents: 'auto' }}
+            >
+              {deletingIds.has(transaction.id) ? (
+                <Spinner size={16} className="text-white" />
+              ) : (
+                <Trash2 className="w-4 h-4" />
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const [deletingIds, setDeletingIds] = useState(new Set());
 
   const handleDelete = async (id, type) => {
@@ -477,7 +787,149 @@ export default function Transactions() {
         </div>
       ) : (
         <div className="space-y-3">
-          {transactions.map((transaction) => (
+          {groupInstallments(transactions).map((item) => {
+            // Se é um grupo de parcelas
+            if (item.idGrupoParcela && item.transactions) {
+              const isExpanded = expandedGroups.has(item.idGrupoParcela);
+              const hasPending = item.parcelasPendentes > 0;
+              
+              return (
+                <div key={`group-${item.idGrupoParcela}`} className="card">
+                  {/* Cabeçalho do grupo */}
+                  <div 
+                    className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 cursor-pointer"
+                    onClick={() => toggleGroup(item.idGrupoParcela)}
+                  >
+                    <div className="flex items-center gap-4 w-full sm:w-auto">
+                      <div
+                        className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${
+                          item.type === 'income'
+                            ? 'bg-green-100 dark:bg-green-900/30 text-green-600'
+                            : 'bg-red-100 dark:bg-red-900/30 text-red-600'
+                        }`}
+                      >
+                        {item.type === 'income' ? (
+                          <ArrowUp className="w-6 h-6" />
+                        ) : (
+                          <ArrowDown className="w-6 h-6" />
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <p className="font-semibold truncate text-gray-900 dark:text-white">
+                            {item.description}
+                          </p>
+                          <span className="px-2 py-0.5 text-xs font-medium rounded-full shrink-0 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
+                            {item.totalParcelas} {t('transactions.installments') || 'parcelas'}
+                          </span>
+                        </div>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">
+                          {formatDate(item.date)}
+                          {item.category && item.category !== 'Sem Categoria' && (
+                            <> - {item.category}</>
+                          )}
+                        </p>
+                        <div className="flex items-center gap-3 mt-1 text-xs text-gray-600 dark:text-gray-400">
+                          {item.parcelasPendentes > 0 && (
+                            <span className="text-blue-600 dark:text-blue-400">
+                              {item.parcelasPendentes} {t('transactions.pending') || 'pendente(s)'}
+                            </span>
+                          )}
+                          {item.parcelasPagas > 0 && (
+                            <span className="text-green-600 dark:text-green-400">
+                              {item.parcelasPagas} {t('transactions.paid') || 'paga(s)'}
+                            </span>
+                          )}
+                          {item.parcelasExcluidas > 0 && (
+                            <span className="text-gray-500 dark:text-gray-500">
+                              {item.parcelasExcluidas} {t('transactions.excluded') || 'excluída(s)'}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleGroup(item.idGrupoParcela);
+                        }}
+                        className="shrink-0 p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                        type="button"
+                      >
+                        {isExpanded ? (
+                          <ChevronUp className="w-5 h-5 text-gray-500" />
+                        ) : (
+                          <ChevronDown className="w-5 h-5 text-gray-500" />
+                        )}
+                      </button>
+                    </div>
+                    <div className="flex items-center justify-between sm:justify-end gap-4 w-full sm:w-auto border-t sm:border-t-0 pt-4 sm:pt-0 border-gray-100 dark:border-gray-700">
+                      <span
+                        className={`text-lg font-bold ${
+                          item.type === 'income'
+                            ? 'text-green-600 dark:text-green-400'
+                            : 'text-red-600 dark:text-red-400'
+                        }`}
+                      >
+                        {item.type === 'income' ? '+' : '-'}
+                        {formatCurrency(item.valorTotal || 0)}
+                      </span>
+                    </div>
+                  </div>
+                  
+                  {/* Parcelas expandidas */}
+                  {isExpanded && (
+                    <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700 space-y-2">
+                      {item.transactions.map((transaction) => (
+                        <TransactionItem
+                          key={transaction.id}
+                          transaction={transaction}
+                          isParcelaPaga={isParcelaPaga}
+                          isParcelaExcluida={isParcelaExcluida}
+                          formatCurrency={formatCurrency}
+                          formatDate={formatDate}
+                          t={t}
+                          onPayInstallment={(t) => {
+                            setSelectedInstallment(t);
+                            setShowPayInstallmentModal(true);
+                          }}
+                          onDelete={handleDelete}
+                          deletingIds={deletingIds}
+                          isNested={true}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            }
+            
+            // Transação única (não parcelada)
+            return (
+              <TransactionItem
+                key={item.id}
+                transaction={item}
+                isParcelaPaga={isParcelaPaga}
+                isParcelaExcluida={isParcelaExcluida}
+                formatCurrency={formatCurrency}
+                formatDate={formatDate}
+                t={t}
+                onPayInstallment={(t) => {
+                  setSelectedInstallment(t);
+                  setShowPayInstallmentModal(true);
+                }}
+                onDelete={handleDelete}
+                deletingIds={deletingIds}
+                isNested={false}
+              />
+            );
+          })}
+        </div>
+      )}
+      
+      {/* Componente auxiliar para renderizar item de transação */}
+      {(() => {
+        const TransactionItem = ({ transaction, isParcelaPaga, isParcelaExcluida, formatCurrency, formatDate, t, onPayInstallment, onDelete, deletingIds, isNested }) => {
+          return (
             <div
               key={transaction.id}
               className="card flex flex-col sm:flex-row sm:items-center justify-between gap-4"

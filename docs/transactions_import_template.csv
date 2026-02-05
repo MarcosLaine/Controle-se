@@ -1,0 +1,10 @@
+tipo,descricao,valor,data,conta,tipo_conta,categoria,tags,observacoes,numero_parcelas,intervalo_dias,frequencia,data_entrada_fatura,pagamento_fatura,conta_origem
+gasto,99,18.28,2026-01-20,BTG Pactual,cartao_credito,transporte,,,1,30,UNICA,,,
+gasto,99,11.30,2026-01-20,BTG Pactual,cartao_credito,transporte,,,1,30,UNICA,,,
+gasto,99,30.33,2026-01-20,BTG Pactual,cartao_credito,transporte,,,1,30,UNICA,,,
+gasto,99,15.60,2026-01-21,BTG Pactual,cartao_credito,transporte,,,1,30,UNICA,,,
+gasto,99,14.00,2026-01-21,BTG Pactual,cartao_credito,transporte,,,1,30,UNICA,,,
+gasto,99,14.12,2026-01-22,BTG Pactual,cartao_credito,transporte,,,1,30,UNICA,,,
+gasto,99,13.10,2026-01-22,BTG Pactual,cartao_credito,transporte,,,1,30,UNICA,,,
+gasto,99,22.10,2026-01-22,BTG Pactual,cartao_credito,transporte,,,1,30,UNICA,,,
+gasto,99,11.43,2026-01-22,BTG Pactual,cartao_credito,transporte,,,1,30,UNICA,,,
