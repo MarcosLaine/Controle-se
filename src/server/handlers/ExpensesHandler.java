@@ -34,6 +34,13 @@ public class ExpensesHandler implements HttpHandler {
             
             if ("OPTIONS".equals(method)) {
                 handleOptions(exchange);
+            } else if ("GET".equals(method)) {
+                // Verifica se é busca de parcelas de um grupo
+                if (path != null && path.contains("/installments")) {
+                    handleGetInstallments(exchange);
+                } else {
+                    ResponseUtil.sendErrorResponse(exchange, 404, "Endpoint não encontrado");
+                }
             } else if ("POST".equals(method)) {
                 // Verifica se é pagamento antecipado de parcela
                 if (path != null && path.contains("/pay-installment")) {
@@ -169,6 +176,150 @@ public class ExpensesHandler implements HttpHandler {
             response.put("success", false);
             response.put("message", "Erro: " + e.getMessage());
             ResponseUtil.sendJsonResponse(exchange, 400, response);
+        }
+    }
+    
+    private void handleGetInstallments(HttpExchange exchange) throws IOException {
+        try {
+            int userId = AuthUtil.requireUserId(exchange);
+            String groupIdParam = RequestUtil.getQueryParam(exchange, "groupId");
+            
+            if (groupIdParam == null || groupIdParam.isEmpty()) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "groupId é obrigatório");
+                ResponseUtil.sendJsonResponse(exchange, 400, response);
+                return;
+            }
+            
+            int groupId = Integer.parseInt(groupIdParam);
+            
+            // Busca todas as parcelas do grupo (incluindo pagas)
+            List<Gasto> gastos = expenseRepository.buscarGastosPorGrupoParcela(groupId);
+            
+            // Valida que o grupo pertence ao usuário
+            if (!gastos.isEmpty() && gastos.get(0).getIdUsuario() != userId) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "Acesso negado");
+                ResponseUtil.sendJsonResponse(exchange, 403, response);
+                return;
+            }
+            
+            // Busca categorias, tags e observações
+            List<Integer> idsGastos = new ArrayList<>();
+            for (Gasto gasto : gastos) {
+                idsGastos.add(gasto.getIdGasto());
+            }
+            
+            Map<Integer, List<Categoria>> categoriasPorGasto = new HashMap<>();
+            Map<Integer, List<Tag>> tagsPorGasto = new HashMap<>();
+            Map<Integer, String[]> observacoesPorGasto = new HashMap<>();
+            
+            if (!idsGastos.isEmpty()) {
+                CategoryRepository categoryRepository = new CategoryRepository();
+                TagRepository tagRepository = new TagRepository();
+                
+                categoriasPorGasto = categoryRepository.buscarCategoriasPorGastos(idsGastos);
+                tagsPorGasto = tagRepository.buscarTagsPorGastos(idsGastos);
+                observacoesPorGasto = expenseRepository.buscarObservacoesDeGastos(idsGastos);
+            }
+            
+            // Formata as parcelas como transações
+            List<Map<String, Object>> transactions = new ArrayList<>();
+            AccountRepository accountRepository = new AccountRepository();
+            Map<Integer, Conta> contasMap = new HashMap<>();
+            
+            for (Gasto gasto : gastos) {
+                if (!contasMap.containsKey(gasto.getIdConta())) {
+                    Conta conta = accountRepository.buscarConta(gasto.getIdConta());
+                    if (conta != null) {
+                        contasMap.put(gasto.getIdConta(), conta);
+                    }
+                }
+                
+                List<Categoria> categorias = categoriasPorGasto.getOrDefault(gasto.getIdGasto(), new ArrayList<>());
+                List<String> nomesCategorias = new ArrayList<>();
+                List<Integer> idsCategorias = new ArrayList<>();
+                
+                for (Categoria cat : categorias) {
+                    nomesCategorias.add(cat.getNome());
+                    idsCategorias.add(cat.getIdCategoria());
+                }
+                
+                String categoriasStr = nomesCategorias.isEmpty() ? "Sem Categoria" : String.join(", ", nomesCategorias);
+                
+                List<Tag> tags = tagsPorGasto.getOrDefault(gasto.getIdGasto(), new ArrayList<>());
+                List<Map<String, Object>> tagsList = new ArrayList<>();
+                for (Tag tag : tags) {
+                    Map<String, Object> tagMap = new HashMap<>();
+                    tagMap.put("idTag", tag.getIdTag());
+                    tagMap.put("nome", tag.getNome());
+                    tagMap.put("cor", tag.getCor());
+                    tagsList.add(tagMap);
+                }
+                
+                String[] observacoes = observacoesPorGasto.getOrDefault(gasto.getIdGasto(), new String[0]);
+                List<String> observacoesList = new ArrayList<>();
+                for (String obs : observacoes) {
+                    observacoesList.add(obs);
+                }
+                
+                Map<String, Object> transaction = new HashMap<>();
+                transaction.put("id", gasto.getIdGasto());
+                transaction.put("type", "expense");
+                transaction.put("description", gasto.getDescricao());
+                transaction.put("value", gasto.getValor());
+                transaction.put("date", gasto.getData().toString());
+                transaction.put("category", categoriasStr);
+                transaction.put("categoryIds", idsCategorias);
+                transaction.put("categories", nomesCategorias);
+                transaction.put("tags", tagsList);
+                transaction.put("observacoes", observacoesList);
+                transaction.put("ativo", gasto.isAtivo());
+                
+                // Campo de data de entrada na fatura (para compras retidas)
+                if (gasto.getDataEntradaFatura() != null) {
+                    transaction.put("dataEntradaFatura", gasto.getDataEntradaFatura().toString());
+                    Conta conta = contasMap.get(gasto.getIdConta());
+                    if (conta != null && conta.isCartaoCredito()) {
+                        transaction.put("accountId", conta.getIdConta());
+                        if (conta.getDiaFechamento() != null) {
+                            transaction.put("diaFechamento", conta.getDiaFechamento());
+                        }
+                        if (conta.getDiaPagamento() != null) {
+                            transaction.put("diaPagamento", conta.getDiaPagamento());
+                        }
+                    }
+                }
+                
+                // Campos de parcelas
+                if (gasto.getIdGrupoParcela() != null) {
+                    transaction.put("idGrupoParcela", gasto.getIdGrupoParcela());
+                    transaction.put("numeroParcela", gasto.getNumeroParcela());
+                    transaction.put("totalParcelas", gasto.getTotalParcelas());
+                    
+                    // Determina se foi paga baseado na data (parcelas com data passada são consideradas pagas)
+                    boolean foiPaga = !gasto.isAtivo() || gasto.getData().isBefore(LocalDate.now());
+                    transaction.put("parcelaPaga", foiPaga);
+                }
+                
+                transactions.add(transaction);
+            }
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("data", transactions);
+            
+            ResponseUtil.sendJsonResponse(exchange, 200, response);
+        } catch (AuthUtil.UnauthorizedException e) {
+            ResponseUtil.sendErrorResponse(exchange, 401, e.getMessage());
+        } catch (Exception e) {
+            e.printStackTrace();
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", false);
+            response.put("message", "Erro ao buscar parcelas: " + e.getMessage());
+            ResponseUtil.sendJsonResponse(exchange, 500, response);
         }
     }
     

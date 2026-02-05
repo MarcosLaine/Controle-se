@@ -390,43 +390,19 @@ export default function Transactions() {
   };
 
   // Busca todas as parcelas de um grupo (incluindo pagas)
-  const fetchGroupInstallments = async (groupId, type) => {
+  const fetchGroupInstallments = async (groupId, type, totalParcelas) => {
     if (groupInstallmentsCache.has(groupId)) {
       return groupInstallmentsCache.get(groupId);
     }
 
     setLoadingGroups(prev => new Set(prev).add(groupId));
     try {
-      // Busca todas as transações, incluindo parcelas pagas
-      // Usa filtro de tipo "parceladas" para garantir que todas as parcelas sejam retornadas
-      const response = await api.get(`/transactions?userId=${user.id}&type=parceladas&limit=1000&offset=0`);
+      // Usa endpoint específico para buscar todas as parcelas do grupo
+      const endpoint = type === 'expense' ? '/expenses' : '/incomes';
+      const response = await api.get(`${endpoint}/installments?groupId=${groupId}`);
       
-      if (response.success) {
-        // Filtra apenas as parcelas deste grupo específico
-        const groupInstallments = (response.data || []).filter(t => 
-          t.idGrupoParcela === groupId && 
-          t.type === type &&
-          t.numeroParcela && 
-          t.totalParcelas
-        );
-        
-        // Se não encontrou todas as parcelas, tenta buscar sem filtro de tipo
-        if (totalParcelas && groupInstallments.length < totalParcelas) {
-          const responseAll = await api.get(`/transactions?userId=${user.id}&limit=1000&offset=0`);
-          if (responseAll.success) {
-            const allGroupInstallments = (responseAll.data || []).filter(t => 
-              t.idGrupoParcela === groupId && 
-              t.type === type &&
-              t.numeroParcela && 
-              t.totalParcelas
-            );
-            
-            // Combina e remove duplicatas
-            const existingIds = new Set(groupInstallments.map(t => t.id));
-            const additional = allGroupInstallments.filter(t => !existingIds.has(t.id));
-            groupInstallments.push(...additional);
-          }
-        }
+      if (response.success && response.data) {
+        const groupInstallments = response.data || [];
         
         // Ordena por número da parcela
         groupInstallments.sort((a, b) => (a.numeroParcela || 0) - (b.numeroParcela || 0));
@@ -442,6 +418,30 @@ export default function Transactions() {
       }
     } catch (error) {
       console.error('Erro ao buscar parcelas do grupo:', error);
+      // Fallback: tenta buscar através da API de transações
+      try {
+        const response = await api.get(`/transactions?userId=${user.id}&type=parceladas&limit=1000&offset=0`);
+        if (response.success) {
+          const groupInstallments = (response.data || []).filter(t => 
+            t.idGrupoParcela === groupId && 
+            t.type === type &&
+            t.numeroParcela && 
+            t.totalParcelas
+          );
+          
+          groupInstallments.sort((a, b) => (a.numeroParcela || 0) - (b.numeroParcela || 0));
+          
+          setGroupInstallmentsCache(prev => {
+            const next = new Map(prev);
+            next.set(groupId, groupInstallments);
+            return next;
+          });
+          
+          return groupInstallments;
+        }
+      } catch (fallbackError) {
+        console.error('Erro no fallback:', fallbackError);
+      }
       toast.error(t('transactions.errorLoadingInstallments') || 'Erro ao carregar parcelas');
     } finally {
       setLoadingGroups(prev => {
