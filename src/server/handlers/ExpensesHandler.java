@@ -184,9 +184,14 @@ public class ExpensesHandler implements HttpHandler {
     private void handlePut(HttpExchange exchange) throws IOException {
         try {
             int userId = AuthUtil.requireUserId(exchange);
+            String groupIdParam = RequestUtil.getQueryParam(exchange, "groupId");
+            if (groupIdParam != null && !groupIdParam.isEmpty()) {
+                handlePutInstallmentGroup(exchange, userId, groupIdParam);
+                return;
+            }
             String idParam = RequestUtil.getQueryParam(exchange, "id");
             if (idParam == null || idParam.isEmpty()) {
-                ResponseUtil.sendJsonResponse(exchange, 400, Map.of("success", false, "message", "ID do gasto é obrigatório"));
+                ResponseUtil.sendJsonResponse(exchange, 400, Map.of("success", false, "message", "ID do gasto ou groupId é obrigatório"));
                 return;
             }
             int expenseId = Integer.parseInt(idParam);
@@ -238,6 +243,39 @@ public class ExpensesHandler implements HttpHandler {
         } catch (Exception e) {
             e.printStackTrace();
             ResponseUtil.sendJsonResponse(exchange, 400, Map.of("success", false, "message", e.getMessage() != null ? e.getMessage() : "Erro ao atualizar gasto"));
+        }
+    }
+    
+    private void handlePutInstallmentGroup(HttpExchange exchange, int userId, String groupIdParam) throws IOException {
+        try {
+            int groupId = Integer.parseInt(groupIdParam);
+            String requestBody = RequestUtil.readRequestBody(exchange);
+            Map<String, Object> data = JsonUtil.parseJsonWithNested(requestBody);
+            
+            String description = (String) data.get("description");
+            if (description == null) description = "";
+            int accountId = data.get("accountId") != null ? ((Number) data.get("accountId")).intValue() : 0;
+            List<Integer> categoryIds = parseCategoryIds(data);
+            List<Integer> tagIds = parseTagIds(data);
+            String[] observacoes = parseObservacoes(data);
+            LocalDate dataEntradaFatura = null;
+            Object dataEntradaFaturaObj = data.get("dataEntradaFatura");
+            if (dataEntradaFaturaObj != null && !dataEntradaFaturaObj.toString().trim().isEmpty()) {
+                try { dataEntradaFatura = LocalDate.parse((String) dataEntradaFaturaObj); } catch (Exception e) { }
+            }
+            
+            InstallmentService installmentService = new InstallmentService();
+            installmentService.atualizarGrupoGasto(groupId, userId, description, accountId, categoryIds, tagIds, observacoes, dataEntradaFatura);
+            
+            CacheUtil.invalidateCache("overview_" + userId);
+            CacheUtil.invalidateCache("categories_" + userId);
+            CacheUtil.invalidateCache("totalExpense_" + userId);
+            CacheUtil.invalidateCache("balance_" + userId);
+            
+            ResponseUtil.sendJsonResponse(exchange, 200, Map.of("success", true, "message", "Compra parcelada atualizada com sucesso"));
+        } catch (Exception e) {
+            e.printStackTrace();
+            ResponseUtil.sendJsonResponse(exchange, 400, Map.of("success", false, "message", e.getMessage() != null ? e.getMessage() : "Erro ao atualizar compra parcelada"));
         }
     }
     

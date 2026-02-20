@@ -785,6 +785,117 @@ public class ExpenseRepository {
     }
     
     /**
+     * Atualiza todas as parcelas de um grupo como um todo: descrição, conta, categorias, observações, data entrada fatura.
+     * Ajusta saldos apenas das parcelas ainda ativas (não pagas) ao trocar de conta.
+     */
+    public void atualizarGrupoParcelado(int idGrupo, int idUsuario, String descricao, int idConta,
+                                        List<Integer> idsCategorias, String[] observacoes, LocalDate dataEntradaFatura) {
+        List<Gasto> gastos = buscarGastosPorGrupoParcela(idGrupo);
+        if (gastos == null || gastos.isEmpty()) throw new IllegalArgumentException("Grupo de parcelas não encontrado");
+        if (gastos.get(0).getIdUsuario() != idUsuario) throw new IllegalArgumentException("Grupo não pertence ao usuário");
+        
+        validateId("ID da conta", idConta);
+        descricao = InputValidator.sanitizeDescription(descricao);
+        if (idsCategorias != null) {
+            for (Integer idCat : idsCategorias) validateId("ID da categoria", idCat);
+        }
+        
+        AccountRepository accountRepo = new AccountRepository();
+        Conta contaNova = accountRepo.buscarConta(idConta);
+        if (contaNova == null) throw new IllegalArgumentException("Conta não encontrada");
+        if (contaNova.getIdUsuario() != idUsuario) throw new IllegalArgumentException("Conta não pertence ao usuário");
+        String tipoConta = contaNova.getTipo() != null ? contaNova.getTipo().toLowerCase().trim() : "";
+        if (tipoConta.equals("investimento") || tipoConta.startsWith("investimento")) {
+            throw new IllegalArgumentException("Contas de investimento não podem ser usadas para gastos");
+        }
+        
+        int contaAntiga = gastos.get(0).getIdConta();
+        double somaPendentes = 0;
+        for (Gasto g : gastos) {
+            if (g.isAtivo()) somaPendentes += g.getValor();
+        }
+        boolean contaAlterada = (contaAntiga != idConta);
+        
+        Connection conn = null;
+        try {
+            conn = getConnection();
+            conn.setAutoCommit(false);
+            
+            if (contaAlterada && somaPendentes > 0) {
+                String sqlReverte = "UPDATE contas SET saldo_atual = saldo_atual + ? WHERE id_conta = ?";
+                try (PreparedStatement pstmt = conn.prepareStatement(sqlReverte)) {
+                    pstmt.setDouble(1, somaPendentes);
+                    pstmt.setInt(2, contaAntiga);
+                    pstmt.executeUpdate();
+                }
+                String sqlNova = "UPDATE contas SET saldo_atual = saldo_atual - ? WHERE id_conta = ?";
+                try (PreparedStatement pstmt = conn.prepareStatement(sqlNova)) {
+                    pstmt.setDouble(1, somaPendentes);
+                    pstmt.setInt(2, idConta);
+                    pstmt.executeUpdate();
+                }
+            }
+            
+            String sqlGasto = "UPDATE gastos SET descricao = ?, id_conta = ?, data_entrada_fatura = ? WHERE id_gasto = ?";
+            CategoryRepository catRepo = new CategoryRepository();
+            List<Integer> cats = idsCategorias;
+            if (cats == null || cats.isEmpty()) {
+                int idSemCat = catRepo.obterOuCriarCategoriaSemCategoria(idUsuario);
+                cats = new ArrayList<>();
+                cats.add(idSemCat);
+            }
+            
+            for (Gasto gasto : gastos) {
+                try (PreparedStatement pstmt = conn.prepareStatement(sqlGasto)) {
+                    pstmt.setString(1, descricao);
+                    pstmt.setInt(2, idConta);
+                    pstmt.setDate(3, dataEntradaFatura != null ? java.sql.Date.valueOf(dataEntradaFatura) : null);
+                    pstmt.setInt(4, gasto.getIdGasto());
+                    pstmt.executeUpdate();
+                }
+                try (PreparedStatement pstmt = conn.prepareStatement("DELETE FROM categoria_gasto WHERE id_gasto = ?")) {
+                    pstmt.setInt(1, gasto.getIdGasto());
+                    pstmt.executeUpdate();
+                }
+                String sqlCat = "INSERT INTO categoria_gasto (id_categoria, id_gasto) VALUES (?, ?)";
+                try (PreparedStatement pstmt = conn.prepareStatement(sqlCat)) {
+                    for (int idCat : cats) {
+                        pstmt.setInt(1, idCat);
+                        pstmt.setInt(2, gasto.getIdGasto());
+                        try { pstmt.executeUpdate(); } catch (SQLException e) {
+                            if (!e.getMessage().contains("duplicate") && !e.getMessage().contains("unique")) throw e;
+                        }
+                    }
+                }
+                try (PreparedStatement pstmt = conn.prepareStatement("DELETE FROM gasto_observacoes WHERE id_gasto = ?")) {
+                    pstmt.setInt(1, gasto.getIdGasto());
+                    pstmt.executeUpdate();
+                }
+                if (observacoes != null && observacoes.length > 0) {
+                    String sqlObs = "INSERT INTO gasto_observacoes (id_gasto, observacao, ordem) VALUES (?, ?, ?)";
+                    try (PreparedStatement pstmt = conn.prepareStatement(sqlObs)) {
+                        for (int i = 0; i < observacoes.length; i++) {
+                            if (observacoes[i] != null && !observacoes[i].trim().isEmpty()) {
+                                pstmt.setInt(1, gasto.getIdGasto());
+                                pstmt.setString(2, observacoes[i]);
+                                pstmt.setInt(3, i);
+                                pstmt.executeUpdate();
+                            }
+                        }
+                    }
+                }
+            }
+            
+            conn.commit();
+        } catch (SQLException e) {
+            if (conn != null) try { conn.rollback(); } catch (SQLException ex) {}
+            throw new RuntimeException("Erro ao atualizar grupo parcelado: " + e.getMessage(), e);
+        } finally {
+            if (conn != null) try { conn.close(); } catch (SQLException e) {}
+        }
+    }
+    
+    /**
      * Marca uma parcela como paga (pagamento antecipado)
      * Estorna o saldo ao cartão de crédito (aumenta o limite disponível)
      * O dinheiro já foi debitado da conta origem no handler

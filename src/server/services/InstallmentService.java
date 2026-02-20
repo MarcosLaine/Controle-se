@@ -108,40 +108,41 @@ public class InstallmentService {
                 }
             }
             
-            // Se a parcela já passou (data no passado ou hoje), marca automaticamente como paga
-            // Isso faz o estorno automático do valor ao cartão de crédito
-            LocalDate hoje = LocalDate.now();
-            if (!dataParcela.isAfter(hoje)) { // Se a data não é futura (passado ou hoje)
-                Conta conta = accountRepository.buscarConta(idConta);
-                // Verifica se é cartão de crédito de forma mais robusta
-                boolean isCartao = false;
-                if (conta != null && conta.getTipo() != null) {
-                    String tipoLower = conta.getTipo().toLowerCase().trim();
-                    isCartao = tipoLower.contains("cartao") || tipoLower.contains("cartão") || 
-                               tipoLower.contains("credito") || tipoLower.contains("crédito") ||
-                               tipoLower.equals("cartao_credito");
-                }
-                
-                if (isCartao) {
-                    try {
-                        // Marca a parcela como paga e estorna o saldo ao cartão de crédito
-                        // O método marcarParcelaComoPaga já faz a verificação e o estorno
-                        expenseRepository.marcarParcelaComoPaga(idGasto);
-                        // LOGGER.info("Parcela " + i + "/" + numeroParcelas + " marcada automaticamente como paga (data passada: " + dataParcela + ") - Valor estornado: R$ " + valorParcela);
-                    } catch (Exception e) {
-                        LOGGER.severe("ERRO CRÍTICO ao marcar parcela " + i + " como paga automaticamente: " + e.getMessage());
-                        e.printStackTrace();
-                        // Re-lança a exceção para garantir que o problema seja visível
-                        throw new RuntimeException("Erro ao processar parcela passada automaticamente: " + e.getMessage(), e);
-                    }
-                } else {
-                    LOGGER.warning("Parcela " + i + "/" + numeroParcelas + " não marcada como paga - conta " + idConta + " não é cartão de crédito (tipo: " + (conta != null ? conta.getTipo() : "null") + ")");
-                }
-            }
+            // Parcela só deve ser considerada paga quando o usuário registrar o pagamento
+            // (não marcamos como paga automaticamente pela data de vencimento)
         }
         
         // LOGGER.info("Compra parcelada criada com sucesso: " + numeroParcelas + " parcelas");
         return idGrupo;
+    }
+    
+    /**
+     * Atualiza um grupo de compra parcelada (gasto) como um todo: descrição, conta, categorias, tags, observações, data entrada fatura.
+     */
+    public void atualizarGrupoGasto(int idGrupo, int idUsuario, String descricao, int idConta,
+                                   List<Integer> idsCategorias, List<Integer> idsTags,
+                                   String[] observacoes, LocalDate dataEntradaFatura) throws Exception {
+        List<Gasto> gastos = expenseRepository.buscarGastosPorGrupoParcela(idGrupo);
+        if (gastos == null || gastos.isEmpty()) {
+            throw new IllegalArgumentException("Grupo de parcelas não encontrado");
+        }
+        if (gastos.get(0).getIdUsuario() != idUsuario) {
+            throw new IllegalArgumentException("Grupo não pertence ao usuário");
+        }
+        expenseRepository.atualizarGrupoParcelado(idGrupo, idUsuario, descricao, idConta, idsCategorias, observacoes, dataEntradaFatura);
+        for (Gasto gasto : gastos) {
+            tagRepository.removerTodasTagsTransacao(gasto.getIdGasto(), "GASTO");
+            if (idsTags != null) {
+                for (int tagId : idsTags) {
+                    tagRepository.associarTagTransacao(gasto.getIdGasto(), "GASTO", tagId);
+                }
+            }
+        }
+        try {
+            installmentRepository.atualizarGrupo(idGrupo, descricao, idConta);
+        } catch (Exception e) {
+            LOGGER.warning("Erro ao atualizar metadados do grupo (installment_groups): " + e.getMessage());
+        }
     }
     
     /**

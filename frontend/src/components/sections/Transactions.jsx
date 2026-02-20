@@ -464,6 +464,27 @@ export default function Transactions() {
     };
   };
 
+  // Monta initialData para edição do grupo de parcelas (compra parcelada como um todo)
+  const buildInitialDataForGroup = (group) => {
+    const first = group.transactions?.[0];
+    const obs = first?.observacoes ?? group.observacoes;
+    const observacoesStr = Array.isArray(obs) ? (obs.join('\n') || '') : (obs || '');
+    const tagIds = (first?.tags || group.tags || []).map((tag) => tag.idTag?.toString?.() || tag.idTag).filter(Boolean);
+    const categoryIds = (first?.categoryIds || group.categoryIds || []).map((id) => id?.toString?.() || id).filter(Boolean);
+    return {
+      idGrupoParcela: group.idGrupoParcela,
+      description: group.description || '',
+      value: group.valorTotal ?? '',
+      date: group.date || first?.date || '',
+      accountId: (first?.accountId ?? group.accountId ?? '')?.toString?.() || '',
+      categoryIds: categoryIds.length ? categoryIds : [],
+      tagIds,
+      observacoes: observacoesStr,
+      compraRetida: !!(first?.dataEntradaFatura ?? group.dataEntradaFatura),
+      dataEntradaFatura: first?.dataEntradaFatura || group.dataEntradaFatura || '',
+    };
+  };
+
   // Componente para renderizar item de transação individual
   const TransactionItem = ({ transaction, isParcelaPaga, isParcelaExcluida, formatCurrency, formatDate, t, onPayInstallment, onDelete, onEdit, deletingIds, isNested }) => {
     return (
@@ -697,8 +718,11 @@ export default function Transactions() {
 
   const handleEdit = (transaction) => {
     setEditTransaction({ id: transaction.id, type: transaction.type, initialData: buildInitialDataForEdit(transaction) });
-    if (transaction.type === 'expense') setShowExpenseModal(true);
-    else setShowIncomeModal(true);
+  };
+
+  const handleEditGroup = (group) => {
+    setEditTransaction({ isGroup: true, idGrupoParcela: group.idGrupoParcela, type: 'expense', initialData: buildInitialDataForGroup(group) });
+    setShowExpenseModal(true);
   };
 
   const handleDelete = async (id, type) => {
@@ -953,6 +977,19 @@ export default function Transactions() {
                         {item.type === 'income' ? '+' : '-'}
                         {formatCurrency(item.valorTotal || 0)}
                       </span>
+                      {item.type === 'expense' && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleEditGroup(item);
+                          }}
+                          className="btn-secondary shrink-0 p-2"
+                          title={t('common.edit') || 'Editar'}
+                          type="button"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
                   </div>
                   
@@ -986,7 +1023,7 @@ export default function Transactions() {
                                 setShowPayInstallmentModal(true);
                               }}
                               onDelete={handleDelete}
-                              onEdit={handleEdit}
+                              onEdit={undefined}
                               deletingIds={deletingIds}
                               isNested={true}
                             />
@@ -1053,7 +1090,14 @@ export default function Transactions() {
         categories={categories}
         accounts={accounts}
         tags={tags}
-        onSuccess={() => {
+        onSuccess={(arg) => {
+          if (arg?.groupId) {
+            setGroupInstallmentsCache(prev => {
+              const next = new Map(prev);
+              next.delete(arg.groupId);
+              return next;
+            });
+          }
           loadData();
           invalidateCache(`overview-${user.id}-month`);
           invalidateCache(`overview-${user.id}-year`);
@@ -1286,8 +1330,8 @@ export function TransactionModal({ isOpen, onClose, type, categories, accounts, 
       }
     }
     
-    // Modo de edição para importação: apenas retorna os dados sem salvar
-    if (isEditMode && !initialData?.id) {
+    // Modo de edição para importação: apenas retorna os dados sem salvar (não é grupo nem id único)
+    if (isEditMode && !initialData?.id && !initialData?.idGrupoParcela) {
       onSuccess(formData);
       onClose();
       return;
@@ -1339,13 +1383,20 @@ export function TransactionModal({ isOpen, onClose, type, categories, accounts, 
       }
 
       const endpoint = type === 'expense' ? '/expenses' : '/incomes';
-      const isUpdate = isEditMode && initialData?.id;
-      const response = isUpdate
-        ? await api.put(`${endpoint}?id=${initialData.id}`, data)
-        : await api.post(endpoint, data);
+      const isUpdateGroup = isEditMode && type === 'expense' && initialData?.idGrupoParcela;
+      const isUpdateSingle = isEditMode && initialData?.id;
+      const isUpdate = isUpdateGroup || isUpdateSingle;
+      let response;
+      if (isUpdateGroup) {
+        response = await api.put(`${endpoint}?groupId=${initialData.idGrupoParcela}`, data);
+      } else if (isUpdateSingle) {
+        response = await api.put(`${endpoint}?id=${initialData.id}`, data);
+      } else {
+        response = await api.post(endpoint, data);
+      }
       if (response.success) {
         toast.success(isUpdate ? t('transactions.updatedSuccess') : t(`transactions.${type === 'expense' ? 'expenseAdded' : 'incomeAdded'}`) + '!');
-        onSuccess();
+        onSuccess(isUpdateGroup ? { groupId: initialData.idGrupoParcela } : undefined);
         onClose();
         setFormData({
           description: '',

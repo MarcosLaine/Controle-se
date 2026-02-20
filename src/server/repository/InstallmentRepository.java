@@ -112,6 +112,20 @@ public class InstallmentRepository {
     }
     
     /**
+     * Atualiza descrição e conta do grupo de parcelas (metadados do grupo)
+     */
+    public void atualizarGrupo(int idGrupo, String descricao, int idConta) throws SQLException {
+        String sql = "UPDATE installment_groups SET descricao = ?, id_conta = ?, updated_at = CURRENT_TIMESTAMP WHERE id_grupo = ?";
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, descricao);
+            pstmt.setInt(2, idConta);
+            pstmt.setInt(3, idGrupo);
+            pstmt.executeUpdate();
+        }
+    }
+    
+    /**
      * Desativa um grupo de parcelas (soft delete)
      */
     public void desativarGrupo(int idGrupo) throws SQLException {
