@@ -257,7 +257,8 @@ public class ImportTransactionsHandler implements HttpHandler {
             try {
                 installmentService.criarCompraParcelada(
                     description, value, numeroParcelas, dataPrimeiraParcela, intervaloDias,
-                    userId, accountId, categoryIds, tagIds, observacoes
+                    userId, accountId, categoryIds, tagIds, observacoes,
+                    dataEntradaFatura
                 );
             } catch (Exception e) {
                 throw new RuntimeException("Erro ao criar compra parcelada: " + e.getMessage(), e);
