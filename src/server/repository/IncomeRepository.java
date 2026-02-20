@@ -509,6 +509,98 @@ public class IncomeRepository {
         }
     }
 
+    /**
+     * Atualiza uma receita existente (descrição, valor, data, conta, observações).
+     * Ajusta saldos das contas se a conta ou o valor for alterado.
+     */
+    public void atualizarReceita(int idReceita, int idUsuario, String descricao, double valor, LocalDate data,
+                                 int idConta, String[] observacoes) {
+        Receita receita = buscarReceitaPorUsuario(idReceita, idUsuario);
+        if (receita == null) throw new IllegalArgumentException("Receita não encontrada");
+        
+        validateAmount("Valor da receita", valor);
+        validateId("ID da conta", idConta);
+        if (data == null) throw new IllegalArgumentException("Data não pode ser nula");
+        descricao = InputValidator.sanitizeDescription(descricao);
+        
+        AccountRepository accountRepo = new AccountRepository();
+        Conta contaNova = accountRepo.buscarConta(idConta);
+        if (contaNova == null) throw new IllegalArgumentException("Conta não encontrada");
+        if (contaNova.getIdUsuario() != idUsuario) throw new IllegalArgumentException("Conta não pertence ao usuário");
+        if (contaNova.getTipo() != null && contaNova.getTipo().equalsIgnoreCase("INVESTIMENTO")) {
+            throw new IllegalArgumentException("Contas de investimento não podem ser usadas para receitas");
+        }
+        
+        Connection conn = null;
+        try {
+            conn = getConnection();
+            conn.setAutoCommit(false);
+            
+            int contaAntiga = receita.getIdConta();
+            double valorAntigo = receita.getValor();
+            boolean contaAlterada = (contaAntiga != idConta);
+            boolean valorAlterado = (Math.abs(valorAntigo - valor) > 0.001);
+            
+            if (contaAlterada) {
+                String sqlReverte = "UPDATE contas SET saldo_atual = saldo_atual - ? WHERE id_conta = ?";
+                try (PreparedStatement pstmt = conn.prepareStatement(sqlReverte)) {
+                    pstmt.setDouble(1, valorAntigo);
+                    pstmt.setInt(2, contaAntiga);
+                    pstmt.executeUpdate();
+                }
+                String sqlNova = "UPDATE contas SET saldo_atual = saldo_atual + ? WHERE id_conta = ?";
+                try (PreparedStatement pstmt = conn.prepareStatement(sqlNova)) {
+                    pstmt.setDouble(1, valor);
+                    pstmt.setInt(2, idConta);
+                    pstmt.executeUpdate();
+                }
+            } else if (valorAlterado) {
+                double diff = valor - valorAntigo;
+                String sqlAjuste = "UPDATE contas SET saldo_atual = saldo_atual + ? WHERE id_conta = ?";
+                try (PreparedStatement pstmt = conn.prepareStatement(sqlAjuste)) {
+                    pstmt.setDouble(1, diff);
+                    pstmt.setInt(2, idConta);
+                    pstmt.executeUpdate();
+                }
+            }
+            
+            String sql = "UPDATE receitas SET descricao = ?, valor = ?, data = ?, id_conta = ? WHERE id_receita = ?";
+            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                pstmt.setString(1, descricao);
+                pstmt.setDouble(2, valor);
+                pstmt.setDate(3, java.sql.Date.valueOf(data));
+                pstmt.setInt(4, idConta);
+                pstmt.setInt(5, idReceita);
+                pstmt.executeUpdate();
+            }
+            
+            try (PreparedStatement pstmt = conn.prepareStatement("DELETE FROM receita_observacoes WHERE id_receita = ?")) {
+                pstmt.setInt(1, idReceita);
+                pstmt.executeUpdate();
+            }
+            if (observacoes != null && observacoes.length > 0) {
+                String sqlObs = "INSERT INTO receita_observacoes (id_receita, observacao, ordem) VALUES (?, ?, ?)";
+                try (PreparedStatement pstmt = conn.prepareStatement(sqlObs)) {
+                    for (int i = 0; i < observacoes.length; i++) {
+                        if (observacoes[i] != null && !observacoes[i].trim().isEmpty()) {
+                            pstmt.setInt(1, idReceita);
+                            pstmt.setString(2, observacoes[i]);
+                            pstmt.setInt(3, i);
+                            pstmt.executeUpdate();
+                        }
+                    }
+                }
+            }
+            
+            conn.commit();
+        } catch (SQLException e) {
+            if (conn != null) try { conn.rollback(); } catch (SQLException ex) {}
+            throw new RuntimeException("Erro ao atualizar receita: " + e.getMessage(), e);
+        } finally {
+            if (conn != null) try { conn.close(); } catch (SQLException e) {}
+        }
+    }
+
     public double calcularTotalReceitasUsuario(int idUsuario) {
         // Exclui pagamentos de faturas (receitas em cartão de crédito que não são parcelas)
         // e receitas do sistema (com prefixo [SISTEMA])

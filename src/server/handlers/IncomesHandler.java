@@ -40,6 +40,8 @@ public class IncomesHandler implements HttpHandler {
             }
         } else if ("POST".equals(method)) {
             handlePost(exchange);
+        } else if ("PUT".equals(method)) {
+            handlePut(exchange);
         } else if ("DELETE".equals(method)) {
             handleDelete(exchange);
         } else {
@@ -366,6 +368,58 @@ public class IncomesHandler implements HttpHandler {
             response.put("success", false);
             response.put("message", "Erro ao buscar parcelas: " + e.getMessage());
             ResponseUtil.sendJsonResponse(exchange, 500, response);
+        }
+    }
+    
+    private void handlePut(HttpExchange exchange) throws IOException {
+        try {
+            int userId = AuthUtil.requireUserId(exchange);
+            String idParam = RequestUtil.getQueryParam(exchange, "id");
+            if (idParam == null || idParam.isEmpty()) {
+                ResponseUtil.sendJsonResponse(exchange, 400, Map.of("success", false, "message", "ID da receita é obrigatório"));
+                return;
+            }
+            int incomeId = Integer.parseInt(idParam);
+            String requestBody = RequestUtil.readRequestBody(exchange);
+            Map<String, Object> data = JsonUtil.parseJsonWithNested(requestBody);
+            
+            String description = (String) data.getOrDefault("description", "Receita");
+            double value = ((Number) data.get("value")).doubleValue();
+            LocalDate date = LocalDate.parse((String) data.get("date"));
+            int accountId = ((Number) data.get("accountId")).intValue();
+            List<Integer> tagIds = parseTagIds(data);
+            String[] observacoes = parseObservacoes(data);
+            
+            Conta conta = accountRepository.buscarConta(accountId);
+            if (conta == null) {
+                ResponseUtil.sendJsonResponse(exchange, 400, Map.of("success", false, "message", "Conta não encontrada"));
+                return;
+            }
+            if (conta.getIdUsuario() != userId) {
+                ResponseUtil.sendJsonResponse(exchange, 403, Map.of("success", false, "message", "Conta não pertence ao usuário"));
+                return;
+            }
+            if (conta.getTipo() != null && conta.getTipo().equalsIgnoreCase("INVESTIMENTO")) {
+                ResponseUtil.sendJsonResponse(exchange, 400, Map.of("success", false, "message", "Contas de investimento não podem ser usadas para receitas"));
+                return;
+            }
+            
+            incomeRepository.atualizarReceita(incomeId, userId, description, value, date, accountId, observacoes);
+            tagRepository.removerTodasTagsTransacao(incomeId, "RECEITA");
+            for (int tagId : tagIds) {
+                tagRepository.associarTagTransacao(incomeId, "RECEITA", tagId);
+            }
+            
+            CacheUtil.invalidateCache("overview_" + userId);
+            CacheUtil.invalidateCache("totalIncome_" + userId);
+            CacheUtil.invalidateCache("balance_" + userId);
+            
+            ResponseUtil.sendJsonResponse(exchange, 200, Map.of("success", true, "message", "Receita atualizada com sucesso"));
+        } catch (AuthUtil.UnauthorizedException e) {
+            ResponseUtil.sendErrorResponse(exchange, 401, e.getMessage());
+        } catch (Exception e) {
+            e.printStackTrace();
+            ResponseUtil.sendJsonResponse(exchange, 400, Map.of("success", false, "message", e.getMessage() != null ? e.getMessage() : "Erro ao atualizar receita"));
         }
     }
     

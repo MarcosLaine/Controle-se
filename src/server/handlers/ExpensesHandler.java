@@ -48,6 +48,8 @@ public class ExpensesHandler implements HttpHandler {
                 } else {
                     handlePost(exchange);
                 }
+            } else if ("PUT".equals(method)) {
+                handlePut(exchange);
             } else if ("DELETE".equals(method)) {
                 handleDelete(exchange);
             } else {
@@ -176,6 +178,66 @@ public class ExpensesHandler implements HttpHandler {
             response.put("success", false);
             response.put("message", "Erro: " + e.getMessage());
             ResponseUtil.sendJsonResponse(exchange, 400, response);
+        }
+    }
+    
+    private void handlePut(HttpExchange exchange) throws IOException {
+        try {
+            int userId = AuthUtil.requireUserId(exchange);
+            String idParam = RequestUtil.getQueryParam(exchange, "id");
+            if (idParam == null || idParam.isEmpty()) {
+                ResponseUtil.sendJsonResponse(exchange, 400, Map.of("success", false, "message", "ID do gasto é obrigatório"));
+                return;
+            }
+            int expenseId = Integer.parseInt(idParam);
+            String requestBody = RequestUtil.readRequestBody(exchange);
+            Map<String, Object> data = JsonUtil.parseJsonWithNested(requestBody);
+            
+            String description = (String) data.get("description");
+            double value = ((Number) data.get("value")).doubleValue();
+            LocalDate date = LocalDate.parse((String) data.get("date"));
+            int accountId = ((Number) data.get("accountId")).intValue();
+            List<Integer> categoryIds = parseCategoryIds(data);
+            List<Integer> tagIds = parseTagIds(data);
+            String[] observacoes = parseObservacoes(data);
+            LocalDate dataEntradaFatura = null;
+            Object dataEntradaFaturaObj = data.get("dataEntradaFatura");
+            if (dataEntradaFaturaObj != null && !dataEntradaFaturaObj.toString().trim().isEmpty()) {
+                try { dataEntradaFatura = LocalDate.parse((String) dataEntradaFaturaObj); } catch (Exception e) { }
+            }
+            
+            Conta conta = accountRepository.buscarConta(accountId);
+            if (conta == null) {
+                ResponseUtil.sendJsonResponse(exchange, 400, Map.of("success", false, "message", "Conta não encontrada"));
+                return;
+            }
+            if (conta.getIdUsuario() != userId) {
+                ResponseUtil.sendJsonResponse(exchange, 403, Map.of("success", false, "message", "Conta não pertence ao usuário"));
+                return;
+            }
+            String tipoConta = conta.getTipo() != null ? conta.getTipo().toLowerCase().trim() : "";
+            if (tipoConta.equals("investimento") || tipoConta.startsWith("investimento")) {
+                ResponseUtil.sendJsonResponse(exchange, 400, Map.of("success", false, "message", "Contas de investimento não podem ser usadas para gastos"));
+                return;
+            }
+            
+            expenseRepository.atualizarGasto(expenseId, userId, description, value, date, accountId, categoryIds, observacoes, dataEntradaFatura);
+            tagRepository.removerTodasTagsTransacao(expenseId, "GASTO");
+            for (int tagId : tagIds) {
+                tagRepository.associarTagTransacao(expenseId, "GASTO", tagId);
+            }
+            
+            CacheUtil.invalidateCache("overview_" + userId);
+            CacheUtil.invalidateCache("categories_" + userId);
+            CacheUtil.invalidateCache("totalExpense_" + userId);
+            CacheUtil.invalidateCache("balance_" + userId);
+            
+            ResponseUtil.sendJsonResponse(exchange, 200, Map.of("success", true, "message", "Gasto atualizado com sucesso"));
+        } catch (AuthUtil.UnauthorizedException e) {
+            ResponseUtil.sendErrorResponse(exchange, 401, e.getMessage());
+        } catch (Exception e) {
+            e.printStackTrace();
+            ResponseUtil.sendJsonResponse(exchange, 400, Map.of("success", false, "message", e.getMessage() != null ? e.getMessage() : "Erro ao atualizar gasto"));
         }
     }
     

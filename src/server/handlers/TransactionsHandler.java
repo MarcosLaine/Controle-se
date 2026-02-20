@@ -147,6 +147,7 @@ public class TransactionsHandler implements HttpHandler {
                 transaction.put("categories", nomesCategorias);
                 transaction.put("tags", tagsList);
                 transaction.put("ativo", gasto.isAtivo());
+                transaction.put("accountId", gasto.getIdConta());
                 // Campo de data de entrada na fatura (para compras retidas)
                 if (gasto.getDataEntradaFatura() != null) {
                     transaction.put("dataEntradaFatura", gasto.getDataEntradaFatura().toString());
@@ -207,6 +208,7 @@ public class TransactionsHandler implements HttpHandler {
                 transaction.put("categoryId", null);
                 transaction.put("tags", tagsList);
                 transaction.put("observacoes", observacoesList);
+                transaction.put("accountId", receita.getIdConta());
                 // Campos de parcelas
                 if (receita.getIdGrupoParcela() != null) {
                     transaction.put("idGrupoParcela", receita.getIdGrupoParcela());

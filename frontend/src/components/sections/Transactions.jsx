@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Plus, Minus, Trash2, ArrowUp, ArrowDown, Filter, CreditCard, Search, Upload, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, Minus, Trash2, ArrowUp, ArrowDown, Filter, CreditCard, Search, Upload, ChevronDown, ChevronUp, Pencil } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useData } from '../../contexts/DataContext';
 import { useLanguage } from '../../contexts/LanguageContext';
@@ -33,6 +33,7 @@ export default function Transactions() {
   const [expandedGroups, setExpandedGroups] = useState(new Set());
   const [groupInstallmentsCache, setGroupInstallmentsCache] = useState(new Map());
   const [loadingGroups, setLoadingGroups] = useState(new Set());
+  const [editTransaction, setEditTransaction] = useState(null);
   
   // Ref para armazenar o AbortController da requisição atual
   const abortControllerRef = useRef(null);
@@ -483,8 +484,28 @@ export default function Transactions() {
     });
   };
 
+  // Monta initialData para o modal de edição a partir da transação
+  const buildInitialDataForEdit = (transaction) => {
+    const obs = transaction.observacoes;
+    const observacoesStr = Array.isArray(obs) ? (obs.join('\n') || '') : (obs || '');
+    const tagIds = (transaction.tags || []).map((tag) => tag.idTag?.toString?.() || tag.idTag).filter(Boolean);
+    const categoryIds = (transaction.categoryIds || []).map((id) => id?.toString?.() || id).filter(Boolean);
+    return {
+      id: transaction.id,
+      description: transaction.description || '',
+      value: transaction.value ?? '',
+      date: transaction.date || '',
+      accountId: (transaction.accountId ?? '')?.toString?.() || '',
+      categoryIds: categoryIds.length ? categoryIds : [],
+      tagIds,
+      observacoes: observacoesStr,
+      compraRetida: !!transaction.dataEntradaFatura,
+      dataEntradaFatura: transaction.dataEntradaFatura || '',
+    };
+  };
+
   // Componente para renderizar item de transação individual
-  const TransactionItem = ({ transaction, isParcelaPaga, isParcelaExcluida, formatCurrency, formatDate, t, onPayInstallment, onDelete, deletingIds, isNested }) => {
+  const TransactionItem = ({ transaction, isParcelaPaga, isParcelaExcluida, formatCurrency, formatDate, t, onPayInstallment, onDelete, onEdit, deletingIds, isNested }) => {
     return (
       <div
         className={`flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${isNested ? 'pl-4 border-l-2 border-gray-200 dark:border-gray-700' : 'card'}`}
@@ -674,6 +695,21 @@ export default function Transactions() {
                 <span className="text-xs hidden sm:inline">{t('transactions.register')}</span>
               </button>
             )}
+            {onEdit && (
+              <button
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onEdit(transaction);
+                }}
+                className="btn-secondary shrink-0 p-2 relative z-10"
+                title={t('common.edit') || 'Editar'}
+                type="button"
+                style={{ pointerEvents: 'auto' }}
+              >
+                <Pencil className="w-4 h-4" />
+              </button>
+            )}
             <button
               onClick={(e) => {
                 e.preventDefault();
@@ -698,6 +734,12 @@ export default function Transactions() {
   };
 
   const [deletingIds, setDeletingIds] = useState(new Set());
+
+  const handleEdit = (transaction) => {
+    setEditTransaction({ id: transaction.id, type: transaction.type, initialData: buildInitialDataForEdit(transaction) });
+    if (transaction.type === 'expense') setShowExpenseModal(true);
+    else setShowIncomeModal(true);
+  };
 
   const handleDelete = async (id, type) => {
     if (!confirm(t('common.deleteTransactionConfirm'))) return;
@@ -748,11 +790,11 @@ export default function Transactions() {
             <Upload className="w-4 h-4" />
             {t('import.title') || 'Importar'}
           </button>
-          <button onClick={() => setShowExpenseModal(true)} className="flex-1 sm:flex-none btn-secondary justify-center">
+          <button onClick={() => { setEditTransaction(null); setShowExpenseModal(true); }} className="flex-1 sm:flex-none btn-secondary justify-center">
             <Minus className="w-4 h-4" />
             {t('transactions.newExpense')}
           </button>
-          <button onClick={() => setShowIncomeModal(true)} className="flex-1 sm:flex-none btn-primary justify-center">
+          <button onClick={() => { setEditTransaction(null); setShowIncomeModal(true); }} className="flex-1 sm:flex-none btn-primary justify-center">
             <Plus className="w-4 h-4" />
             {t('transactions.newIncome')}
           </button>
@@ -984,6 +1026,7 @@ export default function Transactions() {
                                 setShowPayInstallmentModal(true);
                               }}
                               onDelete={handleDelete}
+                              onEdit={handleEdit}
                               deletingIds={deletingIds}
                               isNested={true}
                             />
@@ -1011,6 +1054,7 @@ export default function Transactions() {
                   setShowPayInstallmentModal(true);
                 }}
                 onDelete={handleDelete}
+                onEdit={handleEdit}
                 deletingIds={deletingIds}
                 isNested={false}
               />
@@ -1044,39 +1088,41 @@ export default function Transactions() {
       {/* Expense Modal - Simplified */}
       <TransactionModal
         isOpen={showExpenseModal}
-        onClose={() => setShowExpenseModal(false)}
+        onClose={() => { setShowExpenseModal(false); setEditTransaction(null); }}
         type="expense"
         categories={categories}
         accounts={accounts}
         tags={tags}
         onSuccess={() => {
           loadData();
-          // Invalidate cache
           invalidateCache(`overview-${user.id}-month`);
           invalidateCache(`overview-${user.id}-year`);
           invalidateCache(`overview-${user.id}-all`);
           invalidateCache(`recent-transactions-${user.id}`);
         }}
         user={user}
+        initialData={editTransaction?.type === 'expense' ? editTransaction.initialData : undefined}
+        isEditMode={!!(editTransaction?.type === 'expense')}
       />
 
       {/* Income Modal - Simplified */}
       <TransactionModal
         isOpen={showIncomeModal}
-        onClose={() => setShowIncomeModal(false)}
+        onClose={() => { setShowIncomeModal(false); setEditTransaction(null); }}
         type="income"
         categories={categories}
         accounts={accounts}
         tags={tags}
         onSuccess={() => {
           loadData();
-          // Invalidate cache
           invalidateCache(`overview-${user.id}-month`);
           invalidateCache(`overview-${user.id}-year`);
           invalidateCache(`overview-${user.id}-all`);
           invalidateCache(`recent-transactions-${user.id}`);
         }}
         user={user}
+        initialData={editTransaction?.type === 'income' ? editTransaction.initialData : undefined}
+        isEditMode={!!(editTransaction?.type === 'income')}
       />
 
       {/* Pay Installment Modal */}
@@ -1280,8 +1326,8 @@ export function TransactionModal({ isOpen, onClose, type, categories, accounts, 
       }
     }
     
-    // Se for modo de edição (importação), apenas retorna os dados sem salvar
-    if (isEditMode) {
+    // Modo de edição para importação: apenas retorna os dados sem salvar
+    if (isEditMode && !initialData?.id) {
       onSuccess(formData);
       onClose();
       return;
@@ -1298,7 +1344,6 @@ export function TransactionModal({ isOpen, onClose, type, categories, accounts, 
       };
 
       if (type === 'expense') {
-        // Categoria não é mais obrigatória - gastos sem categoria serão associados à categoria "Sem Categoria"
         data.categoryIds = formData.categoryIds.length > 0 ? formData.categoryIds.map(Number) : [];
       }
 
@@ -1310,37 +1355,36 @@ export function TransactionModal({ isOpen, onClose, type, categories, accounts, 
         data.observacoes = formData.observacoes.trim();
       }
 
-      // Se for receita, sempre envia flag de pagamento de fatura (mesmo que false)
       if (type === 'income') {
         data.pagamentoFatura = formData.pagamentoFatura || false;
-        // Se for pagamento de fatura e tiver conta origem, envia
         if (formData.pagamentoFatura && formData.contaOrigemId) {
           data.contaOrigemId = parseInt(formData.contaOrigemId);
         }
       }
 
-      // Se for gasto parcelado, adiciona informações de parcelas
-      if (type === 'expense' && formData.isParcelado) {
+      // Parcelas e compra retida só ao criar (não ao editar)
+      if (!isEditMode && type === 'expense' && formData.isParcelado) {
         const numParcelas = parseInt(formData.numeroParcelas);
         if (isNaN(numParcelas) || numParcelas < 2) {
           toast.error(t('transactions.minInstallmentsError'));
+          setLoading(false);
           return;
         }
         data.numeroParcelas = numParcelas;
         data.intervaloDias = parseInt(formData.intervaloDias);
-        // Para parcelas, o valor é o valor total
-        // O backend vai dividir automaticamente
       }
 
-      // Se for gasto com compra retida, adiciona data de entrada na fatura
       if (type === 'expense' && formData.compraRetida && formData.dataEntradaFatura) {
         data.dataEntradaFatura = formData.dataEntradaFatura;
       }
 
       const endpoint = type === 'expense' ? '/expenses' : '/incomes';
-      const response = await api.post(endpoint, data);
+      const isUpdate = isEditMode && initialData?.id;
+      const response = isUpdate
+        ? await api.put(`${endpoint}?id=${initialData.id}`, data)
+        : await api.post(endpoint, data);
       if (response.success) {
-        toast.success(t(`transactions.${type === 'expense' ? 'expenseAdded' : 'incomeAdded'}`) + '!');
+        toast.success(isUpdate ? t('transactions.updatedSuccess') : t(`transactions.${type === 'expense' ? 'expenseAdded' : 'incomeAdded'}`) + '!');
         onSuccess();
         onClose();
         setFormData({
@@ -1417,7 +1461,7 @@ export function TransactionModal({ isOpen, onClose, type, categories, accounts, 
             required
           />
         </div>
-        {type === 'expense' && hasCreditCardAccounts && (
+        {type === 'expense' && hasCreditCardAccounts && !isEditMode && (
           <div>
             <label className="flex items-center gap-2 cursor-pointer">
               <input

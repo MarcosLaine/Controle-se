@@ -82,6 +82,19 @@ public class TagRepository {
         return tags;
     }
 
+    /** Remove todas as associações de tags de uma transação (para atualização). */
+    public void removerTodasTagsTransacao(int idTransacao, String tipoTransacao) {
+        String sql = "UPDATE transacao_tag SET ativo = FALSE WHERE id_transacao = ? AND tipo_transacao = ?";
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, idTransacao);
+            pstmt.setString(2, tipoTransacao);
+            pstmt.executeUpdate();
+        } catch (SQLException e) {
+            throw new RuntimeException("Erro ao remover tags da transação: " + e.getMessage(), e);
+        }
+    }
+
     public void associarTagTransacao(int idTransacao, String tipoTransacao, int idTag) {
         String sql = "INSERT INTO transacao_tag (id_transacao, tipo_transacao, id_tag) VALUES (?, ?, ?) " +
                     "ON CONFLICT (id_transacao, tipo_transacao, id_tag) DO NOTHING";

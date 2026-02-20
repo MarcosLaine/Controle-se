@@ -653,6 +653,138 @@ public class ExpenseRepository {
     }
     
     /**
+     * Atualiza um gasto existente (descrição, valor, data, conta, categorias, observações, data entrada fatura).
+     * Ajusta saldos das contas se a conta for alterada. Não altera parcelas (id_grupo_parcela) - apenas gastos únicos ou uma parcela individual.
+     */
+    public void atualizarGasto(int idGasto, int idUsuario, String descricao, double valor, LocalDate data,
+                               int idConta, List<Integer> idsCategorias, String[] observacoes, LocalDate dataEntradaFatura) {
+        Gasto gasto = buscarGastoPorUsuario(idGasto, idUsuario);
+        if (gasto == null) throw new IllegalArgumentException("Gasto não encontrado");
+        
+        validateAmount("Valor do gasto", valor);
+        validateId("ID da conta", idConta);
+        if (data == null) throw new IllegalArgumentException("Data não pode ser nula");
+        descricao = InputValidator.sanitizeDescription(descricao);
+        if (idsCategorias != null) {
+            for (Integer idCat : idsCategorias) validateId("ID da categoria", idCat);
+        }
+        
+        AccountRepository accountRepo = new AccountRepository();
+        Conta contaNova = accountRepo.buscarConta(idConta);
+        if (contaNova == null) throw new IllegalArgumentException("Conta não encontrada");
+        if (contaNova.getIdUsuario() != idUsuario) throw new IllegalArgumentException("Conta não pertence ao usuário");
+        String tipoConta = contaNova.getTipo() != null ? contaNova.getTipo().toLowerCase().trim() : "";
+        if (tipoConta.equals("investimento") || tipoConta.startsWith("investimento")) {
+            throw new IllegalArgumentException("Contas de investimento não podem ser usadas para gastos");
+        }
+        
+        Connection conn = null;
+        try {
+            conn = getConnection();
+            conn.setAutoCommit(false);
+            
+            int contaAntiga = gasto.getIdConta();
+            double valorAntigo = gasto.getValor();
+            boolean contaAlterada = (contaAntiga != idConta);
+            boolean valorAlterado = (Math.abs(valorAntigo - valor) > 0.001);
+            
+            if (contaAlterada || valorAlterado) {
+                Conta contaAntigaObj = accountRepo.buscarConta(contaAntiga);
+                boolean cartaoAntigo = contaAntigaObj != null && contaAntigaObj.isCartaoCredito();
+                boolean cartaoNovo = contaNova.isCartaoCredito();
+                if (contaAlterada) {
+                    if (contaAntigaObj != null && !cartaoAntigo) {
+                        String sqlReverte = "UPDATE contas SET saldo_atual = saldo_atual + ? WHERE id_conta = ?";
+                        try (PreparedStatement pstmt = conn.prepareStatement(sqlReverte)) {
+                            pstmt.setDouble(1, valorAntigo);
+                            pstmt.setInt(2, contaAntiga);
+                            pstmt.executeUpdate();
+                        }
+                    } else if (contaAntigaObj != null && cartaoAntigo) {
+                        String sqlReverte = "UPDATE contas SET saldo_atual = saldo_atual + ? WHERE id_conta = ?";
+                        try (PreparedStatement pstmt = conn.prepareStatement(sqlReverte)) {
+                            pstmt.setDouble(1, valorAntigo);
+                            pstmt.setInt(2, contaAntiga);
+                            pstmt.executeUpdate();
+                        }
+                    }
+                    String sqlNova = "UPDATE contas SET saldo_atual = saldo_atual - ? WHERE id_conta = ?";
+                    try (PreparedStatement pstmt = conn.prepareStatement(sqlNova)) {
+                        pstmt.setDouble(1, valor);
+                        pstmt.setInt(2, idConta);
+                        pstmt.executeUpdate();
+                    }
+                } else if (valorAlterado) {
+                    double diff = valor - valorAntigo;
+                    String sqlAjuste = "UPDATE contas SET saldo_atual = saldo_atual - ? WHERE id_conta = ?";
+                    try (PreparedStatement pstmt = conn.prepareStatement(sqlAjuste)) {
+                        pstmt.setDouble(1, diff);
+                        pstmt.setInt(2, idConta);
+                        pstmt.executeUpdate();
+                    }
+                }
+            }
+            
+            String sql = "UPDATE gastos SET descricao = ?, valor = ?, data = ?, id_conta = ?, data_entrada_fatura = ? WHERE id_gasto = ?";
+            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                pstmt.setString(1, descricao);
+                pstmt.setDouble(2, valor);
+                pstmt.setDate(3, java.sql.Date.valueOf(data));
+                pstmt.setInt(4, idConta);
+                pstmt.setDate(5, dataEntradaFatura != null ? java.sql.Date.valueOf(dataEntradaFatura) : null);
+                pstmt.setInt(6, idGasto);
+                pstmt.executeUpdate();
+            }
+            
+            try (PreparedStatement pstmt = conn.prepareStatement("DELETE FROM categoria_gasto WHERE id_gasto = ?")) {
+                pstmt.setInt(1, idGasto);
+                pstmt.executeUpdate();
+            }
+            CategoryRepository catRepo = new CategoryRepository();
+            if (idsCategorias == null || idsCategorias.isEmpty()) {
+                int idSemCat = catRepo.obterOuCriarCategoriaSemCategoria(idUsuario);
+                idsCategorias = new ArrayList<>();
+                idsCategorias.add(idSemCat);
+            }
+            String sqlCat = "INSERT INTO categoria_gasto (id_categoria, id_gasto) VALUES (?, ?)";
+            try (PreparedStatement pstmt = conn.prepareStatement(sqlCat)) {
+                for (int idCat : idsCategorias) {
+                    pstmt.setInt(1, idCat);
+                    pstmt.setInt(2, idGasto);
+                    try { pstmt.executeUpdate(); } catch (SQLException e) {
+                        if (!e.getMessage().contains("duplicate") && !e.getMessage().contains("unique")) throw e;
+                    }
+                }
+            }
+            
+            try (PreparedStatement pstmt = conn.prepareStatement("DELETE FROM gasto_observacoes WHERE id_gasto = ?")) {
+                pstmt.setInt(1, idGasto);
+                pstmt.executeUpdate();
+            }
+            if (observacoes != null && observacoes.length > 0) {
+                String sqlObs = "INSERT INTO gasto_observacoes (id_gasto, observacao, ordem) VALUES (?, ?, ?)";
+                try (PreparedStatement pstmt = conn.prepareStatement(sqlObs)) {
+                    for (int i = 0; i < observacoes.length; i++) {
+                        if (observacoes[i] != null && !observacoes[i].trim().isEmpty()) {
+                            pstmt.setInt(1, idGasto);
+                            pstmt.setString(2, observacoes[i]);
+                            pstmt.setInt(3, i);
+                            pstmt.executeUpdate();
+                        }
+                    }
+                }
+            }
+            
+            conn.commit();
+        } catch (SQLException e) {
+            if (conn != null) try { conn.rollback(); } catch (SQLException ex) {}
+            throw new RuntimeException("Erro ao atualizar gasto: " + e.getMessage(), e);
+        } finally {
+            if (conn != null) try { conn.close(); } catch (SQLException e) {}
+        }
+    }
+    
+    /**
      * Marca uma parcela como paga (pagamento antecipado)
      * Estorna o saldo ao cartão de crédito (aumenta o limite disponível)
      * O dinheiro já foi debitado da conta origem no handler
