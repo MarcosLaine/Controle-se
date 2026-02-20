@@ -1058,11 +1058,10 @@ public class ExpenseRepository {
                 
                 LocalDate dataFechamentoFatura;
                 if (idGrupoParcela != null) {
-                    // É uma parcela: cada parcela deve ir para a fatura correspondente à sua própria data
-                    // As parcelas são criadas mantendo o dia da compra original (ex: 05/10, 05/11, 05/12)
-                    // Calcula qual é a data de fechamento da fatura correspondente à data desta parcela
+                    // É uma parcela: usa data_entrada_fatura (compra retida) se houver, senão a data da parcela
+                    LocalDate dataParaFaturaParcela = (dataEntradaFatura != null) ? dataEntradaFatura : dataGasto;
                     dataFechamentoFatura = CreditCardUtil.calcularDataPrimeiraParcela(
-                        dataGasto,
+                        dataParaFaturaParcela,
                         conta.getDiaFechamento(),
                         conta.getDiaPagamento()
                     );
@@ -1303,6 +1302,39 @@ public class ExpenseRepository {
             }
         } catch (SQLException e) {
             throw new RuntimeException("Erro ao buscar valor total por grupos: " + e.getMessage(), e);
+        }
+        return result;
+    }
+    
+    /**
+     * Retorna a contagem de parcelas pagas e pendentes por grupo (para exibir no card sem depender da página atual).
+     * Chave: id_grupo_parcela; valor: int[2] = { parcelasPagas, parcelasPendentes }.
+     */
+    public Map<Integer, int[]> buscarContagemParcelasPorGrupos(Set<Integer> idsGrupos) {
+        if (idsGrupos == null || idsGrupos.isEmpty()) {
+            return new HashMap<>();
+        }
+        String placeholders = idsGrupos.stream().map(id -> "?").reduce((a, b) -> a + "," + b).orElse("");
+        String sql = "SELECT id_grupo_parcela, " +
+                    "SUM(CASE WHEN ativo = FALSE THEN 1 ELSE 0 END) as pagas, " +
+                    "SUM(CASE WHEN ativo = TRUE THEN 1 ELSE 0 END) as pendentes " +
+                    "FROM gastos WHERE id_grupo_parcela IN (" + placeholders + ") GROUP BY id_grupo_parcela";
+        Map<Integer, int[]> result = new HashMap<>();
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            int i = 1;
+            for (Integer id : idsGrupos) {
+                pstmt.setInt(i++, id);
+            }
+            ResultSet rs = pstmt.executeQuery();
+            while (rs.next()) {
+                int idGrupo = rs.getInt("id_grupo_parcela");
+                int pagas = rs.getInt("pagas");
+                int pendentes = rs.getInt("pendentes");
+                result.put(idGrupo, new int[] { pagas, pendentes });
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Erro ao buscar contagem de parcelas por grupos: " + e.getMessage(), e);
         }
         return result;
     }

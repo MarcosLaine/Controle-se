@@ -314,25 +314,31 @@ export default function Transactions() {
       // Ordena as parcelas por número
       group.transactions.sort((a, b) => (a.numeroParcela || 0) - (b.numeroParcela || 0));
       
-      // Valor total: usa valorTotalGrupo (vindo do backend, soma de todas as parcelas) quando existir,
-      // para ficar correto mesmo quando só parte das parcelas está na página atual
+      // Valor total: usa valorTotalGrupo (vindo do backend) quando existir
       const totalFromBackend = group.transactions[0]?.valorTotalGrupo;
       group.valorTotal = totalFromBackend != null && !Number.isNaN(Number(totalFromBackend))
         ? Number(totalFromBackend)
         : group.transactions.reduce((sum, t) => sum + (parseFloat(t.value) || 0), 0);
       
-      // Encontra a primeira data (parcela mais antiga)
       const firstTransaction = group.transactions[0];
       group.date = firstTransaction.date;
       
-      // Calcula estatísticas do grupo
-      const parcelasPagas = group.transactions.filter(t => isParcelaPaga(t)).length;
-      const parcelasExcluidas = group.transactions.filter(t => isParcelaExcluida(t)).length;
-      const parcelasPendentes = group.transactions.filter(t => !isParcelaPaga(t) && !isParcelaExcluida(t)).length;
-      
-      group.parcelasPagas = parcelasPagas;
-      group.parcelasExcluidas = parcelasExcluidas;
-      group.parcelasPendentes = parcelasPendentes;
+      // Contagem: usa do backend quando existir (correto mesmo com paginação); senão calcula das parcelas na página
+      const pagasBackend = firstTransaction?.parcelasPagasGrupo;
+      const pendentesBackend = firstTransaction?.parcelasPendentesGrupo;
+      if (pagasBackend != null && pendentesBackend != null && !Number.isNaN(Number(pagasBackend)) && !Number.isNaN(Number(pendentesBackend))) {
+        group.parcelasPagas = Number(pagasBackend);
+        group.parcelasPendentes = Number(pendentesBackend);
+        group.parcelasExcluidas = (group.totalParcelas || 0) - group.parcelasPagas - group.parcelasPendentes;
+        if (group.parcelasExcluidas < 0) group.parcelasExcluidas = 0;
+      } else {
+        const parcelasPagas = group.transactions.filter(t => isParcelaPaga(t)).length;
+        const parcelasExcluidas = group.transactions.filter(t => isParcelaExcluida(t)).length;
+        const parcelasPendentes = group.transactions.filter(t => !isParcelaPaga(t) && !isParcelaExcluida(t)).length;
+        group.parcelasPagas = parcelasPagas;
+        group.parcelasExcluidas = parcelasExcluidas;
+        group.parcelasPendentes = parcelasPendentes;
+      }
       
       grouped.push(group);
     });
@@ -1140,6 +1146,13 @@ export default function Transactions() {
           installment={selectedInstallment}
           accounts={accounts}
           onSuccess={() => {
+            if (selectedInstallment?.idGrupoParcela) {
+              setGroupInstallmentsCache(prev => {
+                const next = new Map(prev);
+                next.delete(selectedInstallment.idGrupoParcela);
+                return next;
+              });
+            }
             loadData();
             invalidateCache(`overview-${user.id}-month`);
             invalidateCache(`overview-${user.id}-year`);

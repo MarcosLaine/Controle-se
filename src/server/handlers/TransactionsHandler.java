@@ -89,6 +89,7 @@ public class TransactionsHandler implements HttpHandler {
             }
             Map<Integer, Double> valorTotalPorGrupoGastos = expenseRepository.buscarValorTotalPorGrupos(idsGruposGastos);
             Map<Integer, Double> valorTotalPorGrupoReceitas = incomeRepository.buscarValorTotalPorGrupos(idsGruposReceitas);
+            Map<Integer, int[]> contagemParcelasPorGrupoGastos = expenseRepository.buscarContagemParcelasPorGrupos(idsGruposGastos);
             
             // Busca informações das contas para calcular o mês da fatura
             AccountRepository accountRepository = new AccountRepository();
@@ -172,9 +173,11 @@ public class TransactionsHandler implements HttpHandler {
                     if (totalGrupo != null) {
                         transaction.put("valorTotalGrupo", totalGrupo);
                     }
-                    // Determina se foi paga ou excluída
-                    // Se está inativa, foi paga (pagamento antecipado ou fechamento de fatura)
-                    // Parcelas pagas aparecem na lista, parcelas excluídas não aparecem
+                    int[] contagem = contagemParcelasPorGrupoGastos.get(gasto.getIdGrupoParcela());
+                    if (contagem != null) {
+                        transaction.put("parcelasPagasGrupo", contagem[0]);
+                        transaction.put("parcelasPendentesGrupo", contagem[1]);
+                    }
                     boolean foiPaga = !gasto.isAtivo();
                     transaction.put("parcelaPaga", foiPaga);
                 }
