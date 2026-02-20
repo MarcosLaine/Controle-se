@@ -1077,24 +1077,14 @@ public class ExpenseRepository {
                     );
                 }
                 
-                // Verifica se a data de fechamento da fatura está no período
-                // dataFechamentoFatura é a data de fechamento da fatura correspondente
-                // A fatura atual é a que fecha em proximoFechamento (dataFim)
-                // Incluímos gastos que fecham após ultimoFechamento (dataInicio) e até/incluindo proximoFechamento (dataFim)
-                // Mas também incluímos gastos cuja data_entrada_fatura ou data do gasto está entre o último fechamento e o próximo fechamento
-                // (para incluir compras retidas e garantir que todos os gastos do período sejam incluídos)
-                boolean incluir = false;
+                // Inclui gasto na fatura apenas se a data de fechamento da fatura correspondente está no período (dataInicio, dataFim].
+                // Para parcelas: só esse critério é correto; não usar fallback por data do gasto (evita parcela entrar na fatura errada).
+                boolean incluir = dataFechamentoFatura.compareTo(dataInicio) > 0 && dataFechamentoFatura.compareTo(dataFim) <= 0;
                 
-                // Primeiro verifica se a data de fechamento calculada está no período
-                if (dataFechamentoFatura.compareTo(dataInicio) > 0 && dataFechamentoFatura.compareTo(dataFim) <= 0) {
-                    incluir = true;
-                } else {
-                    // Se não está no período pela data de fechamento, verifica pela data do gasto ou data_entrada_fatura
+                if (!incluir && idGrupoParcela == null) {
+                    // Só para gastos não parcelados: fallback por data do gasto / data_entrada_fatura (compras retidas)
                     LocalDate dataParaVerificar = (dataEntradaFatura != null) ? dataEntradaFatura : dataGasto;
-                    // Inclui se a data está após o último fechamento e até/incluindo o próximo fechamento
-                    if (dataParaVerificar.isAfter(dataInicio) && !dataParaVerificar.isAfter(dataFim)) {
-                        incluir = true;
-                    }
+                    incluir = dataParaVerificar.isAfter(dataInicio) && !dataParaVerificar.isAfter(dataFim);
                 }
                 
                 if (incluir) {
