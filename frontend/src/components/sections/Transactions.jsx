@@ -253,52 +253,12 @@ export default function Transactions() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, filters.category, filters.dateStart, filters.dateEnd, filters.type]);
 
-  // Verifica se uma parcela está paga
+  // Verifica se uma parcela está paga (apenas quando o pagamento foi registrado no sistema, não pela data de vencimento)
   const isParcelaPaga = (transaction) => {
     if (!transaction.numeroParcela || !transaction.totalParcelas) {
       return false;
     }
-    
-    // Se o backend indicou que foi paga
-    if (transaction.parcelaPaga === true || transaction.parcelaPaga === 'true') {
-      return true;
-    }
-    
-    // Se ativo for false, verifica se foi paga ou excluída
-    if (transaction.ativo === false || transaction.ativo === 'false') {
-      // Se o backend não indicou, usa lógica de fallback: se data passou, foi paga
-      try {
-        const parcelaDate = new Date(transaction.date);
-        const hoje = new Date();
-        hoje.setHours(0, 0, 0, 0);
-        parcelaDate.setHours(0, 0, 0, 0);
-        
-        // Se a data passou, considera como paga (fechamento de fatura)
-        if (parcelaDate < hoje) {
-          return true;
-        }
-      } catch (e) {
-        console.error('Erro ao verificar data da parcela:', e);
-      }
-    }
-    
-    // Se está ativa e a data passou, foi paga por fechamento de fatura
-    if (transaction.ativo === true || transaction.ativo === 'true') {
-      try {
-        const parcelaDate = new Date(transaction.date);
-        const hoje = new Date();
-        hoje.setHours(0, 0, 0, 0);
-        parcelaDate.setHours(0, 0, 0, 0);
-        
-        if (parcelaDate < hoje) {
-          return true;
-        }
-      } catch (e) {
-        console.error('Erro ao verificar data da parcela:', e);
-      }
-    }
-    
-    return false;
+    return transaction.parcelaPaga === true || transaction.parcelaPaga === 'true';
   };
   
   // Verifica se uma parcela foi excluída (não paga)

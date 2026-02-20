@@ -347,8 +347,8 @@ public class IncomesHandler implements HttpHandler {
                     transaction.put("numeroParcela", receita.getNumeroParcela());
                     transaction.put("totalParcelas", receita.getTotalParcelas());
                     
-                    // Determina se foi paga baseado na data (parcelas com data passada são consideradas pagas)
-                    boolean foiPaga = !receita.isAtivo() || receita.getData().isBefore(LocalDate.now());
+                    // Parcela paga apenas quando inativa (pagamento registrado). Data da parcela é vencimento, não data de pagamento.
+                    boolean foiPaga = !receita.isAtivo();
                     transaction.put("parcelaPaga", foiPaga);
                 }
                 

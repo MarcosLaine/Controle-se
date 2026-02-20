@@ -360,8 +360,8 @@ public class ExpensesHandler implements HttpHandler {
                     transaction.put("numeroParcela", gasto.getNumeroParcela());
                     transaction.put("totalParcelas", gasto.getTotalParcelas());
                     
-                    // Determina se foi paga baseado na data (parcelas com data passada são consideradas pagas)
-                    boolean foiPaga = !gasto.isAtivo() || gasto.getData().isBefore(LocalDate.now());
+                    // Parcela paga apenas quando foi registrado pagamento (ativo = false). Data da parcela é vencimento na fatura, não data de pagamento.
+                    boolean foiPaga = !gasto.isAtivo();
                     transaction.put("parcelaPaga", foiPaga);
                 }
                 
