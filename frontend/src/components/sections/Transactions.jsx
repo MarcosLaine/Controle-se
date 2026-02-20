@@ -383,8 +383,13 @@ export default function Transactions() {
       }
     });
 
-    // Ordena por data (mais recente primeiro)
+    // Ordena: compras parceladas sempre primeiro (topo), depois por data (mais recente primeiro)
+    const isParcelado = (item) => !!(item.idGrupoParcela && item.transactions);
     grouped.sort((a, b) => {
+      const aParcelado = isParcelado(a);
+      const bParcelado = isParcelado(b);
+      if (aParcelado && !bParcelado) return -1;
+      if (!aParcelado && bParcelado) return 1;
       const dateA = a.date || (a.transactions && a.transactions[0]?.date) || '';
       const dateB = b.date || (b.transactions && b.transactions[0]?.date) || '';
       return dateB.localeCompare(dateA);
@@ -541,29 +546,35 @@ export default function Transactions() {
             )}
             {transaction.dataEntradaFatura && transaction.type === 'expense' && (() => {
               try {
-                const purchaseDate = new Date(transaction.date);
-                const invoiceDate = new Date(transaction.dataEntradaFatura);
+                // Parse como data local (YYYY-MM-DD) para evitar que UTC vire dia anterior em outros fusos
+                const parseLocalDate = (str) => {
+                  const [y, m, d] = str.split('-').map(Number);
+                  return new Date(y, (m || 1) - 1, d || 1);
+                };
+                const purchaseDate = parseLocalDate(transaction.date);
+                const invoiceDateObj = parseLocalDate(transaction.dataEntradaFatura);
                 
-                if (invoiceDate.getTime() !== purchaseDate.getTime()) {
-                  let invoiceMonthToShow = invoiceDate.getMonth();
-                  let invoiceYearToShow = invoiceDate.getFullYear();
+                if (invoiceDateObj.getTime() !== purchaseDate.getTime()) {
+                  let invoiceMonthToShow = invoiceDateObj.getMonth();
+                  let invoiceYearToShow = invoiceDateObj.getFullYear();
                   
                   if (transaction.diaFechamento && transaction.diaPagamento) {
                     const diaFechamento = transaction.diaFechamento;
                     const diaPagamento = transaction.diaPagamento;
                     
-                    const invoiceDateObj = new Date(invoiceDate);
-                    invoiceDateObj.setHours(0, 0, 0, 0);
-                    
+                    // Fechamento do mês em que a compra entra na fatura (ex.: dia 15)
                     let fechamentoEsteMes = new Date(invoiceDateObj.getFullYear(), invoiceDateObj.getMonth(), diaFechamento);
                     fechamentoEsteMes.setHours(0, 0, 0, 0);
+                    invoiceDateObj.setHours(0, 0, 0, 0);
                     
+                    // Se entrou depois do fechamento (ex.: entrou dia 16, fechamento 15) → fatura do próximo mês
                     let fechamentoFatura;
                     if (invoiceDateObj > fechamentoEsteMes) {
                       fechamentoFatura = new Date(invoiceDateObj.getFullYear(), invoiceDateObj.getMonth() + 1, diaFechamento);
                     } else {
-                      fechamentoFatura = fechamentoEsteMes;
+                      fechamentoFatura = new Date(fechamentoEsteMes.getTime());
                     }
+                    fechamentoFatura.setHours(0, 0, 0, 0);
                     
                     let pagamentoFatura = new Date(fechamentoFatura.getFullYear(), fechamentoFatura.getMonth(), diaPagamento);
                     pagamentoFatura.setHours(0, 0, 0, 0);
@@ -572,8 +583,9 @@ export default function Transactions() {
                       pagamentoFatura = new Date(fechamentoFatura.getFullYear(), fechamentoFatura.getMonth() + 1, diaPagamento);
                     }
                     
-                    invoiceMonthToShow = pagamentoFatura.getMonth();
-                    invoiceYearToShow = pagamentoFatura.getFullYear();
+                    // Mês a exibir = mês do fechamento da fatura (ex.: "fatura de março" = fecha em 15/03)
+                    invoiceMonthToShow = fechamentoFatura.getMonth();
+                    invoiceYearToShow = fechamentoFatura.getFullYear();
                   }
                   
                   const monthNames = [
