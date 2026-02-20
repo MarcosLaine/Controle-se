@@ -132,13 +132,11 @@ public class ExpensesHandler implements HttpHandler {
                     Object intervaloDiasObj = data.get("intervaloDias");
                     int intervaloDias = intervaloDiasObj != null ? ((Number) intervaloDiasObj).intValue() : 30;
                     
-                    // A data do gasto permanece a original (date)
-                    // A lógica de cálculo da fatura usa a data da compra original (data_primeira_parcela do InstallmentGroup)
-                    // para determinar em qual fatura a parcela aparece
                     InstallmentService installmentService = new InstallmentService();
                     int idGrupo = installmentService.criarCompraParcelada(
                         description, value, numeroParcelas, date, intervaloDias,
-                        userId, accountId, categoryIds, tagIds, observacoes
+                        userId, accountId, categoryIds, tagIds, observacoes,
+                        dataEntradaFatura
                     );
                     
                     CacheUtil.invalidateCache("overview_" + userId);

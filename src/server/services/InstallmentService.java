@@ -39,13 +39,28 @@ public class InstallmentService {
     }
     
     /**
+     * Retorna a data de fechamento da fatura que contém a cobrança na data informada.
+     * Ex.: diaFechamento=15, dataCobranca=2025-02-10 → fecha 2025-02-15; dataCobranca=2025-02-20 → fecha 2025-03-15.
+     */
+    private static LocalDate fechamentoFaturaParaData(LocalDate dataCobranca, int diaFechamento) {
+        int dia = Math.min(diaFechamento, dataCobranca.lengthOfMonth());
+        if (dataCobranca.getDayOfMonth() <= dia) {
+            return dataCobranca.withDayOfMonth(dia);
+        }
+        LocalDate proximoMes = dataCobranca.plusMonths(1);
+        return proximoMes.withDayOfMonth(Math.min(diaFechamento, proximoMes.lengthOfMonth()));
+    }
+
+    /**
      * Cria uma compra parcelada (gasto)
-     * Cria o grupo e todas as parcelas de uma vez
+     * Cria o grupo e todas as parcelas de uma vez.
+     * Parcelas cuja fatura já fechou (cadastro retroativo) são marcadas como pagas e contabilizadas corretamente.
      */
     public int criarCompraParcelada(String descricao, double valorTotal, int numeroParcelas,
                                     LocalDate dataPrimeiraParcela, int intervaloDias,
                                     int idUsuario, int idConta, List<Integer> idsCategorias,
-                                    List<Integer> idsTags, String[] observacoes) throws Exception {
+                                    List<Integer> idsTags, String[] observacoes,
+                                    LocalDate dataEntradaFaturaPrimeiraParcela) throws Exception {
         
         // Validações
         if (numeroParcelas < 2) {
@@ -67,49 +82,60 @@ public class InstallmentService {
         int idGrupo = installmentRepository.criarGrupoParcelas(grupo);
         grupo.setIdGrupo(idGrupo);
         
-        // LOGGER.info("Criando compra parcelada: " + descricao + " - " + numeroParcelas + "x de R$ " + grupo.getValorParcela());
+        Conta conta = accountRepository.buscarConta(idConta);
+        boolean isCartao = conta != null && conta.isCartaoCredito();
+        Integer diaFechamento = (conta != null && conta.getDiaFechamento() != null) ? conta.getDiaFechamento() : null;
         
         // Calcula o valor base da parcela (arredondado para 2 casas decimais)
         double valorParcelaBase = Math.round((valorTotal / numeroParcelas) * 100.0) / 100.0;
-        // Calcula o total que será cobrado com as parcelas base
         double totalParcelasBase = valorParcelaBase * numeroParcelas;
-        // Calcula a diferença (pode ser positiva ou negativa devido ao arredondamento)
         double diferenca = Math.round((valorTotal - totalParcelasBase) * 100.0) / 100.0;
         
-        // Cria cada parcela
+        LocalDate hoje = LocalDate.now();
+        
         for (int i = 1; i <= numeroParcelas; i++) {
             LocalDate dataParcela = grupo.calcularDataParcela(i);
-            // Mantém a descrição original sem adicionar (X/Y)
-            
-            // A última parcela recebe a diferença para garantir que a soma seja exatamente o valor total
             double valorParcela = (i == numeroParcelas) 
                 ? Math.round((valorParcelaBase + diferenca) * 100.0) / 100.0
                 : valorParcelaBase;
             
-            // Cria o gasto da parcela
+            // Primeira parcela pode ter compra retida: data de entrada na fatura
+            LocalDate dataEntradaFaturaParcela = (i == 1 && dataEntradaFaturaPrimeiraParcela != null) 
+                ? dataEntradaFaturaPrimeiraParcela : null;
+            
             int idGasto = expenseRepository.cadastrarGasto(
                 descricao,
                 valorParcela,
                 dataParcela,
-                "UNICA", // Parcelas não são recorrências
+                "UNICA",
                 idUsuario,
                 idsCategorias,
                 idConta,
-                observacoes
+                observacoes,
+                dataEntradaFaturaParcela
             );
             
-            // Atualiza o gasto com informações da parcela
             expenseRepository.atualizarInformacoesParcela(idGasto, idGrupo, i, numeroParcelas);
             
-            // Associa tags se houver
             if (idsTags != null) {
                 for (int tagId : idsTags) {
                     tagRepository.associarTagTransacao(idGasto, "GASTO", tagId);
                 }
             }
             
-            // Parcela só deve ser considerada paga quando o usuário registrar o pagamento
-            // (não marcamos como paga automaticamente pela data de vencimento)
+            // Cadastro retroativo: parcela cuja fatura já fechou é marcada como paga (já foi contabilizada na vida real)
+            if (isCartao && diaFechamento != null) {
+                LocalDate dataParaFatura = (i == 1 && dataEntradaFaturaPrimeiraParcela != null) 
+                    ? dataEntradaFaturaPrimeiraParcela : dataParcela;
+                LocalDate fechamentoFatura = fechamentoFaturaParaData(dataParaFatura, diaFechamento);
+                if (hoje.isAfter(fechamentoFatura)) {
+                    try {
+                        expenseRepository.marcarParcelaComoPaga(idGasto);
+                    } catch (Exception e) {
+                        LOGGER.warning("Ao marcar parcela " + i + "/" + numeroParcelas + " como já paga (fatura fechada): " + e.getMessage());
+                    }
+                }
+            }
         }
         
         // LOGGER.info("Compra parcelada criada com sucesso: " + numeroParcelas + " parcelas");
