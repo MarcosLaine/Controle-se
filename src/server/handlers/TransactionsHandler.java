@@ -51,9 +51,14 @@ public class TransactionsHandler implements HttpHandler {
             int limit = (limitParam != null && !limitParam.isEmpty()) ? Integer.parseInt(limitParam) : 12;
             int offset = (offsetParam != null && !offsetParam.isEmpty()) ? Integer.parseInt(offsetParam) : 0;
             
-            List<Gasto> expenses = expenseRepository.buscarGastosComFiltros(userId, categoryId, dateStart, dateEnd, type, limit, offset);
+            // Busca um lote maior para mesclar gastos e receitas por data; assim a primeira página
+            // inclui tanto parcelas quanto compras únicas (que antes podiam ficar só no "carregar mais").
+            int fetchSize = Math.max(limit * 4, offset + limit);
+            fetchSize = Math.min(fetchSize, 200); // cap para não sobrecarregar
+            
+            List<Gasto> expenses = expenseRepository.buscarGastosComFiltros(userId, categoryId, dateStart, dateEnd, type, fetchSize, 0);
             List<Receita> incomes = (categoryId == null) 
-                ? incomeRepository.buscarReceitasComFiltros(userId, dateStart, dateEnd, type, limit, offset) 
+                ? incomeRepository.buscarReceitasComFiltros(userId, dateStart, dateEnd, type, fetchSize, 0) 
                 : new ArrayList<>();
             
             List<Integer> idsGastos = new ArrayList<>();
@@ -72,6 +77,18 @@ public class TransactionsHandler implements HttpHandler {
             
             Map<Integer, List<Tag>> tagsPorReceita = tagRepository.buscarTagsDeReceitas(idsReceitas);
             Map<Integer, String[]> observacoesPorReceita = incomeRepository.buscarObservacoesDeReceitas(idsReceitas);
+            
+            // Valor total por grupo (soma de todas as parcelas) para exibir correto mesmo com grupo parcial na página
+            Set<Integer> idsGruposGastos = new HashSet<>();
+            for (Gasto g : expenses) {
+                if (g.getIdGrupoParcela() != null) idsGruposGastos.add(g.getIdGrupoParcela());
+            }
+            Set<Integer> idsGruposReceitas = new HashSet<>();
+            for (Receita r : incomes) {
+                if (r.getIdGrupoParcela() != null) idsGruposReceitas.add(r.getIdGrupoParcela());
+            }
+            Map<Integer, Double> valorTotalPorGrupoGastos = expenseRepository.buscarValorTotalPorGrupos(idsGruposGastos);
+            Map<Integer, Double> valorTotalPorGrupoReceitas = incomeRepository.buscarValorTotalPorGrupos(idsGruposReceitas);
             
             // Busca informações das contas para calcular o mês da fatura
             AccountRepository accountRepository = new AccountRepository();
@@ -150,7 +167,10 @@ public class TransactionsHandler implements HttpHandler {
                     transaction.put("idGrupoParcela", gasto.getIdGrupoParcela());
                     transaction.put("numeroParcela", gasto.getNumeroParcela());
                     transaction.put("totalParcelas", gasto.getTotalParcelas());
-                    
+                    Double totalGrupo = valorTotalPorGrupoGastos.get(gasto.getIdGrupoParcela());
+                    if (totalGrupo != null) {
+                        transaction.put("valorTotalGrupo", totalGrupo);
+                    }
                     // Determina se foi paga ou excluída
                     // Se está inativa, foi paga (pagamento antecipado ou fechamento de fatura)
                     // Parcelas pagas aparecem na lista, parcelas excluídas não aparecem
@@ -192,18 +212,27 @@ public class TransactionsHandler implements HttpHandler {
                     transaction.put("idGrupoParcela", receita.getIdGrupoParcela());
                     transaction.put("numeroParcela", receita.getNumeroParcela());
                     transaction.put("totalParcelas", receita.getTotalParcelas());
+                    Double totalGrupo = valorTotalPorGrupoReceitas.get(receita.getIdGrupoParcela());
+                    if (totalGrupo != null) {
+                        transaction.put("valorTotalGrupo", totalGrupo);
+                    }
                 }
                 transactions.add(transaction);
             }
             
             transactions.sort((a, b) -> ((String) b.get("date")).compareTo((String) a.get("date")));
             
-            // Verifica se há mais transações para carregar
-            boolean hasMore = transactions.size() == limit;
+            // Aplica offset/limit na lista mesclada para retornar só a página pedida
+            int fromIndex = Math.min(offset, transactions.size());
+            int toIndex = Math.min(offset + limit, transactions.size());
+            List<Map<String, Object>> pagedData = (fromIndex < toIndex)
+                ? new ArrayList<>(transactions.subList(fromIndex, toIndex))
+                : new ArrayList<>();
+            boolean hasMore = transactions.size() > offset + limit;
             
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);
-            response.put("data", transactions);
+            response.put("data", pagedData);
             response.put("hasMore", hasMore);
             response.put("limit", limit);
             response.put("offset", offset);

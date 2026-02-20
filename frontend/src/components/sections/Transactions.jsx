@@ -353,8 +353,12 @@ export default function Transactions() {
       // Ordena as parcelas por número
       group.transactions.sort((a, b) => (a.numeroParcela || 0) - (b.numeroParcela || 0));
       
-      // Calcula o valor total do grupo
-      group.valorTotal = group.transactions.reduce((sum, t) => sum + (parseFloat(t.value) || 0), 0);
+      // Valor total: usa valorTotalGrupo (vindo do backend, soma de todas as parcelas) quando existir,
+      // para ficar correto mesmo quando só parte das parcelas está na página atual
+      const totalFromBackend = group.transactions[0]?.valorTotalGrupo;
+      group.valorTotal = totalFromBackend != null && !Number.isNaN(Number(totalFromBackend))
+        ? Number(totalFromBackend)
+        : group.transactions.reduce((sum, t) => sum + (parseFloat(t.value) || 0), 0);
       
       // Encontra a primeira data (parcela mais antiga)
       const firstTransaction = group.transactions[0];
@@ -480,39 +484,20 @@ export default function Transactions() {
       <div
         className={`flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${isNested ? 'pl-4 border-l-2 border-gray-200 dark:border-gray-700' : 'card'}`}
       >
-        {!isNested && (
-          <div className="flex items-center gap-4 w-full sm:w-auto">
-            <div
-              className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${
-                transaction.type === 'income'
-                  ? 'bg-green-100 dark:bg-green-900/30 text-green-600'
-                  : 'bg-red-100 dark:bg-red-900/30 text-red-600'
-              }`}
-            >
-              {transaction.type === 'income' ? (
-                <ArrowUp className="w-6 h-6" />
-              ) : (
-                <ArrowDown className="w-6 h-6" />
-              )}
-            </div>
-          </div>
-        )}
         <div className={`flex items-center gap-4 w-full sm:w-auto ${isNested ? 'flex-1' : ''}`}>
-          {isNested && (
-            <div
-              className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
-                transaction.type === 'income'
-                  ? 'bg-green-100 dark:bg-green-900/30 text-green-600'
-                  : 'bg-red-100 dark:bg-red-900/30 text-red-600'
-              }`}
-            >
-              {transaction.type === 'income' ? (
-                <ArrowUp className="w-4 h-4" />
-              ) : (
-                <ArrowDown className="w-4 h-4" />
-              )}
-            </div>
-          )}
+          <div
+            className={`${isNested ? 'w-8 h-8 rounded-lg' : 'w-12 h-12 rounded-xl'} flex items-center justify-center shrink-0 ${
+              transaction.type === 'income'
+                ? 'bg-green-100 dark:bg-green-900/30 text-green-600'
+                : 'bg-red-100 dark:bg-red-900/30 text-red-600'
+            }`}
+          >
+            {transaction.type === 'income' ? (
+              <ArrowUp className={isNested ? 'w-4 h-4' : 'w-6 h-6'} />
+            ) : (
+              <ArrowDown className={isNested ? 'w-4 h-4' : 'w-6 h-6'} />
+            )}
+          </div>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <p className={`font-semibold truncate ${
@@ -550,6 +535,10 @@ export default function Transactions() {
                 <> - {transaction.category}</>
               )}
             </p>
+            {/* Espaçador para alinhar altura com cards parcelados (linha de status) quando é compra única */}
+            {!isNested && !transaction.numeroParcela && !transaction.totalParcelas && (
+              <div className="mt-1 min-h-[1.25rem] text-xs" aria-hidden="true" />
+            )}
             {transaction.dataEntradaFatura && transaction.type === 'expense' && (() => {
               try {
                 const purchaseDate = new Date(transaction.date);

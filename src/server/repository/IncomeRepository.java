@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 public class IncomeRepository {
 
@@ -703,6 +704,32 @@ public class IncomeRepository {
         }
         
         return receitas;
+    }
+    
+    /**
+     * Retorna o valor total (soma de todas as parcelas) por grupo de parcelas.
+     */
+    public Map<Integer, Double> buscarValorTotalPorGrupos(Set<Integer> idsGrupos) {
+        if (idsGrupos == null || idsGrupos.isEmpty()) {
+            return new HashMap<>();
+        }
+        String placeholders = idsGrupos.stream().map(id -> "?").reduce((a, b) -> a + "," + b).orElse("");
+        String sql = "SELECT id_grupo_parcela, SUM(valor) as total FROM receitas WHERE id_grupo_parcela IN (" + placeholders + ") GROUP BY id_grupo_parcela";
+        Map<Integer, Double> result = new HashMap<>();
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            int i = 1;
+            for (Integer id : idsGrupos) {
+                pstmt.setInt(i++, id);
+            }
+            ResultSet rs = pstmt.executeQuery();
+            while (rs.next()) {
+                result.put(rs.getInt("id_grupo_parcela"), rs.getDouble("total"));
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Erro ao buscar valor total por grupos (receitas): " + e.getMessage(), e);
+        }
+        return result;
     }
     
     /**

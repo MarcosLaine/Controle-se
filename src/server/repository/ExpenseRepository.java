@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.logging.Logger;
 
 public class ExpenseRepository {
@@ -1034,6 +1035,33 @@ public class ExpenseRepository {
         }
         
         return gastos;
+    }
+    
+    /**
+     * Retorna o valor total (soma de todas as parcelas) por grupo de parcelas.
+     * Usado para exibir o total correto do grupo mesmo quando só parte das parcelas está na página atual.
+     */
+    public Map<Integer, Double> buscarValorTotalPorGrupos(Set<Integer> idsGrupos) {
+        if (idsGrupos == null || idsGrupos.isEmpty()) {
+            return new HashMap<>();
+        }
+        String placeholders = idsGrupos.stream().map(id -> "?").reduce((a, b) -> a + "," + b).orElse("");
+        String sql = "SELECT id_grupo_parcela, SUM(valor) as total FROM gastos WHERE id_grupo_parcela IN (" + placeholders + ") GROUP BY id_grupo_parcela";
+        Map<Integer, Double> result = new HashMap<>();
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            int i = 1;
+            for (Integer id : idsGrupos) {
+                pstmt.setInt(i++, id);
+            }
+            ResultSet rs = pstmt.executeQuery();
+            while (rs.next()) {
+                result.put(rs.getInt("id_grupo_parcela"), rs.getDouble("total"));
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Erro ao buscar valor total por grupos: " + e.getMessage(), e);
+        }
+        return result;
     }
     
     /**
