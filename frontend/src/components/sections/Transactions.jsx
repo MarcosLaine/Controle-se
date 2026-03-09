@@ -1395,6 +1395,10 @@ export function TransactionModal({ isOpen, onClose, type, categories, accounts, 
         data.dataEntradaFatura = formData.dataEntradaFatura;
       }
 
+      if (!formData.isParcelado || type === 'income') {
+        data.frequency = formData.frequency || 'UNICA';
+      }
+
       const endpoint = type === 'expense' ? '/expenses' : '/incomes';
       const isUpdateGroup = isEditMode && type === 'expense' && initialData?.idGrupoParcela;
       const isUpdateSingle = isEditMode && initialData?.id;
@@ -1426,6 +1430,7 @@ export function TransactionModal({ isOpen, onClose, type, categories, accounts, 
           contaOrigemId: '',
           compraRetida: false,
           dataEntradaFatura: '',
+          frequency: 'UNICA',
         });
       }
     } catch (error) {
@@ -1485,6 +1490,21 @@ export function TransactionModal({ isOpen, onClose, type, categories, accounts, 
             required
           />
         </div>
+        {(!formData.isParcelado || type === 'income') && (
+          <div>
+            <label className="label">{t('transactions.frequency')}</label>
+            <select
+              value={formData.frequency || 'UNICA'}
+              onChange={(e) => setFormData({ ...formData, frequency: e.target.value })}
+              className="input"
+            >
+              <option value="UNICA">{t('transactions.frequencyOnce')}</option>
+              <option value="SEMANAL">{t('transactions.frequencyWeekly')}</option>
+              <option value="MENSAL">{t('transactions.frequencyMonthly')}</option>
+              <option value="ANUAL">{t('transactions.frequencyYearly')}</option>
+            </select>
+          </div>
+        )}
         {type === 'expense' && hasCreditCardAccounts && !isEditMode && (
           <div>
             <label className="flex items-center gap-2 cursor-pointer">

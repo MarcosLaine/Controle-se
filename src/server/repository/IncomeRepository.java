@@ -117,6 +117,13 @@ public class IncomeRepository {
     }
 
     public int cadastrarReceita(String descricao, double valor, LocalDate data, int idUsuario, int idConta, String[] observacoes) {
+        return cadastrarReceita(descricao, valor, data, idUsuario, idConta, observacoes, null);
+    }
+
+    /**
+     * Cadastra uma receita com opcional frequência (UNICA, SEMANAL, MENSAL, ANUAL) para recorrência.
+     */
+    public int cadastrarReceita(String descricao, double valor, LocalDate data, int idUsuario, int idConta, String[] observacoes, String frequencia) {
         ValidationResult descValidation = InputValidator.validateDescription("Descrição da receita", descricao, true);
         if (!descValidation.isValid()) throw new IllegalArgumentException(descValidation.getErrors().get(0));
         
@@ -125,6 +132,20 @@ public class IncomeRepository {
         validateId("ID da conta", idConta);
         
         if (data == null) throw new IllegalArgumentException("Data não pode ser nula");
+        
+        if (frequencia != null && !frequencia.trim().isEmpty()) {
+            String freqUpper = frequencia.toUpperCase().trim();
+            if (!freqUpper.equals("UNICA") && !freqUpper.equals("DIARIA") &&
+                !freqUpper.equals("SEMANAL") && !freqUpper.equals("MENSAL") && !freqUpper.equals("ANUAL")) {
+                frequencia = "UNICA";
+            } else {
+                frequencia = freqUpper;
+            }
+        } else {
+            frequencia = "UNICA";
+        }
+        
+        LocalDate proximaRecorrencia = calcularProximaRecorrencia(data, frequencia);
         
         AccountRepository accountRepo = new AccountRepository();
         Conta conta = accountRepo.buscarConta(idConta);
@@ -140,15 +161,17 @@ public class IncomeRepository {
             conn = getConnection();
             conn.setAutoCommit(false);
             
-            String sql = "INSERT INTO receitas (descricao, valor, data, id_usuario, id_conta) VALUES (?, ?, ?, ?, ?) RETURNING id_receita";
+            String sql = "INSERT INTO receitas (descricao, valor, data, frequencia, id_usuario, id_conta, proxima_recorrencia) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id_receita";
             
             int idReceita;
             try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
                 pstmt.setString(1, descricao);
                 pstmt.setDouble(2, valor);
                 pstmt.setDate(3, java.sql.Date.valueOf(data));
-                pstmt.setInt(4, idUsuario);
-                pstmt.setInt(5, idConta);
+                pstmt.setString(4, frequencia);
+                pstmt.setInt(5, idUsuario);
+                pstmt.setInt(6, idConta);
+                pstmt.setDate(7, proximaRecorrencia != null ? java.sql.Date.valueOf(proximaRecorrencia) : null);
                 
                 ResultSet rs = pstmt.executeQuery();
                 if (!rs.next()) throw new RuntimeException("Erro ao cadastrar receita");
@@ -169,8 +192,6 @@ public class IncomeRepository {
                 }
             }
             
-            // Sempre incrementa o saldo ao cadastrar receita
-            // (para receitas do sistema que não devem incrementar, use o método com parâmetro incrementarSaldo)
             String sqlConta = "UPDATE contas SET saldo_atual = saldo_atual + ? WHERE id_conta = ?";
             try (PreparedStatement pstmt = conn.prepareStatement(sqlConta)) {
                 pstmt.setDouble(1, valor);
@@ -510,11 +531,16 @@ public class IncomeRepository {
     }
 
     /**
-     * Atualiza uma receita existente (descrição, valor, data, conta, observações).
+     * Atualiza uma receita existente (descrição, valor, data, conta, observações, frequência).
      * Ajusta saldos das contas se a conta ou o valor for alterado.
      */
     public void atualizarReceita(int idReceita, int idUsuario, String descricao, double valor, LocalDate data,
                                  int idConta, String[] observacoes) {
+        atualizarReceita(idReceita, idUsuario, descricao, valor, data, idConta, observacoes, null);
+    }
+
+    public void atualizarReceita(int idReceita, int idUsuario, String descricao, double valor, LocalDate data,
+                                 int idConta, String[] observacoes, String frequencia) {
         Receita receita = buscarReceitaPorUsuario(idReceita, idUsuario);
         if (receita == null) throw new IllegalArgumentException("Receita não encontrada");
         
@@ -522,6 +548,19 @@ public class IncomeRepository {
         validateId("ID da conta", idConta);
         if (data == null) throw new IllegalArgumentException("Data não pode ser nula");
         descricao = InputValidator.sanitizeDescription(descricao);
+        
+        if (frequencia != null && !frequencia.trim().isEmpty()) {
+            String freqUpper = frequencia.toUpperCase().trim();
+            if (!freqUpper.equals("UNICA") && !freqUpper.equals("DIARIA") &&
+                !freqUpper.equals("SEMANAL") && !freqUpper.equals("MENSAL") && !freqUpper.equals("ANUAL")) {
+                frequencia = "UNICA";
+            } else {
+                frequencia = freqUpper;
+            }
+        } else {
+            frequencia = "UNICA";
+        }
+        LocalDate proximaRecorrencia = calcularProximaRecorrencia(data, frequencia);
         
         AccountRepository accountRepo = new AccountRepository();
         Conta contaNova = accountRepo.buscarConta(idConta);
@@ -564,13 +603,15 @@ public class IncomeRepository {
                 }
             }
             
-            String sql = "UPDATE receitas SET descricao = ?, valor = ?, data = ?, id_conta = ? WHERE id_receita = ?";
+            String sql = "UPDATE receitas SET descricao = ?, valor = ?, data = ?, id_conta = ?, frequencia = ?, proxima_recorrencia = ? WHERE id_receita = ?";
             try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
                 pstmt.setString(1, descricao);
                 pstmt.setDouble(2, valor);
                 pstmt.setDate(3, java.sql.Date.valueOf(data));
                 pstmt.setInt(4, idConta);
-                pstmt.setInt(5, idReceita);
+                pstmt.setString(5, frequencia);
+                pstmt.setDate(6, proximaRecorrencia != null ? java.sql.Date.valueOf(proximaRecorrencia) : null);
+                pstmt.setInt(7, idReceita);
                 pstmt.executeUpdate();
             }
             

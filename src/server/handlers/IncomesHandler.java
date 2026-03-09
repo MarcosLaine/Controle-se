@@ -234,7 +234,8 @@ public class IncomesHandler implements HttpHandler {
                 }
             }
             
-            int incomeId = incomeRepository.cadastrarReceita(description, value, date, userId, accountId, observacoes);
+            String frequency = (String) data.get("frequency");
+            int incomeId = incomeRepository.cadastrarReceita(description, value, date, userId, accountId, observacoes, frequency);
             
             // Se houver conta origem, faz a transferência (decrementa da conta origem)
             if (contaOrigemId != null && contaOrigemId > 0) {
@@ -340,7 +341,9 @@ public class IncomesHandler implements HttpHandler {
                 transaction.put("tags", tagsList);
                 transaction.put("observacoes", observacoesList);
                 transaction.put("ativo", receita.isAtivo());
-                
+                if (receita.getFrequencia() != null) {
+                    transaction.put("frequency", receita.getFrequencia());
+                }
                 // Campos de parcelas
                 if (receita.getIdGrupoParcela() != null) {
                     transaction.put("idGrupoParcela", receita.getIdGrupoParcela());
@@ -389,6 +392,7 @@ public class IncomesHandler implements HttpHandler {
             int accountId = ((Number) data.get("accountId")).intValue();
             List<Integer> tagIds = parseTagIds(data);
             String[] observacoes = parseObservacoes(data);
+            String frequency = (String) data.get("frequency");
             
             Conta conta = accountRepository.buscarConta(accountId);
             if (conta == null) {
@@ -404,7 +408,7 @@ public class IncomesHandler implements HttpHandler {
                 return;
             }
             
-            incomeRepository.atualizarReceita(incomeId, userId, description, value, date, accountId, observacoes);
+            incomeRepository.atualizarReceita(incomeId, userId, description, value, date, accountId, observacoes, frequency);
             tagRepository.removerTodasTagsTransacao(incomeId, "RECEITA");
             for (int tagId : tagIds) {
                 tagRepository.associarTagTransacao(incomeId, "RECEITA", tagId);

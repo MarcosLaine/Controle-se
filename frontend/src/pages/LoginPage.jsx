@@ -7,6 +7,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { usePWAInstall } from '../hooks/usePWAInstall';
 import ReCaptcha from '../components/common/ReCaptcha';
+import Modal from '../components/common/Modal';
 
 // Site key do reCAPTCHA
 // Configure via variável de ambiente VITE_RECAPTCHA_SITE_KEY ou substitua abaixo
@@ -17,7 +18,7 @@ const RECAPTCHA_SITE_KEY = import.meta.env.VITE_RECAPTCHA_SITE_KEY || '6LeIxAcTA
 export default function LoginPage() {
   const [activeTab, setActiveTab] = useState('login');
   const [loading, setLoading] = useState(false);
-  const { login, register } = useAuth();
+  const { login, register, requestPasswordReset } = useAuth();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { theme, toggleTheme } = useTheme();
@@ -39,6 +40,12 @@ export default function LoginPage() {
   const [registerName, setRegisterName] = useState('');
   const [registerEmail, setRegisterEmail] = useState('');
   const [registerPassword, setRegisterPassword] = useState('');
+
+  // Forgot password modal
+  const [showForgotModal, setShowForgotModal] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [forgotSuccessResetLink, setForgotSuccessResetLink] = useState(null);
 
   // Verifica se veio de logout por inatividade
   useEffect(() => {
@@ -97,6 +104,20 @@ export default function LoginPage() {
       }
     };
   }, [showInactivityMessage]);
+
+  const handleForgotSubmit = async (e) => {
+    e.preventDefault();
+    if (!forgotEmail.trim()) return;
+    setForgotLoading(true);
+    const result = await requestPasswordReset(forgotEmail.trim());
+    setForgotLoading(false);
+    if (result.success) {
+      setForgotSuccessResetLink(result.resetLink || null);
+      if (!result.resetLink) {
+        setTimeout(() => setShowForgotModal(false), 2000);
+      }
+    }
+  };
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -308,6 +329,19 @@ export default function LoginPage() {
                   placeholder={t('auth.passwordPlaceholder')}
                   required
                 />
+                <div className="mt-1 text-right">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setForgotEmail(loginEmail);
+                      setForgotSuccessResetLink(null);
+                      setShowForgotModal(true);
+                    }}
+                    className="text-sm text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 font-medium"
+                  >
+                    {t('auth.forgotPassword')}
+                  </button>
+                </div>
               </div>
               
               {/* CAPTCHA - aparece apenas quando necessário */}
@@ -405,6 +439,67 @@ export default function LoginPage() {
               </button>
             </form>
           )}
+
+          {/* Modal Esqueci a senha */}
+          <Modal
+            isOpen={showForgotModal}
+            onClose={() => {
+              setShowForgotModal(false);
+              setForgotSuccessResetLink(null);
+            }}
+            title={t('auth.forgotPassword')}
+            size="sm"
+          >
+            {forgotSuccessResetLink ? (
+              <div className="space-y-3">
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  {t('auth.forgotPasswordDevLink')}
+                </p>
+                <a
+                  href={forgotSuccessResetLink}
+                  className="block break-all text-sm text-primary-600 dark:text-primary-400 hover:underline"
+                >
+                  {forgotSuccessResetLink}
+                </a>
+                <p className="text-xs text-gray-500 dark:text-gray-500">
+                  {t('auth.forgotPasswordLinkExpire')}
+                </p>
+              </div>
+            ) : (
+              <form onSubmit={handleForgotSubmit} className="space-y-4">
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  {t('auth.forgotPasswordInstructions')}
+                </p>
+                <div>
+                  <label className="label">{t('auth.email')}</label>
+                  <input
+                    type="email"
+                    value={forgotEmail}
+                    onChange={(e) => setForgotEmail(e.target.value)}
+                    className="input"
+                    placeholder={t('auth.emailPlaceholder')}
+                    required
+                  />
+                </div>
+                <div className="flex gap-2 justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setShowForgotModal(false)}
+                    className="btn-secondary"
+                  >
+                    {t('common.cancel')}
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={forgotLoading}
+                    className="btn-primary"
+                  >
+                    {forgotLoading ? t('common.loading') : t('auth.sendResetLink')}
+                  </button>
+                </div>
+              </form>
+            )}
+          </Modal>
 
           {/* Divisor com link para ferramentas */}
           <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">

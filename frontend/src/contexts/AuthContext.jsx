@@ -136,8 +136,30 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const requestPasswordReset = async (email) => {
+    try {
+      const response = await api.post('/auth/forgot-password', { email });
+      toast.success(response.message || t('auth.forgotPasswordCheckEmail'));
+      return { success: true, resetLink: response.resetLink };
+    } catch (error) {
+      toast.error(error.message || t('common.error'));
+      return { success: false, message: error.message };
+    }
+  };
+
+  const resetPassword = async (token, newPassword) => {
+    try {
+      const response = await api.post('/auth/reset-password', { token, newPassword });
+      toast.success(response.message || t('auth.passwordResetSuccess'));
+      return { success: true };
+    } catch (error) {
+      toast.error(error.message || t('common.errorUpdatingPassword'));
+      return { success: false, message: error.message };
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout, changePassword }}>
+    <AuthContext.Provider value={{ user, loading, login, register, logout, changePassword, requestPasswordReset, resetPassword }}>
       {children}
     </AuthContext.Provider>
   );

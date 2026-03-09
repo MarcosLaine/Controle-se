@@ -208,6 +208,7 @@ public class ExpensesHandler implements HttpHandler {
             if (dataEntradaFaturaObj != null && !dataEntradaFaturaObj.toString().trim().isEmpty()) {
                 try { dataEntradaFatura = LocalDate.parse((String) dataEntradaFaturaObj); } catch (Exception e) { }
             }
+            String frequency = (String) data.get("frequency");
             
             Conta conta = accountRepository.buscarConta(accountId);
             if (conta == null) {
@@ -224,7 +225,7 @@ public class ExpensesHandler implements HttpHandler {
                 return;
             }
             
-            expenseRepository.atualizarGasto(expenseId, userId, description, value, date, accountId, categoryIds, observacoes, dataEntradaFatura);
+            expenseRepository.atualizarGasto(expenseId, userId, description, value, date, accountId, categoryIds, observacoes, dataEntradaFatura, frequency);
             tagRepository.removerTodasTagsTransacao(expenseId, "GASTO");
             for (int tagId : tagIds) {
                 tagRepository.associarTagTransacao(expenseId, "GASTO", tagId);
@@ -374,7 +375,9 @@ public class ExpensesHandler implements HttpHandler {
                 transaction.put("tags", tagsList);
                 transaction.put("observacoes", observacoesList);
                 transaction.put("ativo", gasto.isAtivo());
-                
+                if (gasto.getFrequencia() != null) {
+                    transaction.put("frequency", gasto.getFrequencia());
+                }
                 // Campo de data de entrada na fatura (para compras retidas)
                 if (gasto.getDataEntradaFatura() != null) {
                     transaction.put("dataEntradaFatura", gasto.getDataEntradaFatura().toString());

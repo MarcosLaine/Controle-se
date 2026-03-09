@@ -377,6 +377,10 @@ public class ControleSeServer {
             withRateLimit(new server.handlers.RegisterHandler(userRepository, refreshTokenRepository), "/api/auth/register", authCircuitBreaker));
         server.createContext("/api/auth/change-password", 
             withRateLimit(secure(new server.handlers.ChangePasswordHandler(userRepository, refreshTokenRepository)), "/api/auth/change-password", authCircuitBreaker));
+        server.createContext("/api/auth/forgot-password",
+            withRateLimit(new server.handlers.ForgotPasswordHandler(userRepository), "/api/auth/forgot-password", authCircuitBreaker));
+        server.createContext("/api/auth/reset-password",
+            withRateLimit(new server.handlers.ResetPasswordHandler(userRepository), "/api/auth/reset-password", authCircuitBreaker));
         server.createContext("/api/auth/user", 
             withRateLimit(secure(new server.handlers.DeleteUserHandler(userRepository)), "/api/auth/user", authCircuitBreaker));
         

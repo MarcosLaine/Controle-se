@@ -296,6 +296,21 @@ CREATE INDEX IF NOT EXISTS idx_refresh_tokens_revoked ON refresh_tokens(revoked)
 -- Índice composto para otimizar queries de tokens válidos por usuário
 CREATE INDEX IF NOT EXISTS idx_refresh_tokens_usuario_valid ON refresh_tokens(id_usuario, revoked, expires_at) WHERE revoked = FALSE;
 
+-- Tabela: password_reset_tokens (recuperação de senha)
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+    id_token SERIAL PRIMARY KEY,
+    id_usuario INTEGER NOT NULL,
+    token_hash VARCHAR(500) NOT NULL,
+    expires_at TIMESTAMP NOT NULL,
+    used BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (id_usuario) REFERENCES usuarios(id_usuario) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_token_hash ON password_reset_tokens(token_hash);
+CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_expires_at ON password_reset_tokens(expires_at);
+CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_usuario ON password_reset_tokens(id_usuario);
+
 -- =====================================================
 -- TRIGGERS PARA UPDATED_AT
 -- =====================================================

@@ -40,7 +40,9 @@ api.interceptors.request.use(
     // Não adiciona token para endpoints de autenticação (login, register, refresh)
     const isAuthEndpoint = config.url?.includes('/auth/login') || 
                           config.url?.includes('/auth/register') || 
-                          config.url?.includes('/auth/refresh');
+                          config.url?.includes('/auth/refresh') ||
+                          config.url?.includes('/auth/forgot-password') ||
+                          config.url?.includes('/auth/reset-password');
     
     if (!isAuthEndpoint) {
       try {

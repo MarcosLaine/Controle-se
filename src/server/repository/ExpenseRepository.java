@@ -653,11 +653,16 @@ public class ExpenseRepository {
     }
     
     /**
-     * Atualiza um gasto existente (descrição, valor, data, conta, categorias, observações, data entrada fatura).
+     * Atualiza um gasto existente (descrição, valor, data, conta, categorias, observações, data entrada fatura, frequência).
      * Ajusta saldos das contas se a conta for alterada. Não altera parcelas (id_grupo_parcela) - apenas gastos únicos ou uma parcela individual.
      */
     public void atualizarGasto(int idGasto, int idUsuario, String descricao, double valor, LocalDate data,
                                int idConta, List<Integer> idsCategorias, String[] observacoes, LocalDate dataEntradaFatura) {
+        atualizarGasto(idGasto, idUsuario, descricao, valor, data, idConta, idsCategorias, observacoes, dataEntradaFatura, null);
+    }
+
+    public void atualizarGasto(int idGasto, int idUsuario, String descricao, double valor, LocalDate data,
+                               int idConta, List<Integer> idsCategorias, String[] observacoes, LocalDate dataEntradaFatura, String frequencia) {
         Gasto gasto = buscarGastoPorUsuario(idGasto, idUsuario);
         if (gasto == null) throw new IllegalArgumentException("Gasto não encontrado");
         
@@ -668,6 +673,18 @@ public class ExpenseRepository {
         if (idsCategorias != null) {
             for (Integer idCat : idsCategorias) validateId("ID da categoria", idCat);
         }
+        if (frequencia != null && !frequencia.trim().isEmpty()) {
+            String freqUpper = frequencia.toUpperCase().trim();
+            if (!freqUpper.equals("UNICA") && !freqUpper.equals("DIARIA") &&
+                !freqUpper.equals("SEMANAL") && !freqUpper.equals("MENSAL") && !freqUpper.equals("ANUAL")) {
+                frequencia = "UNICA";
+            } else {
+                frequencia = freqUpper;
+            }
+        } else {
+            frequencia = "UNICA";
+        }
+        LocalDate proximaRecorrencia = calcularProximaRecorrencia(data, frequencia);
         
         AccountRepository accountRepo = new AccountRepository();
         Conta contaNova = accountRepo.buscarConta(idConta);
@@ -725,14 +742,16 @@ public class ExpenseRepository {
                 }
             }
             
-            String sql = "UPDATE gastos SET descricao = ?, valor = ?, data = ?, id_conta = ?, data_entrada_fatura = ? WHERE id_gasto = ?";
+            String sql = "UPDATE gastos SET descricao = ?, valor = ?, data = ?, id_conta = ?, data_entrada_fatura = ?, frequencia = ?, proxima_recorrencia = ? WHERE id_gasto = ?";
             try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
                 pstmt.setString(1, descricao);
                 pstmt.setDouble(2, valor);
                 pstmt.setDate(3, java.sql.Date.valueOf(data));
                 pstmt.setInt(4, idConta);
                 pstmt.setDate(5, dataEntradaFatura != null ? java.sql.Date.valueOf(dataEntradaFatura) : null);
-                pstmt.setInt(6, idGasto);
+                pstmt.setString(6, frequencia);
+                pstmt.setDate(7, proximaRecorrencia != null ? java.sql.Date.valueOf(proximaRecorrencia) : null);
+                pstmt.setInt(8, idGasto);
                 pstmt.executeUpdate();
             }
             

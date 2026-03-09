@@ -300,7 +300,8 @@ public class ImportTransactionsHandler implements HttpHandler {
             observacoes = (String[]) obsObj;
         }
         
-        int incomeId = incomeRepository.cadastrarReceita(description, value, date, userId, accountId, observacoes);
+        String frequency = (String) transaction.get("frequency");
+        int incomeId = incomeRepository.cadastrarReceita(description, value, date, userId, accountId, observacoes, frequency);
         
         // Associa tags
         for (int tagId : tagIds) {
